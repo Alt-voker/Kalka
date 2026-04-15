@@ -223,11 +223,11 @@
       return item && item.email && item.email.toLowerCase() === String(authUser.email || '').toLowerCase();
     });
     var meta = authUser.user_metadata || {};
-    var first = (profile && (profile.first_name || profile.first)) || meta.first_name || meta.first || (existing && existing.first) || 'Пользователь';
-    var last = (profile && (profile.last_name || profile.last)) || meta.last_name || meta.last || (existing && existing.last) || '';
-    var company = (profile && profile.company) || meta.company || (existing && existing.company) || 'КальКа';
-    var role = (profile && profile.role) || meta.role || meta.app_role || (existing && existing.role) || 'manager';
-    var status = (profile && profile.status) || (existing && existing.status) || 'active';
+    var first = (existing && existing.first) || (profile && (profile.first_name || profile.first)) || meta.first_name || meta.first || 'Пользователь';
+    var last = (existing && existing.last) || (profile && (profile.last_name || profile.last)) || meta.last_name || meta.last || '';
+    var company = (existing && existing.company) || (profile && profile.company) || meta.company || 'КальКа';
+    var role = (existing && existing.role) || (profile && profile.role) || meta.role || meta.app_role || 'manager';
+    var status = (existing && existing.status) || (profile && profile.status) || 'active';
 
     var user = Object.assign({}, existing || {}, {
       id: authUser.id,
@@ -421,6 +421,110 @@
     } finally {
       if (button) {
         button.textContent = 'Войти в систему →';
+        button.disabled = false;
+      }
+    }
+  };
+
+  window.doRegister = async function () {
+    var errEl = document.getElementById('sr-err');
+    var okEl = document.getElementById('sr-ok');
+    var button = document.getElementById('selfRegisterBtn');
+    var first = ((document.getElementById('sr-fi') || {}).value || '').trim();
+    var last = ((document.getElementById('sr-la') || {}).value || '').trim();
+    var company = ((document.getElementById('sr-co') || {}).value || '').trim();
+    var email = (((document.getElementById('sr-em') || {}).value || '').trim()).toLowerCase();
+    var password = ((document.getElementById('sr-pa') || {}).value || '');
+    var role = ((document.getElementById('sr-ro') || {}).value || 'manager').trim() || 'manager';
+    var note = ((document.getElementById('sr-note') || {}).value || '').trim();
+
+    if (errEl) errEl.textContent = '';
+    if (okEl) okEl.textContent = '';
+
+    if (!first || !last) {
+      if (errEl) errEl.textContent = 'Укажите имя и фамилию';
+      return;
+    }
+    if (!company) {
+      if (errEl) errEl.textContent = 'Укажите компанию или организацию';
+      return;
+    }
+    if (!email || !/@/.test(email)) {
+      if (errEl) errEl.textContent = 'Введите корректный email';
+      return;
+    }
+    if (!password || password.length < 6) {
+      if (errEl) errEl.textContent = 'Пароль должен быть не короче 6 символов';
+      return;
+    }
+    if (!app.supabase || !app.supabase.isEnabled || !app.supabase.isEnabled()) {
+      if (errEl) errEl.textContent = 'Supabase не настроен';
+      return;
+    }
+
+    if (button) {
+      button.textContent = 'Создаём...';
+      button.disabled = true;
+    }
+
+    try {
+      var client = app.supabase.getClient();
+      var response = await client.auth.signUp({
+        email: email,
+        password: password,
+        options: {
+          data: {
+            first_name: first,
+            last_name: last,
+            company: company,
+            role: role,
+            status: 'pending',
+            note: note
+          }
+        }
+      });
+
+      if (response.error) throw response.error;
+
+      var db = ensureArrays(window._dbCache || readLocalState() || getDefaults());
+      var pendingUser = {
+        id: response.data.user ? response.data.user.id : ('u' + Date.now()),
+        first: first,
+        last: last,
+        company: company,
+        email: email,
+        role: role,
+        status: 'pending',
+        ev: true,
+        created: new Date().toISOString().slice(0, 10),
+        reason: note,
+        createdBy: 'self-signup'
+      };
+      upsertUserInDb(pendingUser);
+
+      if (response.data.session) {
+        await client.auth.signOut();
+      } else if (okEl) {
+        okEl.textContent = 'Аккаунт создан. Подтвердите email, если письмо пришло, и дождитесь одобрения. Для простого входа владельцу лучше включить Auto Confirm в Supabase Email Auth.';
+      }
+
+      ['sr-fi', 'sr-la', 'sr-co', 'sr-em', 'sr-pa', 'sr-note'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+
+      if (okEl && response.data.session) {
+        okEl.textContent = 'Аккаунт создан. Дождитесь одобрения владельцем или администратором, затем войдите.';
+      }
+    } catch (error) {
+      var message = error && error.message ? error.message : 'Ошибка регистрации';
+      if (/already registered/i.test(message)) {
+        message = 'Этот email уже зарегистрирован. Попробуйте войти или используйте другой email.';
+      }
+      if (errEl) errEl.textContent = message;
+    } finally {
+      if (button) {
+        button.textContent = 'Зарегистрироваться';
         button.disabled = false;
       }
     }

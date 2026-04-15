@@ -315,8 +315,13 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
     <div class="aErr" id="liErr"></div>
     <button class="btnA" id="loginBtn" onclick="doLogin()">Войти в систему →</button>
     <div style="text-align:center;margin:14px 0 6px;font-size:11px;color:var(--t3);line-height:1.6;">
-      Нет аккаунта? Обратитесь к администратору.<br>
-      Аккаунты создаёт владелец или администратор.
+      Нет аккаунта? Зарегистрируйтесь сами и дождитесь одобрения.<br>
+      После одобрения владельцем или администратором вход откроется автоматически.
+    </div>
+    <div style="text-align:center;margin:0 0 8px;">
+      <button onclick="openModal('selfRegister')" style="background:var(--aD);border:1px solid var(--ac);color:var(--ac);border-radius:var(--r);padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;">
+        Создать аккаунт
+      </button>
     </div>
     <div style="text-align:center;margin-bottom:4px;">
       <button onclick="clearCacheAndReload()" style="background:none;border:none;color:var(--t4);font-size:10px;cursor:pointer;text-decoration:underline;">Проблемы со входом? Очистить кэш</button>
@@ -993,7 +998,8 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
 <div class="ov" id="ov-createUser"><div class="modal wide">
   <div class="m-title">➕ Создать аккаунт пользователя</div>
   <div style="background:var(--aD);border:1px solid var(--ac);border-radius:var(--r);padding:10px 13px;margin-bottom:14px;font-size:12px;color:var(--t2);">
-    ✅ Аккаунт создаётся сразу активным. Пользователь может войти немедленно с любого устройства.
+    Этот инструмент создаёт внутреннюю карточку пользователя и доступы в системе.
+    Для обычного входа пользователю лучше использовать самостоятельную регистрацию на экране входа.
   </div>
   <div class="g2">
     <div><label class="fL">Имя</label><input class="fI" id="cu-fi" placeholder="Иван"></div>
@@ -1029,6 +1035,42 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
   <div class="m-acts">
     <button class="m-cancel" onclick="closeModal('createUser')">Отмена</button>
     <button class="m-ok" onclick="submitCreateUser(false)">✅ Создать аккаунт</button>
+  </div>
+</div></div>
+
+<div class="ov" id="ov-selfRegister"><div class="modal wide">
+  <div class="m-title">Создать аккаунт</div>
+  <div style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:10px 13px;margin-bottom:14px;font-size:12px;color:var(--t2);line-height:1.5;">
+    Регистрация создаёт ваш логин в системе. После этого владелец или администратор должны одобрить доступ.
+  </div>
+  <div class="g2">
+    <div><label class="fL">Имя</label><input class="fI" id="sr-fi" placeholder="Иван"></div>
+    <div><label class="fL">Фамилия</label><input class="fI" id="sr-la" placeholder="Иванов"></div>
+  </div>
+  <label class="fL">Компания / организация</label>
+  <input class="fI" id="sr-co" placeholder="ООО «Ресторан»">
+  <label class="fL">Email</label>
+  <input class="fI" type="email" id="sr-em" placeholder="user@company.ru">
+  <label class="fL">Пароль</label>
+  <div class="pw" style="margin-bottom:8px;">
+    <input class="fI" type="password" id="sr-pa" placeholder="Минимум 6 символов" style="margin:0;">
+    <button class="eyeB" onclick="eyeT('sr-pa',this)">👁</button>
+  </div>
+  <label class="fL">Роль</label>
+  <select class="fS" id="sr-ro">
+    <option value="manager">Управляющий</option>
+    <option value="chef">Шеф-повар</option>
+    <option value="buyer">Байер / Закупщик</option>
+    <option value="supplier">Поставщик</option>
+    <option value="accountant">Бухгалтер</option>
+  </select>
+  <label class="fL">Комментарий для администратора</label>
+  <input class="fI" id="sr-note" placeholder="Заведение, должность, филиал">
+  <div id="sr-err" style="color:var(--rd);font-size:12px;min-height:16px;margin-top:4px;"></div>
+  <div id="sr-ok" style="color:var(--gr);font-size:12px;min-height:16px;"></div>
+  <div class="m-acts">
+    <button class="m-cancel" onclick="closeModal('selfRegister')">Отмена</button>
+    <button class="m-ok" id="selfRegisterBtn" onclick="doRegister()">Зарегистрироваться</button>
   </div>
 </div></div><div class="ov" id="ov-myProfile"><div class="modal">
   <div class="m-title">👤 Мой профиль</div>
