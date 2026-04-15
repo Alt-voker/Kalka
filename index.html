@@ -1,0 +1,1368 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="kalka-supabase-url" content="https://yoppbecgrugedbewuiol.supabase.co">
+<meta name="kalka-supabase-anon-key" content="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlvcHBiZWNncnVnZWRiZXd1aW9sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNDg1ODUsImV4cCI6MjA5MTcyNDU4NX0.9fTfUT0bnvpXgIoBXsnF78FujBk2oEF5T6riCnz_8a0">
+<title>КальКа — Платформа закупок</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f0f2f5;
+  --bg1:#e8eaed;
+  --bg2:#ffffff;
+  --bg3:#f5f7fa;
+  --bg4:#ebedf0;
+  --br:#d1d5db;
+  --br2:#b8bec7;
+
+  --ac:#5ba3f5;
+  --ac2:#7ab8f5;
+  --aD:rgba(45,125,210,.1);
+  --aD2:rgba(45,125,210,.05);
+
+  --or:#e07b2a;
+  --orD:rgba(224,123,42,.1);
+  --bl:#5ba3f5;
+  --blD:rgba(45,125,210,.1);
+  --gr:#2a9d5c;
+  --grD:rgba(42,157,92,.1);
+  --rd:#d63031;
+  --rdD:rgba(214,48,49,.1);
+  --pu:#6c5ce7;
+  --puD:rgba(108,92,231,.1);
+  --yl:#e6a817;
+  --ylD:rgba(230,168,23,.1);
+
+  --tx:#1a1d23;
+  --t2:#4a5568;
+  --t3:#718096;
+  --t4:#a0aec0;
+
+  --fB:'Manrope',sans-serif;
+  --fH:'Montserrat',sans-serif;
+  --r:8px;--r2:12px;--r3:16px;--r4:20px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased;}
+html{font-size:14px;}body{font-family:var(--fB);background:var(--bg);color:var(--tx);min-height:100vh;overflow-x:hidden;}
+button,select,input,textarea{font-family:var(--fB);}
+input[type=number]::-webkit-inner-spin-button{opacity:.3;}
+::-webkit-scrollbar{width:4px;height:4px;}::-webkit-scrollbar-thumb{background:var(--br2);border-radius:2px;}
+.hidden{display:none!important;}.flex{display:flex;align-items:center;}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}.g5{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;}
+.mb8{margin-bottom:8px;}.mb12{margin-bottom:12px;}.mb16{margin-bottom:16px;}.mb20{margin-bottom:20px;}
+.fw6{font-weight:600;}.fw7{font-weight:700;}.fw8{font-weight:800;}
+.fs10{font-size:10px;}.fs11{font-size:11px;}.fs12{font-size:12px;}.fs13{font-size:13px;}
+.c2{color:var(--t2);}.c3{color:var(--t3);}
+@keyframes fUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+@keyframes sIn{from{transform:translateX(110px);opacity:0;}to{transform:translateX(0);opacity:1;}}
+/* AUTH */
+#AUTH{position:fixed;inset:0;z-index:9000;background:var(--bg);display:flex;align-items:center;justify-content:center;background-image:radial-gradient(ellipse 60% 50% at 75% 20%,rgba(200,240,80,.04),transparent 70%);}
+#AUTH.gone{display:none;}
+.aw{width:100%;max-width:440px;padding:16px;}
+.al{text-align:center;margin-bottom:22px;}
+.al-logo{font-family:var(--fH);font-size:26px;font-weight:900;letter-spacing:-1px;background:linear-gradient(135deg,var(--ac),var(--ac2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.al-sub{font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--t3);margin-top:4px;}
+.ac{background:var(--bg2);border:1px solid var(--br2);border-radius:var(--r4);padding:26px;box-shadow:0 8px 40px rgba(0,0,0,.7);animation:fUp .3s ease;}
+.atabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--bg3);border-radius:var(--r);padding:3px;margin-bottom:16px;}
+.atab{padding:8px;border-radius:7px;text-align:center;cursor:pointer;font-size:12px;font-weight:600;color:var(--t3);transition:all .2s;}
+.atab.on{background:var(--bg2);color:var(--tx);box-shadow:0 2px 8px rgba(0,0,0,.3);}
+.fL{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:var(--t3);margin-bottom:5px;display:block;}
+.fI{width:100%;background:var(--bg3);border:1px solid var(--br2);border-radius:var(--r);padding:10px 13px;color:var(--tx);font-size:13px;outline:none;transition:border-color .2s;margin-bottom:10px;}
+.fI:focus{border-color:var(--ac);box-shadow:0 0 0 3px rgba(200,240,80,.08);}
+.fS{width:100%;background:var(--bg3);border:1px solid var(--br2);border-radius:var(--r);padding:10px 13px;color:var(--tx);font-size:13px;outline:none;cursor:pointer;margin-bottom:10px;}
+.pw{position:relative;margin-bottom:10px;}.pw .fI{margin-bottom:0;padding-right:42px;}
+.eyeB{position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--t3);background:none;border:none;font-size:15px;padding:3px;}
+.aErr{color:var(--rd);font-size:11px;min-height:15px;margin-bottom:7px;}
+.btnA{width:100%;background:var(--ac);color:#000;border:none;border-radius:var(--r);padding:12px;font-family:var(--fH);font-size:13px;font-weight:800;cursor:pointer;transition:all .2s;}
+.btnA:hover{background:var(--ac2);transform:translateY(-1px);}
+.btnG{width:100%;background:transparent;color:var(--t2);border:1px solid var(--br2);border-radius:var(--r);padding:9px;font-size:12px;cursor:pointer;transition:all .2s;margin-top:6px;}
+.btnG:hover{border-color:var(--br2);color:var(--tx);}
+.adiv{text-align:center;font-size:11px;color:var(--t3);margin:12px 0;position:relative;}
+.adiv::before,.adiv::after{content:'';position:absolute;top:50%;width:40%;height:1px;background:var(--br);}
+.adiv::before{left:0;}.adiv::after{right:0;}
+.dg{display:grid;gap:5px;max-height:210px;overflow-y:auto;}
+.di{display:flex;align-items:center;gap:9px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:7px 10px;cursor:pointer;transition:all .15s;}
+.di:hover{border-color:var(--br2);background:var(--bg4);}
+.d-av{width:27px;height:27px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0;}
+.d-nm{font-size:12px;font-weight:600;}.d-co{font-size:10px;color:var(--t3);}
+.d-rl{margin-left:auto;font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;white-space:nowrap;flex-shrink:0;}
+.cw{display:flex;gap:6px;justify-content:center;margin:12px 0;}
+.cb{width:41px;height:49px;background:var(--bg3);border:2px solid var(--br2);border-radius:var(--r);text-align:center;font-family:var(--fH);font-size:19px;font-weight:800;color:var(--ac);outline:none;transition:all .15s;}
+.cb:focus{border-color:var(--ac);box-shadow:0 0 0 3px rgba(200,240,80,.1);}.cb.fi{background:rgba(200,240,80,.06);}
+.cbdg{display:inline-flex;align-items:center;background:var(--aD);border:1px solid rgba(200,240,80,.2);border-radius:7px;padding:6px 11px;font-size:15px;color:var(--ac);font-weight:800;letter-spacing:5px;margin:7px 0;font-family:var(--fH);}
+.sscr{text-align:center;padding:6px 0;}.sico{font-size:46px;display:block;margin-bottom:11px;}
+.sti{font-family:var(--fH);font-size:18px;font-weight:800;margin-bottom:6px;}
+.sde{font-size:12px;color:var(--t2);line-height:1.7;margin-bottom:16px;}
+.sca{background:var(--bg3);border:1px solid var(--br);border-radius:var(--r2);padding:13px;text-align:left;margin-bottom:14px;}
+.sr{display:flex;align-items:center;gap:7px;font-size:12px;padding:3px 0;color:var(--t2);}.sr b{color:var(--tx);}
+/* APP */
+#APP{display:none;height:100vh;overflow:hidden;}#APP.on{display:flex;}
+/* SIDEBAR */
+.sb{width:220px;min-width:220px;background:var(--bg1);border-right:1px solid var(--br);display:flex;flex-direction:column;height:100vh;overflow:hidden;transition:width .25s;}
+.sb.slim{width:54px;min-width:54px;}
+.sb-logo{padding:14px;border-bottom:1px solid var(--br);display:flex;align-items:center;gap:8px;min-height:53px;overflow:hidden;}
+.sb-lt{font-family:var(--fH);font-size:15px;font-weight:900;background:linear-gradient(135deg,var(--ac),var(--ac2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;white-space:nowrap;}
+.sb-ls{font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--t3);white-space:nowrap;}
+.sb-tog{margin-left:auto;width:22px;height:22px;border:1px solid var(--br);border-radius:5px;background:none;cursor:pointer;color:var(--t3);font-size:10px;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0;}
+.sb-tog:hover{border-color:var(--br2);color:var(--tx);}
+.sb-nav{flex:1;overflow-y:auto;padding:5px 0;}
+.sb-sec{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:var(--t4);padding:9px 13px 3px;white-space:nowrap;overflow:hidden;transition:opacity .2s;}
+.sb.slim .sb-sec{opacity:0;}
+.sb-item{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;color:var(--t2);font-size:12px;font-weight:500;border-left:2px solid transparent;transition:all .15s;white-space:nowrap;overflow:hidden;position:relative;}
+.sb-item:hover{color:var(--tx);background:rgba(255,255,255,.02);}
+.sb-item.on{color:var(--ac);border-left-color:var(--ac);background:var(--aD2);}
+.sb-ico{font-size:14px;width:19px;text-align:center;flex-shrink:0;}
+.sb-lbl{overflow:hidden;text-overflow:ellipsis;transition:opacity .2s;}
+.sb.slim .sb-lbl{opacity:0;width:0;}
+.sb-bdg{margin-left:auto;font-size:10px;font-weight:700;padding:1px 5px;border-radius:10px;flex-shrink:0;transition:opacity .2s;}
+.sb.slim .sb-bdg{opacity:0;}
+.sb-tip{display:none;position:absolute;left:49px;top:50%;transform:translateY(-50%);background:var(--bg4);border:1px solid var(--br2);border-radius:6px;padding:4px 8px;font-size:11px;color:var(--tx);white-space:nowrap;z-index:200;}
+.sb.slim .sb-item:hover .sb-tip{display:block;}
+.sb-user{padding:10px 12px;border-top:1px solid var(--br);display:flex;align-items:center;gap:8px;overflow:hidden;}
+.sb-ava{width:29px;height:29px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0;}
+.sb-ui{overflow:hidden;flex:1;transition:opacity .2s;}
+.sb.slim .sb-ui{opacity:0;width:0;}
+.sb-un{font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sb-ur{font-size:9px;color:var(--t3);}
+.sb-out{color:var(--t3);cursor:pointer;padding:4px;border-radius:5px;transition:all .15s;background:none;border:none;flex-shrink:0;}
+.sb-out:hover{color:var(--rd);background:var(--rdD);}
+/* TOPBAR */
+.main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden;}
+.topbar{height:53px;min-height:53px;background:rgba(10,14,18,.93);backdrop-filter:blur(18px);border-bottom:1px solid var(--br);display:flex;align-items:center;gap:10px;padding:0 20px;position:sticky;top:0;z-index:50;}
+.tb-title{font-family:var(--fH);font-size:13px;font-weight:800;flex:1;letter-spacing:-.2px;}
+.tb-search{display:flex;align-items:center;gap:7px;background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);padding:6px 11px;width:220px;transition:all .2s;}
+.tb-search:focus-within{border-color:var(--br2);}
+.tb-search input{background:none;border:none;outline:none;color:var(--tx);font-size:12px;width:100%;}
+.tb-search input::placeholder{color:var(--t3);}
+.tbBtn{display:flex;align-items:center;gap:5px;background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);padding:6px 11px;cursor:pointer;color:var(--t2);font-size:12px;font-weight:600;transition:all .15s;white-space:nowrap;}
+.tbBtn:hover{border-color:var(--br2);color:var(--tx);}
+.tbBtn.acc{background:var(--ac);border-color:var(--ac);color:#000;font-weight:700;}
+.tbBtn.acc:hover{background:var(--ac2);}
+.tbBtn.danger{background:var(--rdD);border-color:var(--rd);color:var(--rd);}
+.cdot{background:var(--or);color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:10px;}
+.cdot.y{background:var(--yl);color:#000;}
+.rbtn{display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:6px 10px;cursor:pointer;font-size:12px;font-weight:600;transition:all .15s;}
+.rbtn:hover{border-color:var(--br2);}
+.content{flex:1;overflow-y:auto;padding:20px;}
+.page{display:none;animation:fUp .2s ease;}.page.on{display:block;}
+/* PAGE HEADER */
+.pg-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:13px;margin-bottom:18px;flex-wrap:wrap;}
+.pg-title{font-family:var(--fH);font-size:18px;font-weight:800;letter-spacing:-.3px;margin-bottom:3px;}
+.pg-sub{font-size:12px;color:var(--t3);}.pg-acts{display:flex;gap:6px;flex-wrap:wrap;}
+/* PANEL */
+.panel{background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);overflow:hidden;}
+.ph{display:flex;align-items:center;justify-content:space-between;padding:11px 15px;border-bottom:1px solid var(--br);}
+.pt{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--t2);}
+.plink{font-size:12px;color:var(--ac);cursor:pointer;font-weight:600;}.plink:hover{text-decoration:underline;}
+.pb{padding:15px;}
+/* STAT CARDS */
+.sc{background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);padding:14px;position:relative;overflow:hidden;transition:all .2s;}
+.sc:hover{border-color:var(--br2);transform:translateY(-1px);}
+.sc::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
+.sc.ca::before{background:linear-gradient(90deg,var(--ac),transparent);}
+.sc.cb::before{background:linear-gradient(90deg,var(--bl),transparent);}
+.sc.co::before{background:linear-gradient(90deg,var(--or),transparent);}
+.sc.cg::before{background:linear-gradient(90deg,var(--gr),transparent);}
+.sc.cp::before{background:linear-gradient(90deg,var(--pu),transparent);}
+.sc-ico{position:absolute;right:12px;top:12px;font-size:19px;opacity:.1;}
+.sc-lbl{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:var(--t3);margin-bottom:6px;}
+.sc-val{font-family:var(--fH);font-size:21px;font-weight:800;line-height:1;margin-bottom:5px;}
+.sc-chg{font-size:11px;font-weight:600;}.up{color:var(--gr);}.dn{color:var(--rd);}.neu{color:var(--t3);}
+/* TABLE */
+.tw{overflow-x:auto;}table{width:100%;border-collapse:collapse;}
+thead th{padding:9px 13px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:1.2px;color:var(--t3);font-weight:600;border-bottom:1px solid var(--br);white-space:nowrap;}
+tbody td{padding:10px 13px;font-size:13px;border-bottom:1px solid rgba(30,42,56,.5);}
+tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255,255,255,.015);}
+/* BADGE */
+.badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:20px;font-size:11px;font-weight:600;}
+.bg{background:var(--grD);color:var(--gr);}.by{background:var(--ylD);color:var(--yl);}
+.br{background:var(--rdD);color:var(--rd);}.bb{background:var(--blD);color:var(--bl);}
+.bp{background:var(--puD);color:var(--pu);}.bgr{background:rgba(255,255,255,.06);color:var(--t3);}
+.bo{background:var(--orD);color:var(--or);}
+/* CHIPS */
+.chips{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:14px;}
+.chip{padding:5px 11px;border:1px solid var(--br);border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;color:var(--t2);background:var(--bg2);transition:all .15s;}
+.chip:hover,.chip.on{border-color:var(--ac);color:var(--ac);background:var(--aD);}
+.chipSel{margin-left:auto;background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);padding:5px 8px;color:var(--t2);font-size:12px;outline:none;cursor:pointer;}
+/* PROGRESS */
+.pr{margin-bottom:10px;}.pr-top{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;}
+.pr-bar{height:5px;background:var(--bg4);border-radius:3px;overflow:hidden;}
+.pr-fill{height:100%;border-radius:3px;transition:width .6s ease;}
+.pf-a{background:linear-gradient(90deg,var(--ac),rgba(200,240,80,.3));}
+.pf-b{background:linear-gradient(90deg,var(--bl),rgba(79,195,247,.3));}
+.pf-o{background:linear-gradient(90deg,var(--or),rgba(255,112,67,.3));}
+.pf-g{background:linear-gradient(90deg,var(--gr),rgba(76,175,130,.3));}
+/* BAR CHART */
+.bc{display:flex;align-items:flex-end;gap:6px;height:115px;}
+.bc-col{display:flex;flex-direction:column;align-items:center;flex:1;}
+.bc-bar{width:100%;border-radius:4px 4px 0 0;min-height:3px;transition:opacity .15s;}.bc-bar:hover{opacity:.75;}
+.bc-v{font-size:9px;color:var(--t3);margin-bottom:3px;}.bc-l{font-size:10px;color:var(--t3);margin-top:4px;}
+/* DONUT */
+.dw{display:flex;align-items:center;gap:16px;}.dl{flex:1;}
+.dl-row{display:flex;align-items:center;gap:6px;margin-bottom:7px;font-size:12px;}
+.dl-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}.dl-nm{color:var(--t2);flex:1;}.dl-pct{font-weight:700;}
+/* CART */
+.ci{display:flex;align-items:center;gap:10px;background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);padding:11px;margin-bottom:6px;transition:border-color .15s;}
+.ci:hover{border-color:var(--br2);}.ci-info{flex:1;min-width:0;}
+.ci-nm{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ci-sub{font-size:11px;color:var(--t3);margin-top:2px;}
+.ci-price{font-family:var(--fH);font-size:13px;font-weight:700;white-space:nowrap;}
+.ci-del{color:var(--t3);cursor:pointer;font-size:14px;padding:3px;border-radius:5px;border:none;background:none;transition:all .15s;}
+.ci-del:hover{color:var(--rd);background:var(--rdD);}
+/* ORDER SIDEBAR */
+.os{background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);padding:16px;position:sticky;top:73px;}
+.os-title{font-family:var(--fH);font-size:13px;font-weight:800;margin-bottom:13px;}
+.os-row{display:flex;justify-content:space-between;font-size:13px;color:var(--t2);margin-bottom:8px;}
+.os-div{height:1px;background:var(--br);margin:10px 0;}
+.os-total{display:flex;justify-content:space-between;font-size:14px;font-weight:700;}
+.os-tv{font-family:var(--fH);font-size:18px;color:var(--ac);}
+.co-btn{width:100%;background:var(--ac);color:#000;border:none;border-radius:var(--r);padding:11px;font-family:var(--fH);font-size:12px;font-weight:800;cursor:pointer;margin-top:12px;transition:all .2s;}
+.co-btn:hover{background:var(--ac2);}.co-btn:disabled{background:var(--bg3);color:var(--t3);cursor:not-allowed;}
+/* QTY */
+.qtC{display:flex;align-items:center;border:1px solid var(--br2);border-radius:7px;overflow:hidden;}
+.qtBtn{width:25px;height:28px;background:var(--bg3);border:none;color:var(--tx);cursor:pointer;font-size:13px;transition:background .1s;}.qtBtn:hover{background:var(--bg4);}
+.qtIn{width:32px;height:28px;background:none;border:none;color:var(--tx);text-align:center;font-size:12px;font-weight:700;outline:none;}
+/* CATALOG COLUMNS */
+.sup-cmp{border:1px solid var(--br);border-radius:var(--r2);overflow:hidden;}
+.sup-cmp-hd,.sup-cmp-row,.sup-cmp-r{display:grid;align-items:center;}
+.sup-cmp-hd{background:var(--bg3);border-bottom:1px solid var(--br);}
+.sup-cmp-row,.sup-cmp-r{border-bottom:1px solid rgba(30,42,56,.4);transition:background .1s;}
+.sup-cmp-row:last-child,.sup-cmp-r:last-child{border-bottom:none;}.sup-cmp-row:hover,.sup-cmp-r:hover{background:rgba(255,255,255,.018);}
+.scc{padding:8px 11px;font-size:13px;display:flex;align-items:center;border-right:1px solid rgba(30,42,56,.4);}
+.scc:last-child{border-right:none;}.scc.hd{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.9px;color:var(--t3);}
+.scc-inf{display:flex;flex-direction:column;gap:1px;min-width:0;}
+.scc-nm{font-weight:600;font-size:13px;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.scc-sub{font-size:11px;color:var(--t3);}
+.pbest{color:var(--gr);font-weight:700;background:rgba(76,175,130,.05);}.phigh{color:var(--rd);}.pna{color:var(--t4);}
+/* TECH CARD */
+.tc-g{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
+.tc{background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);overflow:hidden;transition:all .2s;}.tc:hover{border-color:var(--br2);}
+.tc-hd{display:flex;align-items:flex-start;justify-content:space-between;padding:11px 13px;border-bottom:1px solid var(--br);gap:9px;}
+.tc-name{font-weight:700;font-size:13px;margin-bottom:2px;}.tc-meta{font-size:11px;color:var(--t3);}
+.tc-cost{text-align:right;flex-shrink:0;}.tc-cost-lbl{font-size:10px;color:var(--t3);margin-bottom:2px;}
+.tc-cost-val{font-family:var(--fH);font-size:16px;font-weight:800;}.tc-delta{font-size:11px;font-weight:700;margin-top:2px;}
+.tc-bd{padding:9px 13px;}
+.tc-ir{display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(30,42,56,.4);font-size:12px;}
+.tc-ir:last-child{border:none;}.tc-in{color:var(--t2);flex:1;}.tc-iq{color:var(--t3);width:50px;text-align:right;}.tc-ic{font-weight:600;width:55px;text-align:right;}
+.tc-ft{display:flex;justify-content:space-between;align-items:center;padding:8px 13px;background:var(--bg3);font-size:12px;flex-wrap:wrap;gap:5px;}
+/* CALC */
+.calc-l{display:grid;grid-template-columns:1fr 310px;gap:16px;}
+.ir-calc{display:grid;grid-template-columns:1fr 78px 62px 78px 28px;gap:6px;align-items:center;margin-bottom:5px;}
+.ir-calc select,.ir-calc input{margin:0;}
+.ir-cost{font-size:13px;font-weight:700;text-align:right;color:var(--ac);}
+.del-btn{width:27px;height:29px;border-radius:5px;border:none;background:var(--rdD);color:var(--rd);cursor:pointer;font-size:12px;transition:all .15s;}.del-btn:hover{background:var(--rd);color:#fff;}
+/* SUPPLIER CARDS */
+.sup-g{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+.sup-card{background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);padding:15px;transition:all .2s;}.sup-card:hover{border-color:var(--br2);transform:translateY(-2px);}
+.sup-card.dsh{border-style:dashed;cursor:pointer;}.sup-card.dsh:hover{border-color:var(--ac);}
+.sup-hd{display:flex;align-items:center;gap:9px;margin-bottom:11px;}.sup-logo{font-size:28px;}
+.sup-name{font-weight:700;font-size:14px;}.sup-type{font-size:11px;color:var(--t3);}
+.sup-sg{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.ss{background:var(--bg3);border-radius:7px;padding:7px;}.ss-l{font-size:10px;color:var(--t3);margin-bottom:2px;}.ss-v{font-size:12px;font-weight:700;}
+.sup-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px;}
+.sup-tag{background:var(--aD);color:var(--ac);font-size:10px;padding:2px 6px;border-radius:10px;}
+/* MODALS */
+.ov{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.78);backdrop-filter:blur(4px);display:none;align-items:flex-start;justify-content:center;padding:36px 16px;overflow-y:auto;}
+.ov.on{display:flex;}
+.modal{background:var(--bg2);border:1px solid var(--br2);border-radius:var(--r3);padding:22px;max-width:500px;width:100%;animation:fUp .2s ease;margin:auto;}
+.modal.wide{max-width:660px;}.modal.xl{max-width:880px;}
+.m-title{font-family:var(--fH);font-size:14px;font-weight:800;margin-bottom:15px;display:flex;align-items:center;gap:7px;}
+.m-acts{display:flex;gap:7px;margin-top:15px;}
+.m-ok{flex:1;background:var(--ac);color:#000;border:none;border-radius:var(--r);padding:10px;font-family:var(--fH);font-size:12px;font-weight:800;cursor:pointer;transition:all .15s;}.m-ok:hover{background:var(--ac2);}
+.m-cancel{flex:1;background:none;color:var(--t2);border:1px solid var(--br);border-radius:var(--r);padding:10px;font-size:13px;cursor:pointer;transition:all .15s;}.m-cancel:hover{border-color:var(--br2);color:var(--tx);}
+.m-danger{flex:1;background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:var(--r);padding:10px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;}.m-danger:hover{background:var(--rd);color:#fff;}
+/* MISC */
+#pushPanel{position:fixed;top:61px;right:15px;z-index:999;width:308px;display:flex;flex-direction:column;gap:6px;pointer-events:none;}
+.push{background:var(--bg2);border:1px solid var(--br2);border-radius:var(--r2);padding:11px 13px;box-shadow:0 4px 20px rgba(0,0,0,.5);pointer-events:all;animation:sIn .3s ease;transition:opacity .4s;border-left:3px solid transparent;max-height:240px;overflow-y:auto;}
+.push.warn{border-left-color:var(--rd);}.push.info{border-left-color:var(--bl);}.push.ok{border-left-color:var(--gr);}
+.push-hd{display:flex;align-items:center;gap:6px;margin-bottom:5px;}.push-ttl{font-size:12px;font-weight:700;}.push-to{font-size:10px;color:var(--t3);margin-left:auto;}.push-cl{background:none;border:none;color:var(--t3);cursor:pointer;font-size:12px;}
+.push-body{font-size:11px;color:var(--t2);line-height:1.6;}.push-time{font-size:10px;color:var(--t3);margin-top:5px;}
+.toast{position:fixed;bottom:19px;right:19px;z-index:1000;background:var(--bg2);border:1px solid var(--br2);border-radius:var(--r2);padding:10px 13px;font-size:13px;display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(0,0,0,.5);animation:sIn .3s ease;transition:opacity .3s;max-width:320px;}
+.toast.ok{border-color:rgba(76,175,130,.3);}.toast.err{border-color:rgba(239,83,80,.3);}
+.empty{text-align:center;padding:48px 20px;color:var(--t3);}.empty-ico{font-size:36px;margin-bottom:10px;}.empty-txt{font-size:14px;margin-bottom:12px;}
+.empty-btn{background:var(--ac);color:#000;border:none;border-radius:var(--r);padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;}
+.pi{background:var(--bg3);border:1px solid var(--br2);border-radius:6px;padding:4px 7px;color:var(--tx);font-size:12px;outline:none;width:76px;text-align:right;}.pi:focus{border-color:var(--ac);}
+.fav-btn{background:none;border:none;cursor:pointer;font-size:14px;transition:transform .15s;padding:3px;}.fav-btn:hover{transform:scale(1.2);}
+.ac-btn{background:var(--ac);color:#000;border:none;border-radius:6px;padding:5px 9px;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;}.ac-btn:hover{background:var(--ac2);}.ac-btn.done{background:var(--gr);}
+.owner-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;}
+.owner-tool{background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);padding:14px;text-align:center;cursor:pointer;transition:all .2s;}.owner-tool:hover{border-color:var(--ac);transform:translateY(-2px);}
+.owner-tool-ico{font-size:24px;margin-bottom:6px;}.owner-tool-name{font-size:12px;font-weight:700;margin-bottom:2px;}.owner-tool-desc{font-size:10px;color:var(--t3);}
+.u-row{display:grid;grid-template-columns:32px 1fr 148px 72px 92px;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid rgba(30,42,56,.5);transition:background .1s;}
+.u-row:hover{background:rgba(255,255,255,.015);}.u-row:last-child{border-bottom:none;}
+.u-ava{width:29px;height:29px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;}
+.role-sel{background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:4px 7px;color:var(--tx);font-size:11px;outline:none;cursor:pointer;width:100%;}
+.pc{background:var(--bg2);border:1px solid rgba(239,83,80,.2);border-radius:var(--r2);padding:14px;margin-bottom:8px;}
+.an-g{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;}
+@media(max-width:1100px){.g4{grid-template-columns:repeat(2,1fr);}.tc-g{grid-template-columns:1fr;}.sup-g{grid-template-columns:repeat(2,1fr);}.calc-l{grid-template-columns:1fr;}}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+<!-- AUTH -->
+<div id="AUTH">
+<div class="aw">
+  <div class="al"><div class="al-logo" style="font-size:28px;font-weight:900;letter-spacing:-1px;">КальКа</div><div class="al-sub">Платформа управления закупками</div></div>
+  <div class="acard">
+    <label class="fL">Email</label>
+    <input class="fI" type="email" id="liE" placeholder="your@email.ru" onkeydown="if(event.key==='Enter')doLogin()">
+    <label class="fL">Пароль</label>
+    <div class="pw">
+      <input class="fI" type="password" id="liP" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()">
+      <button class="eyeB" onclick="eyeT('liP',this)">👁</button>
+    </div>
+    <div class="aErr" id="liErr"></div>
+    <button class="btnA" id="loginBtn" onclick="doLogin()">Войти в систему →</button>
+    <div style="text-align:center;margin:14px 0 6px;font-size:11px;color:var(--t3);line-height:1.6;">
+      Нет аккаунта? Обратитесь к администратору.<br>
+      Аккаунты создаёт владелец или администратор.
+    </div>
+    <div style="text-align:center;margin-bottom:4px;">
+      <button onclick="clearCacheAndReload()" style="background:none;border:none;color:var(--t4);font-size:10px;cursor:pointer;text-decoration:underline;">Проблемы со входом? Очистить кэш</button>
+    </div>
+    <div class="dg hidden" id="demoG"></div>
+  </div>
+</div>
+</div>
+
+
+<!-- APP -->
+<div id="APP">
+<aside class="sb" id="SB">
+  <div class="sb-logo"><div><div class="sb-lt">КальКа</div><div class="sb-ls">HoReCa</div></div><button class="sb-tog" onclick="toggleSB()" id="sbTog">‹</button></div>
+  <nav class="sb-nav" id="sbNav"></nav>
+  <div class="sb-user"><div class="sb-ava" id="sbAva" onclick="openModal('myProfile')" style="cursor:pointer;" title="Мой профиль"></div><div class="sb-ui" onclick="openModal('myProfile')" style="cursor:pointer;"><div class="sb-un" id="sbName"></div><div class="sb-ur" id="sbRole"></div></div><button class="sb-out" onclick="openModal('orgInvites')" title="Приглашения в организации" style="font-size:13px;position:relative;">✉<span id="orgInvBadge" class="cdot y" style="position:absolute;top:-5px;right:-5px;display:none;">0</span></button><button class="sb-out" onclick="openModal('myProfile')" title="Мой профиль" style="font-size:13px;">⚙</button><button class="sb-out" onclick="doLogout()" title="Выйти">⏏</button></div>
+</aside>
+<div class="main">
+<header class="topbar">
+  <div class="tb-title" id="topTitle">Дашборд</div>
+  <div class="tb-search" id="tbSearch"><span style="color:var(--t3);font-size:13px;">🔍</span><input type="text" placeholder="Поиск товаров..." oninput="doSearch(this.value)"></div>
+  <div class="rbtn" id="restBtn" onclick="openModal('restPick')" style="display:none;"><span id="rsIco">🍽️</span> <span id="rsName">Все рестораны</span> <span style="color:var(--t3);font-size:11px;">▼</span></div>
+  <button class="tbBtn" id="cartBtn" onclick="goPage('cart')" style="display:none;">🛒 Корзина <span class="cdot" id="cartDot">0</span></button>
+  <button class="tbBtn" id="favBtn" onclick="goPage('favorites')" style="display:none;">⭐ <span class="cdot y" id="favDot">0</span></button>
+  <button class="tbBtn acc" id="topAct">✚ Действие</button>
+</header>
+<div class="content">
+
+<!-- DASHBOARD -->
+<div class="page" id="pg-dashboard">
+<div class="pg-hd">
+  <div><div class="pg-title">Дашборд 👋</div><div class="pg-sub" id="dashSub"></div></div>
+  <div class="pg-acts">
+    <div class="rbtn" onclick="openModal('restPick')"><span id="drIco">🍽️</span> <span id="drName">Все рестораны</span> <span style="color:var(--t3);font-size:11px;">▼</span></div>
+    <select class="chipSel" id="dashPeriod" onchange="renderDash()"><option value="6">6 мес.</option><option value="12">12 мес.</option></select>
+  </div>
+</div>
+<div class="g5 mb20" id="dashStats"></div>
+<div class="g2 mb20">
+  <div class="panel"><div class="ph"><div class="pt">Закупки по месяцам</div></div><div class="pb"><div class="bc" id="dashChart"></div></div></div>
+  <div class="panel"><div class="ph"><div class="pt">Операционный пульс</div></div><div class="pb" id="dashPulse"></div></div>
+</div>
+<div class="g2 mb20">
+  <div class="panel"><div class="ph"><div class="pt">Структура закупок</div></div><div class="pb" id="dashStructure"></div></div>
+  <div class="panel"><div class="ph"><div class="pt">Экономия и риски</div></div><div class="pb" id="dashSavings"></div></div>
+</div>
+<div class="g2 mb20">
+  <div class="panel"><div class="ph"><div class="pt">Топ поставщики</div></div><div class="pb" id="dashTopSup"></div></div>
+  <div class="panel"><div class="ph"><div class="pt">Умные подсказки</div></div><div class="pb" id="dashInsights"></div></div>
+</div>
+<div class="flex mb12" style="justify-content:space-between;"><div class="pt">Последние заказы</div><div class="plink" onclick="goPage('orders')">Все →</div></div>
+<div class="panel"><div class="tw"><table><thead><tr><th>#</th><th>Заведение</th><th>Поставщик</th><th>Состав</th><th>Сумма</th><th>Дата</th><th>Статус</th></tr></thead><tbody id="dashOrders"></tbody></table></div></div>
+</div>
+
+<!-- CATALOG -->
+<div class="page" id="pg-catalog">
+<div class="pg-hd">
+  <div><div class="pg-title">Каталог поставщиков</div>
+  <div class="pg-sub" id="catalogSub">Открытый справочник поставщиков и их ассортимента без цен. Ассортимент обновляется автоматически после загрузки прайса в системе.</div></div>
+</div>
+<div class="panel mb14">
+  <div class="ph">
+    <div class="pt">Поставщики в каталоге</div>
+    <div style="font-size:12px;color:var(--t3);">В карточке поставщика отображается только открытая информация и ассортимент без цен</div>
+  </div>
+  <div class="pb">
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:10px;align-items:center;">
+      <input class="fI" id="catalogSearchInput" placeholder="Поиск по названию, юр. лицу, городу или ассортименту..." oninput="doSearch(this.value)" style="margin:0;">
+      <select class="chipSel" id="catalogSortSelect" onchange="sortCat(this.value)" style="margin:0;">
+        <option value="name">По названию</option>
+        <option value="city">По городу</option>
+        <option value="assortment">По ассортименту</option>
+      </select>
+    </div>
+  </div>
+</div>
+<div id="catGrid"></div>
+</div>
+
+<!-- COMPARE -->
+<div class="page" id="pg-order">
+<div class="pg-hd">
+  <div>
+    <div class="pg-title">Заказ и Корзина</div>
+    <div class="pg-sub">Поиск товаров · Добавление в корзину · Оформление заказа</div>
+  </div>
+  <div class="pg-acts">
+    <button class="tbBtn acc" onclick="openCreateOrder()">+ Создать заказ</button>
+    <button class="tbBtn" onclick="exportFullCart()" id="orderExportBtn" style="display:none;">Excel — корзина</button>
+    <button class="tbBtn" onclick="doCheckoutAll()" id="orderCheckoutBtn" disabled>Оформить все заказы</button>
+  </div>
+</div>
+
+<!-- ПОИСК ТОВАРОВ -->
+<div class="panel mb16">
+  <div class="ph">
+    <div class="pt">Поиск и добавление товаров</div>
+    <span style="font-size:11px;color:var(--t3);">Введите товары — каждый с новой строки. Вставьте список. Система найдёт во всех прайсах.</span>
+  </div>
+  <div class="pb">
+    <!-- Многострочный поиск -->
+    <div style="position:relative;margin-bottom:10px;">
+      <textarea id="orderSearchInput"
+        rows="5"
+        placeholder="Молоко&#10;Сыр&#10;Томаты&#10;&#10;Каждый товар с новой строки — вставьте список или введите вручную."
+        oninput="autoResizeTA(this);orderSearchMulti(this.value);"
+        style="width:100%;background:var(--bg3);border:1px solid var(--br2);border-radius:var(--r);
+               padding:12px 40px 12px 14px;color:var(--tx);font-size:14px;outline:none;
+               box-sizing:border-box;resize:none;line-height:1.6;min-height:120px;
+               transition:border-color .15s;"
+        onfocus="this.style.borderColor='var(--ac)'"
+        onblur="this.style.borderColor='var(--br2)'"></textarea>
+      <button onclick="orderSearchClear()" id="orderSearchClear"
+        title="Очистить поле"
+        style="display:none;position:absolute;right:10px;top:10px;
+               background:none;border:none;cursor:pointer;color:var(--t3);font-size:20px;line-height:1;">×</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <button onclick="orderSearchRunAll()"
+        style="background:var(--ac);color:#fff;border:none;border-radius:var(--r);
+               padding:8px 20px;font-weight:700;font-size:13px;cursor:pointer;">
+        Найти товары</button>
+      <div id="smartResult" style="font-size:12px;color:var(--t3);"></div>
+    </div>
+    <!-- smartInput скрытый (smartAddToCart) -->
+    <div style="display:none;"><textarea id="smartInput"></textarea></div>
+  </div>
+</div>
+
+<!-- РЕЗУЛЬТАТЫ ПОИСКА -->
+<div id="orderSearchResults" style="margin-bottom:20px;display:none;">
+  <div style="font-size:12px;color:var(--t3);margin-bottom:8px;" id="orderSearchCount"></div>
+  <div id="orderSearchList"></div>
+</div>
+
+<!-- ТАБЛИЦА ЗАКАЗА (по поставщикам) -->
+<div id="orderTableSection" style="display:none;margin-bottom:20px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+    <div>
+      <div style="font-size:14px;font-weight:800;" id="orderTableTitle">Заказ</div>
+      <div style="font-size:12px;color:var(--t3);" id="orderTableSub"></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button onclick="exportTenderTable()" style="background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:var(--r);padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">Excel</button>
+      <button onclick="closeOrderTable()" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:6px 10px;font-size:12px;cursor:pointer;color:var(--t2);">Закрыть</button>
+    </div>
+  </div>
+  <!-- Фильтр -->
+  <div style="margin-bottom:10px;">
+    <input id="orderTableSearch" type="text" placeholder="Фильтр по товару..."
+      oninput="filterOrderTable(this.value)"
+      style="width:100%;max-width:320px;background:var(--bg3);border:1px solid var(--br);
+             border-radius:var(--r);padding:7px 12px;color:var(--tx);font-size:13px;outline:none;box-sizing:border-box;">
+  </div>
+  <div style="overflow-x:auto;border-radius:var(--r2);border:1px solid var(--br);">
+    <table id="orderTableEl" style="width:100%;border-collapse:collapse;">
+      <thead id="orderTableHead"></thead>
+      <tbody id="orderTableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Скрытые legacy элементы -->
+<div style="display:none;">
+  <input id="quickName"><input id="quickQty" value="1">
+  <select id="quickUnit"><option>кг</option></select>
+  <select id="quickSup"></select>
+  <div id="quickSuggest"></div><div id="quickInfo"></div>
+  <span id="cartSummaryText"></span>
+  <button id="coAllBtn"></button><button id="coAllBtn2"></button><button id="undoBtn"></button>
+  <div id="cartSub"></div><div id="cartTotalBar"></div><div id="cartTotalAll"></div><div id="cartSupCount"></div>
+  <div id="smartPreview"></div><div id="smartPreviewList"></div>
+  <div id="analyticsBody"></div><div id="supAnalyticsBody"></div>
+  <div id="mcm-preview"></div>
+  <select id="mcm-name-col"></select><select id="mcm-unit-col"></select><select id="mcm-price-col"></select>
+  <div id="mcm-err"></div>
+  <div id="cartSearchSupName"></div><div id="cartSearchInput"></div><div id="cartSearchResults"></div>
+</div>
+
+<!-- КОРЗИНА -->
+<div id="orderCartSection" style="display:none;margin-top:24px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+    <div style="font-size:15px;font-weight:800;">Корзина</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button onclick="clearCart();renderCart();"
+        style="background:var(--rdD);color:var(--rd);border:1px solid var(--rd);
+               border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer;">
+        Очистить</button>
+      <button onclick="undoLastDelete()" id="undoBtnOrder"
+        style="display:none;background:var(--blD);color:var(--bl);border:1px solid var(--bl);
+               border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer;">
+        ↩ Вернуть</button>
+    </div>
+  </div>
+  <div id="cartBySup"></div>
+</div>
+
+</div>
+
+<!-- pg-cart legacy (пустая заглушка) -->
+<div class="page" id="pg-cart" style="display:none;"><div></div></div>
+
+<div class="page" id="pg-favorites">
+<div class="pg-hd">
+  <div>
+    <div class="pg-title">Избранное</div>
+    <div class="pg-sub">Личный быстрый доступ пользователя к вкладкам, поставщикам и рабочим заметкам</div>
+  </div>
+</div>
+<div class="g2 mb20">
+  <div class="panel">
+    <div class="ph"><div class="pt">Быстрый доступ к вкладкам</div></div>
+    <div class="pb">
+      <div id="favPages" style="display:grid;gap:10px;"></div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="ph"><div class="pt">Избранные поставщики</div></div>
+    <div class="pb">
+      <div id="favSuppliers" style="display:grid;gap:10px;"></div>
+    </div>
+  </div>
+</div>
+<div class="panel mb20">
+  <div class="ph"><div class="pt">Настроить избранное</div></div>
+  <div class="pb">
+    <div style="font-size:12px;color:var(--t3);margin-bottom:10px;">Добавляй сюда только то, что нужно именно тебе. Эти данные видны только в твоём личном кабинете.</div>
+    <div class="g2">
+      <div>
+        <div style="font-size:12px;font-weight:700;margin-bottom:8px;">Вкладки</div>
+        <div id="favPagePicker" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:700;margin-bottom:8px;">Поставщики</div>
+        <div id="favSupplierPicker" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="panel">
+  <div class="ph"><div class="pt">Личная заметка</div></div>
+  <div class="pb">
+    <textarea class="fI" id="favNote" rows="4" placeholder="Например: кому позвонить, какой прайс обновить, на что обратить внимание..." style="resize:vertical;"></textarea>
+    <div class="m-acts" style="margin-top:10px;">
+      <button class="m-ok" onclick="saveFavoritesNote()">Сохранить заметку</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="page" id="pg-orders">
+<div class="pg-hd"><div><div class="pg-title">История заказов</div><div class="pg-sub">История заказов только по доступным вам организациям</div></div><div class="pg-acts"><select class="fS" id="ordersRestFilter" onchange="setOrdersRestaurantFilter(this.value)" style="margin:0;min-width:220px;"></select><button class="tbBtn" onclick="exportOrders()">📥 Экспорт</button></div></div>
+<div class="g4 mb20" id="ordersSummary"></div>
+<div class="chips" id="ordChips"><div class="chip on" onclick="filtOrds('all',this)">Все</div><div class="chip" onclick="filtOrds('delivered',this)">✅ Доставлен</div><div class="chip" onclick="filtOrds('transit',this)">🚚 В пути</div><div class="chip" onclick="filtOrds('processing',this)">⏳ Обрабатывается</div><div class="chip" onclick="filtOrds('cancelled',this)">❌ Отменён</div></div>
+<div id="ordersList"></div>
+</div>
+
+<!-- SUPPLIERS -->
+<div class="page" id="pg-suppliers">
+<div class="pg-hd"><div><div class="pg-title">Поставщики</div><div class="pg-sub" id="supSub"></div></div><div class="pg-acts"><button class="tbBtn acc" onclick="openSupplierModal()">+ Добавить</button></div></div>
+<div class="sup-g" id="supGrid"></div>
+</div>
+
+<!-- ANALYTICS -->
+<div class="page" id="pg-analytics">
+<div class="pg-hd">
+  <div><div class="pg-title">Аналитика закупок</div><div class="pg-sub">Данные в реальном времени</div></div>
+  <div class="pg-acts"><div class="rbtn" onclick="openModal('restPick')" style="font-size:12px;"><span id="anRI">🍽️</span> <span id="anRN">Все рестораны</span></div><select class="chipSel" id="analyticsPeriod" onchange="renderAnalytics()"><option value="30">30 дней</option><option value="90" selected>90 дней</option><option value="365">12 мес.</option><option value="all">Всё время</option></select><button class="tbBtn" onclick="exportAnalytics()">📥 Excel</button></div>
+</div>
+<div class="g5 mb20" id="analyticsSummary"></div>
+<div class="an-g"><div class="panel"><div class="ph"><div class="pt">Топ товары по объёму</div></div><div class="pb" id="aTopP"></div></div><div class="panel"><div class="ph"><div class="pt">Надёжность поставщиков</div></div><div class="pb" id="aSupR"></div></div><div class="panel"><div class="ph"><div class="pt">Оборот по организациям</div></div><div class="pb" id="aOrgTurnover"></div></div><div class="panel"><div class="ph"><div class="pt">Динамика расходов</div></div><div class="pb"><div class="bc" id="aChart"></div></div></div></div>
+</div>
+
+<!-- TENDER -->
+<div class="page" id="pg-tender">
+<div class="pg-hd">
+  <div>
+    <div class="pg-title">Тендер</div>
+    <div class="pg-sub" id="tenderSubTitle">Сравнение цен поставщиков · Анализ предложений</div>
+  </div>
+  <div class="pg-acts">
+    <button class="tbBtn acc" onclick="openCreateTender()">+ Создать тендер</button>
+    <button class="tbBtn" onclick="exportTenderTable()" id="btnExportTender" style="display:none;">Excel — тендер</button>
+    <button class="tbBtn danger" onclick="clearTender()" id="btnClearTender" style="display:none;">Сбросить</button>
+  </div>
+</div>
+
+<!-- Скрытые legacy-элементы -->
+<div style="display:none;">
+  <div id="tStats"></div><span id="tsUp"></span><span id="tsDn"></span>
+  <div id="tAlert"></div><div id="tAlertTxt"></div>
+  <div id="tDateLbl"></div><div id="tBody"></div>
+  <div id="tenderChangesSection"></div>
+  <div id="pushPanel"></div><div id="navTB"></div>
+</div>
+
+<!-- Пустое состояние -->
+<div id="tenderEmpty" style="text-align:center;padding:60px 20px;color:var(--t3);">
+  <div style="font-size:48px;margin-bottom:16px;">📋</div>
+  <div style="font-size:17px;font-weight:700;color:var(--t2);margin-bottom:8px;">Тендер не создан</div>
+  <div style="font-size:13px;margin-bottom:24px;line-height:1.6;">
+    Выберите заведение и поставщиков — система сформирует таблицу для сравнения цен.<br>
+    <b>Тендер изолирован от корзины.</b> Для оформления заказа используйте вкладку «Заказ и Корзина».
+  </div>
+  <button class="tbBtn acc" onclick="openCreateTender()" style="font-size:14px;padding:10px 28px;">+ Создать тендер</button>
+</div>
+
+<!-- Тендерная таблица -->
+<div id="tenderTableSection" style="display:none;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+    <div>
+      <div style="font-size:16px;font-weight:800;" id="tenderRestName"></div>
+      <div style="font-size:12px;color:var(--t3);margin-top:3px;" id="tenderSupsList"></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <div style="font-size:12px;color:var(--t3);background:var(--aD);border:1px solid var(--ac);
+                  border-radius:var(--r);padding:4px 12px;" id="tenderInfoBadge" style="display:none;">
+        Тендер изолирован — для заказа используйте «Заказ и Корзина»
+      </div>
+    </div>
+  </div>
+  <div class="panel mb16" style="margin-bottom:16px;">
+    <div class="ph">
+      <div class="pt">Поиск ассортимента для тендера</div>
+      <span style="font-size:11px;color:var(--t3);">Введите товары списком. Система найдёт предложения по выбранным поставщикам и сразу учтёт количество.</span>
+    </div>
+    <div class="pb">
+      <div style="position:relative;margin-bottom:10px;">
+        <textarea id="tenderSearchInput"
+          rows="5"
+          placeholder="Картофель чищенный 3 кг&#10;Лук репчатый чищенный 2 кг&#10;Батон 2 шт&#10;&#10;Каждый товар с новой строки — как в заказе."
+          oninput="autoResizeTA(this);tenderSearchMulti(this.value);"
+          style="width:100%;background:var(--bg3);border:1px solid var(--br2);border-radius:var(--r);
+                 padding:12px 40px 12px 14px;color:var(--tx);font-size:14px;outline:none;
+                 box-sizing:border-box;resize:none;line-height:1.6;min-height:120px;
+                 transition:border-color .15s;"
+          onfocus="this.style.borderColor='var(--ac)'"
+          onblur="this.style.borderColor='var(--br2)'"></textarea>
+        <button onclick="tenderSearchClear()" id="tenderSearchClear"
+          title="Очистить поле"
+          style="display:none;position:absolute;right:10px;top:10px;
+                 background:none;border:none;cursor:pointer;color:var(--t3);font-size:20px;line-height:1;">×</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button onclick="tenderSearchRunAll()"
+          style="background:var(--ac);color:#fff;border:none;border-radius:var(--r);
+                 padding:8px 20px;font-weight:700;font-size:13px;cursor:pointer;">
+          Найти товары</button>
+        <div id="tenderSmartResult" style="font-size:12px;color:var(--t3);"></div>
+      </div>
+    </div>
+  </div>
+  <!-- Поиск -->
+  <div style="margin-bottom:12px;">
+    <input id="tenderSearch" type="text" placeholder="Фильтр по названию товара..."
+      oninput="filterTenderTable(this.value)"
+      style="width:100%;max-width:380px;background:var(--bg3);border:1px solid var(--br);
+             border-radius:var(--r);padding:8px 12px;color:var(--tx);font-size:13px;
+             outline:none;box-sizing:border-box;">
+  </div>
+  <!-- Таблица -->
+  <div style="overflow-x:auto;border-radius:var(--r2);border:1px solid var(--br);">
+    <table id="tenderTableEl" style="width:100%;border-collapse:collapse;">
+      <thead id="tenderTableHead"></thead>
+      <tbody id="tenderTableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Поиск в прайсе (панель) -->
+<div id="tenderSearchPanel" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;
+  background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--bg2);border-radius:var(--r2);width:90%;max-width:520px;
+    max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4);">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--br);">
+      <div>
+        <div style="font-size:14px;font-weight:700;">Поиск в прайсе поставщика</div>
+        <div style="font-size:11px;color:var(--t3);" id="tsp-sup-label"></div>
+      </div>
+      <button onclick="closeTenderSearch()" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:5px 10px;cursor:pointer;font-size:13px;color:var(--t2);">✕</button>
+    </div>
+    <div style="padding:12px 18px;border-bottom:1px solid var(--br);">
+      <input id="tsp-input" type="text" placeholder="Введите название товара..."
+        oninput="tspFilter(this.value)"
+        style="width:100%;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);
+               padding:9px 12px;color:var(--tx);font-size:13px;outline:none;box-sizing:border-box;">
+    </div>
+    <div id="tsp-results" style="overflow-y:auto;flex:1;"></div>
+  </div>
+</div>
+</div>
+
+<div class="page" id="pg-techcards">
+<div class="pg-hd">
+  <div><div class="pg-title">Технологические карты</div><div class="pg-sub">Себестоимость обновляется автоматически при загрузке тендера</div></div>
+  <div class="pg-acts"><button class="tbBtn" onclick="uploadTCFile()">📁 Загрузить</button><button class="tbBtn" onclick="downloadAllTC()">📥 Скачать все</button><button class="tbBtn acc" onclick="openModal('newTC')">+ Новая карта</button></div>
+</div>
+<div class="chips" id="tcChips"><div class="chip on" onclick="filtTC('all',this)">Все</div><div class="chip" onclick="filtTC('hot',this)">🍲 Горячее</div><div class="chip" onclick="filtTC('cold',this)">🥗 Холодное</div><div class="chip" onclick="filtTC('dessert',this)">🍮 Десерты</div><div class="chip" onclick="filtTC('drinks',this)">🍸 Напитки</div><div class="chip" onclick="filtTC('alcohol',this)">🍷 Алкоголь</div><div class="chip" onclick="filtTC('coffee',this)">☕ Кофе/чай</div></div>
+<div class="tc-g" id="tcGrid"></div>
+</div>
+
+<!-- CHEF CALC -->
+<div class="page" id="pg-chef-calc">
+<div class="pg-hd">
+  <div><div class="pg-title">🧑‍🍳 Калькулятор себестоимости</div><div class="pg-sub">Точный расчёт с учётом потерь и выхода блюда</div></div>
+  <div class="pg-acts"><button class="tbBtn" onclick="uploadCalcFile()">📁 Загрузить</button><button class="tbBtn" onclick="downloadCalc()">📥 Скачать</button></div>
+</div>
+<div class="calc-l">
+  <div>
+    <div class="panel mb14"><div class="ph"><div class="pt">Название блюда</div></div><div class="pb"><input class="fI" id="calcName" placeholder="Карпаччо из говядины" style="margin:0;font-size:15px;font-weight:600;"></div></div>
+    <div class="panel mb14"><div class="ph"><div class="pt">Ингредиенты</div><div style="display:flex;gap:7px;"><button class="tbBtn" onclick="addCalcRow()">+ Добавить</button><button class="tbBtn" onclick="clearCalcRows()">🗑</button></div></div>
+      <div class="pb"><div class="ir-calc" style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);"><span>Продукт</span><span>Кол-во</span><span>Ед.</span><span style="text-align:right;">Стоим.</span><span></span></div><div id="calcRows"></div></div>
+    </div>
+    <div class="panel"><div class="ph"><div class="pt">Параметры выхода блюда</div></div>
+      <div class="pb"><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;">
+        <div><label class="fL">Вход сырья (г)</label><input class="fI" type="number" id="calcIn" value="300" oninput="recalc()" style="margin:0;"></div>
+        <div><label class="fL">Потери при готовке (%)</label><input class="fI" type="number" id="calcLoss" value="0" min="0" max="100" oninput="recalc()" style="margin:0;"></div>
+        <div><label class="fL">Выход (г)</label><input class="fI" type="number" id="calcYield" value="250" oninput="recalc()" style="margin:0;"></div>
+        <div><label class="fL">Наценка (%)</label><input class="fI" type="number" id="calcMarkup" value="300" oninput="recalc()" style="margin:0;"></div>
+      </div></div>
+    </div>
+  </div>
+  <div>
+    <div class="os" style="top:73px;">
+      <div class="os-title">💰 Результат расчёта</div>
+      <div style="text-align:center;margin-bottom:16px;"><div class="sc-lbl mb8">Себестоимость 1 порции</div><div style="font-family:var(--fH);font-size:34px;font-weight:900;color:var(--ac);" id="rCost">₽0</div><div style="font-size:11px;color:var(--t3);margin-top:3px;" id="rSub">выход 250г</div></div>
+      <div style="background:var(--bg3);border-radius:var(--r);padding:11px;margin-bottom:12px;" id="rBD"></div>
+      <div class="os-div"></div>
+      <div class="os-row"><span>Вход сырья</span><span id="rIn">300г</span></div>
+      <div class="os-row"><span>Потери</span><span id="rLoss" style="color:var(--or);">0г (0%)</span></div>
+      <div class="os-row"><span>Выход</span><span id="rOut">250г</span></div>
+      <div class="os-div"></div>
+      <div class="os-row"><span>Цена продажи</span><span id="rSell" style="color:var(--gr);font-weight:700;">₽0</span></div>
+      <div class="os-row"><span>Маржа</span><span id="rMargin" style="color:var(--ac);font-weight:700;">0%</span></div>
+      <div class="os-row"><span>Прибыль с порции</span><span id="rProfit" style="font-weight:700;">₽0</span></div>
+      <button class="co-btn" onclick="saveCalcAsTC()">💾 Сохранить как тех. карту</button>
+      <button class="btnG" style="margin-top:7px;" onclick="clearCalc()">🗑 Новый расчёт</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- SUPPLIER DASHBOARD -->
+<div class="page" id="pg-sup-dashboard">
+<div class="pg-hd"><div><div class="pg-title">Панель поставщика 🏭</div><div class="pg-sub" id="supDashSub"></div></div></div>
+<div class="g4 mb20"><div class="sc cg"><div class="sc-ico">💰</div><div class="sc-lbl">Выручка за месяц</div><div class="sc-val">₽312К</div><div class="sc-chg up">↑ 18%</div></div><div class="sc cb"><div class="sc-ico">📥</div><div class="sc-lbl">Новых заказов</div><div class="sc-val">14</div><div class="sc-chg" style="color:var(--or);">2 ждут ответа</div></div><div class="sc co"><div class="sc-ico">🍽️</div><div class="sc-lbl">Клиентов</div><div class="sc-val">23</div><div class="sc-chg up">↑ 3 новых</div></div><div class="sc"><div class="sc-ico">⭐</div><div class="sc-lbl">Рейтинг</div><div class="sc-val">4.8</div><div class="sc-chg neu">47 заказов</div></div></div>
+<div class="flex mb12" style="justify-content:space-between;"><div class="pt" style="color:var(--rd);">🔴 Требуют подтверждения</div></div>
+<div id="supNewOrd"></div>
+<div class="panel"><div class="ph"><div class="pt">Топ клиенты</div></div><div class="tw"><table><thead><tr><th>Клиент</th><th>Заказов</th><th>Сумма</th><th>Последний</th><th>Статус</th></tr></thead><tbody><tr><td>🍽️ Кафе «Арома»</td><td>12</td><td><b>₽124К</b></td><td>28.03.26</td><td><span class="badge bg">Активен</span></td></tr><tr><td>🍸 Бар «Паровоз»</td><td>8</td><td><b>₽86К</b></td><td>26.03.26</td><td><span class="badge bg">Активен</span></td></tr><tr><td>🍣 Суши Хауз</td><td>6</td><td><b>₽58К</b></td><td>24.03.26</td><td><span class="badge bb">Новый</span></td></tr></tbody></table></div></div>
+</div>
+
+<!-- SUPPLIER PRODUCTS -->
+<div class="page" id="pg-sup-products">
+<div class="pg-hd">
+  <div><div class="pg-title">📦 Прайс поставщика</div>
+  <div class="pg-sub">Цены видны только вашей компании · Ассортимент виден всем</div></div>
+  <div class="pg-acts">
+    <input type="text" class="fI" id="supProdSearch" placeholder="🔍 Поиск по прайсу..." oninput="filterSupProds(this.value)" style="width:200px;margin:0;">
+    <button class="tbBtn" onclick="openUploadPrice()">📊 Загрузить прайс</button>
+    <button class="tbBtn" onclick="openUploadPrice()">📁 CSV / Excel</button>
+    <button class="tbBtn" onclick="downloadSupTemplate()">📥 Шаблон</button>
+    <button class="tbBtn acc" onclick="openModal('addProduct')">+ Добавить</button>
+  </div>
+</div>
+<div class="panel">
+  <div class="tw">
+    <table>
+      <thead><tr>
+        <th>Товар</th><th>Категория</th>
+        <th>₽/кг</th><th>₽/шт</th><th>₽/л</th><th>₽/мл</th>
+        <th>Остаток</th><th>Статус</th><th style="text-align:right">Действия</th>
+      </tr></thead>
+      <tbody id="supProdBody"></tbody>
+    </table>
+  </div>
+</div>
+</div>
+
+<div class="page" id="pg-sup-orders">
+<div class="pg-hd"><div><div class="pg-title">Входящие заказы</div><div class="pg-sub">Заказы от покупателей с комментариями</div></div></div>
+<div class="panel"><div class="tw"><table><thead><tr><th>#</th><th>Клиент</th><th>Состав</th><th>Комментарий</th><th>Сумма</th><th>Дата</th><th>Статус</th><th>Действие</th></tr></thead><tbody id="supOrdBody"></tbody></table></div></div>
+</div>
+
+<!-- SUPPLIER ANALYTICS -->
+<div class="page" id="pg-sup-analytics">
+<div class="pg-hd"><div><div class="pg-title">Аналитика продаж</div><div class="pg-sub">Март 2026</div></div></div>
+<div class="g4 mb20"><div class="sc cg"><div class="sc-ico">📈</div><div class="sc-lbl">Конверсия</div><div class="sc-val">94%</div><div class="sc-chg up">↑ 2%</div></div><div class="sc cb"><div class="sc-ico">📦</div><div class="sc-lbl">Ср. заказ</div><div class="sc-val">₽22К</div><div class="sc-chg up">↑ 11%</div></div><div class="sc"><div class="sc-ico">🔄</div><div class="sc-lbl">Повторных</div><div class="sc-val">78%</div></div><div class="sc co"><div class="sc-ico">⏱</div><div class="sc-lbl">Обработка</div><div class="sc-val" style="font-size:17px;">2.4ч</div><div class="sc-chg up">Быстрее ↓</div></div></div>
+<div class="g2"><div class="panel"><div class="ph"><div class="pt">Топ позиции</div></div><div class="pb" id="saP"></div></div><div class="panel"><div class="ph"><div class="pt">Клиенты по выручке</div></div><div class="pb" id="saC"></div></div></div>
+</div>
+
+<!-- ADMIN -->
+
+<div class="page" id="pg-restaurants">
+<div class="pg-hd">
+  <div>
+    <div class="pg-title">🍽️ Ресторан/Бар</div>
+    <div class="pg-sub" id="restPageSub">Управление заведениями и составом команд</div>
+  </div>
+  <div class="pg-acts">
+    <button class="tbBtn acc" onclick="openModal('addRest')">+ Добавить заведение</button>
+  </div>
+</div>
+<div style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);padding:14px 16px;margin-bottom:16px;">
+  <div style="font-size:14px;font-weight:800;margin-bottom:6px;">Шаблоны заказов по точке</div>
+  <div style="font-size:12px;color:var(--t3);line-height:1.5;">Используйте шаблоны для типовых закупок: ежедневная молочка, барная заявка, овощи, мясо, хозтовары. Шаблон может хранить список товаров и рекомендованных поставщиков для конкретного ресторана или бара.</div>
+</div>
+<div id="restGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px;"></div>
+</div>
+
+<div class="page" id="pg-admin">
+<div class="pg-hd">
+  <div><div class="pg-title">Управление пользователями</div><div class="pg-sub" id="adminSub"></div></div>
+  <div class="pg-acts"><button class="tbBtn" onclick="adSw('pending')" id="tabPend">⏳ Заявки <span class="badge br" id="pendCnt" style="margin-left:4px;">0</span></button><button class="tbBtn" onclick="adSw('all')" id="tabAll">👥 Все пользователи</button><button class="tbBtn" onclick="adSw('matrix')" id="tabMatrix">⚙️ Права</button><button class="tbBtn acc" onclick="openModal('createUser')">➕ Создать аккаунт</button></div>
+</div>
+<div id="adPending"></div>
+<div id="adAll" class="hidden"></div>
+<div id="adMatrix" class="hidden"><div class="panel"><div class="tw" style="overflow-x:auto;"><table><thead><tr id="pmH"></tr></thead><tbody id="pmB"></tbody></table></div></div></div>
+</div>
+
+<!-- OWNER -->
+<div class="page" id="pg-owner">
+<div class="pg-hd"><div><div class="pg-title">👑 Панель владельца</div><div class="pg-sub">Управление бизнесом, данными, пользователями и здоровьем платформы</div></div></div>
+<div class="g4 mb20" id="ownerSummaryGrid"></div>
+<div class="g2 mb20">
+  <div class="panel">
+    <div class="ph"><div class="pt">📈 Бизнес и доступ</div></div>
+    <div class="pb" id="ownerBusinessCards"></div>
+  </div>
+  <div class="panel">
+    <div class="ph"><div class="pt">🩺 Здоровье платформы</div></div>
+    <div class="pb" id="ownerHealthList"></div>
+  </div>
+</div>
+<div class="g2 mb20">
+  <div class="panel">
+    <div class="ph"><div class="pt">🧹 Контроль данных</div></div>
+    <div class="pb" id="ownerDataControlList"></div>
+  </div>
+  <div class="panel">
+    <div class="ph"><div class="pt">📝 Последние действия</div></div>
+    <div class="pb" id="ownerRecentAudit"></div>
+  </div>
+</div>
+<div class="owner-grid">
+  <div class="owner-tool" onclick="goPage('admin')"><div class="owner-tool-ico">👥</div><div class="owner-tool-name">Пользователи</div><div class="owner-tool-desc">Роли, заявки, блокировки</div></div>
+  <div class="owner-tool" onclick="openModal('createUser')"><div class="owner-tool-ico">➕</div><div class="owner-tool-name">Создать аккаунт</div><div class="owner-tool-desc">Новый пользователь сразу активен</div></div>
+  <div class="owner-tool" onclick="goPage('restaurants')"><div class="owner-tool-ico">🍽️</div><div class="owner-tool-name">Рестораны</div><div class="owner-tool-desc">Заведения, команды, роли</div></div>
+  <div class="owner-tool" onclick="openModal('platSettings')"><div class="owner-tool-ico">⚙️</div><div class="owner-tool-name">Настройки платформы</div><div class="owner-tool-desc">Название, поддержка, валюта, таймзона</div></div>
+  <div class="owner-tool" onclick="openModal('manageRoles')"><div class="owner-tool-ico">🔐</div><div class="owner-tool-name">Роли и доступы</div><div class="owner-tool-desc">Матрица прав по разделам</div></div>
+  <div class="owner-tool" onclick="openModal('blockUser')"><div class="owner-tool-ico">🚫</div><div class="owner-tool-name">Ограничить доступ</div><div class="owner-tool-desc">Блокировка, разблокировка, смена роли</div></div>
+  <div class="owner-tool" onclick="openModal('auditLog')"><div class="owner-tool-ico">📋</div><div class="owner-tool-name">Журнал действий</div><div class="owner-tool-desc">Контроль изменений и активности</div></div>
+  <div class="owner-tool" onclick="openModal('companyManager')"><div class="owner-tool-ico">🏢</div><div class="owner-tool-name">Компании и тарифы</div><div class="owner-tool-desc">Клиенты, статусы, лимиты, заметки</div></div>
+  <div class="owner-tool" onclick="openModal('billingManager')"><div class="owner-tool-ico">💳</div><div class="owner-tool-name">Подписки и биллинг</div><div class="owner-tool-desc">Оплаты, next billing, overdue</div></div>
+  <div class="owner-tool" onclick="openModal('priceImportMonitor')"><div class="owner-tool-ico">📊</div><div class="owner-tool-name">Проблемные прайсы</div><div class="owner-tool-desc">Ошибки импорта по поставщикам</div></div>
+  <div class="owner-tool" onclick="openModal('systemLog')"><div class="owner-tool-ico">🖥️</div><div class="owner-tool-name">Системный журнал</div><div class="owner-tool-desc">Импорт, восстановление, настройки, ошибки</div></div>
+  <div class="owner-tool" onclick="openModal('apiKeys')"><div class="owner-tool-ico">🔑</div><div class="owner-tool-name">API и интеграции</div><div class="owner-tool-desc">Ключи, webhook, статус интеграций</div></div>
+  <div class="owner-tool" onclick="openModal('notifSettings')"><div class="owner-tool-ico">🔔</div><div class="owner-tool-name">Уведомления</div><div class="owner-tool-desc">Email, заказы, алерты, загрузки</div></div>
+  <div class="owner-tool" onclick="openModal('backup')"><div class="owner-tool-ico">💾</div><div class="owner-tool-name">Резервная копия</div><div class="owner-tool-desc">Экспорт и восстановление базы</div></div>
+  <div class="owner-tool" onclick="exportAll()"><div class="owner-tool-ico">📥</div><div class="owner-tool-name">Экспорт платформы</div><div class="owner-tool-desc">JSON-снимок для аудита и миграции</div></div>
+  <div class="owner-tool" onclick="openModal('deployGuide')"><div class="owner-tool-ico">🚀</div><div class="owner-tool-name">Прод-размещение</div><div class="owner-tool-desc">Куда выкатывать и что проверить</div></div>
+</div>
+</div>
+
+</div><!-- /content -->
+</div><!-- /main -->
+</div><!-- /APP -->
+<!-- MODALS -->
+<div class="ov" id="ov-newOrder"><div class="modal"><div class="m-title">✚ Создать заказ</div><label class="fL">Поставщик</label><select class="fS" id="mo-sup"><option>🐟 АкваФуд</option><option>🥩 МясоПрайм</option><option>🌿 АгроСвежесть</option><option>🍷 ВинТрейд</option><option>🧀 МолоКо</option><option>🏪 ОптТорг</option></select><label class="fL">Товар</label><input class="fI" id="mo-item" placeholder="Название товара..."><div class="g2"><div><label class="fL">Количество</label><input class="fI" type="number" id="mo-qty" placeholder="10"></div><div><label class="fL">Единица</label><select class="fS" id="mo-unit" style="margin:0;"><option>кг</option><option>шт</option><option>л</option><option>бут.</option><option>мл</option></select></div></div><label class="fL">Дата доставки</label><input class="fI" type="date" id="mo-date"><label class="fL">Комментарий поставщику</label><textarea class="fI" id="mo-note" rows="2" placeholder="Доставить до 12:00..." style="resize:vertical;"></textarea><div class="m-acts"><button class="m-cancel" onclick="closeModal('newOrder')">Отмена</button><button class="m-ok" onclick="submitOrder()">Создать заказ</button></div></div></div>
+
+<div class="ov" id="ov-addSup"><div class="modal wide"><div class="m-title">Добавить поставщика</div><input type="hidden" id="as-edit-id"><div class="g2"><div><label class="fL">Название компании</label><input class="fI" id="as-n" placeholder="Фреш Милл"></div><div><label class="fL">Категория</label><select class="fS" id="as-c"><option>Мясо и рыба</option><option>Овощи/фрукты</option><option>Алкоголь</option><option>Молочное</option><option>Бакалея</option><option>Безалкогольные</option><option>Кофе/чай</option><option>Заморозка</option><option>Универсальный</option></select></div></div><label class="fL">Юр. лицо</label><input class="fI" id="as-legal" placeholder="ООО «Фреш Милл»"><div class="g2"><div><label class="fL">Город</label><input class="fI" id="as-city" placeholder="Москва"></div><div><label class="fL">Мин. сумма заказа (₽)</label><input class="fI" type="number" id="as-mn" placeholder="5000"></div></div><div class="g2"><div><label class="fL">График доставки</label><input class="fI" id="as-dl" placeholder="Пн-Пт 06:00-12:00"></div><div><label class="fL">График работы</label><input class="fI" id="as-wh" placeholder="Пн-Пт 09:00-18:00"></div></div><div class="g2"><div><label class="fL">Контактное лицо</label><input class="fI" id="as-ct" placeholder="Иван Иванов"></div><div><label class="fL">Телефон</label><input class="fI" type="tel" id="as-ph" placeholder="+7 (999) 000-00-00"></div></div><div class="g2"><div><label class="fL">Email</label><input class="fI" type="email" id="as-em" placeholder="manager@sup.ru"></div><div><label class="fL">Эмодзи</label><input class="fI" id="as-em2" placeholder="🏭" style="font-size:20px;"></div></div><label class="fL">Организации, с которыми работает поставщик</label><div id="as-orgs" style="display:grid;gap:8px;max-height:180px;overflow:auto;padding:10px;border:1px solid var(--br);border-radius:var(--r);background:var(--bg3);margin-bottom:10px;"></div><div style="font-size:11px;color:var(--t3);margin-top:-4px;">Поставщик будет виден и доступен только участникам выбранных организаций, а также владельцу платформы и администратору.</div><div class="m-acts"><button class="m-cancel" onclick="closeSupplierModal()">Отмена</button><button class="m-ok" id="as-submit-btn" onclick="submitSup()">Добавить</button></div></div></div>
+
+<div class="ov" id="ov-catalogSupplier"><div class="modal xl">
+  <div class="m-title">Карточка поставщика</div>
+  <div id="catalogSupplierInfo" style="display:grid;gap:10px;margin-bottom:14px;"></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;">
+    <div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);">Ассортимент без цен</div>
+      <div style="font-size:12px;color:var(--t3);">Список обновляется автоматически после загрузки прайса в системе.</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="tbBtn" id="catalogSupplierSortAscBtn" onclick="sortCatalogSupplierProducts('asc')">А-Я</button>
+      <button class="tbBtn" id="catalogSupplierSortDescBtn" onclick="sortCatalogSupplierProducts('desc')">Я-А</button>
+    </div>
+  </div>
+  <input class="fI" id="catalogSupplierSearchInput" placeholder="Поиск товара внутри ассортимента..." oninput="searchCatalogSupplierProducts(this.value)" style="margin:0 0 12px;">
+  <div id="catalogSupplierProducts" style="max-height:420px;overflow:auto;"></div>
+  <div class="m-acts">
+    <button class="m-cancel" onclick="closeModal('catalogSupplier')">Закрыть</button>
+  </div>
+</div></div>
+
+<div class="ov" id="ov-orderDetails"><div class="modal xl">
+  <div class="m-title">Детали заказа</div>
+  <div id="orderDetailsBody" style="display:grid;gap:14px;"></div>
+  <div class="m-acts">
+    <button class="m-cancel" onclick="closeModal('orderDetails')">Закрыть</button>
+    <button class="m-ok" id="orderDetailsExcelBtn">Excel</button>
+  </div>
+</div></div>
+
+<div class="ov" id="ov-addProduct"><div class="modal wide"><div class="m-title">➕ Добавить товар (поставщик)</div><div class="g2"><div><label class="fL">Название</label><input class="fI" id="ap-n" placeholder="Сёмга охлаждённая"></div><div><label class="fL">Эмодзи</label><input class="fI" id="ap-em" placeholder="🐟" style="font-size:20px;"></div></div><div class="g2"><div><label class="fL">Категория</label><select class="fS" id="ap-cat"><option value="fish">🐟 Рыба</option><option value="meat">🥩 Мясо</option><option value="veg">🥦 Овощи</option><option value="fruit">🍎 Фрукты</option><option value="dairy">🧀 Молочное</option><option value="alcohol">🍷 Алкоголь</option><option value="nonalc">🥤 Безалкогольные</option><option value="coffee">☕ Кофе/чай</option><option value="dry">🌾 Бакалея</option><option value="spice">🌶️ Специи</option><option value="frozen">❄️ Заморозка</option></select></div><div><label class="fL">Основная ед.</label><select class="fS" id="ap-unit"><option>кг</option><option>шт</option><option>л</option><option>бут.</option><option>мл</option><option>пучок</option></select></div></div><label class="fL">Цены по единицам измерения</label><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:8px;"><div><label class="fL">₽/кг</label><input class="fI" type="number" id="ap-kg" placeholder="2800" style="margin:0;"></div><div><label class="fL">₽/шт</label><input class="fI" type="number" id="ap-sh" placeholder="0" style="margin:0;"></div><div><label class="fL">₽/л</label><input class="fI" type="number" id="ap-l" placeholder="0" style="margin:0;"></div><div><label class="fL">₽/мл</label><input class="fI" type="number" id="ap-ml" placeholder="0" style="margin:0;"></div><div><label class="fL">Остаток</label><input class="fI" type="number" id="ap-stk" placeholder="100" style="margin:0;"></div></div><label class="fL" style="margin-top:10px;">Описание</label><input class="fI" id="ap-desc" placeholder="Охлаждённая, ХАССП..."><div class="m-acts"><button class="m-cancel" onclick="closeModal('addProduct')">Отмена</button><button class="m-ok" onclick="submitProduct()">Добавить</button></div></div></div>
+
+<div class="ov" id="ov-addCatProd"><div class="modal wide"><div class="m-title">➕ Добавить товар в каталог</div><div class="g2"><div><label class="fL">Название</label><input class="fI" id="acp-n" placeholder="Тунец свежий"></div><div><label class="fL">Эмодзи</label><input class="fI" id="acp-em" placeholder="🐠" style="font-size:20px;"></div></div><div class="g2"><div><label class="fL">Категория</label><select class="fS" id="acp-cat"><option value="fish">🐟 Рыба</option><option value="meat">🥩 Мясо</option><option value="veg">🥦 Овощи</option><option value="fruit">🍎 Фрукты</option><option value="dairy">🧀 Молочное</option><option value="alcohol">🍷 Алкоголь</option><option value="nonalc">🥤 Безалкогольные</option><option value="coffee">☕ Кофе/чай</option><option value="dry">🌾 Бакалея</option><option value="spice">🌶️ Специи</option><option value="frozen">❄️ Заморозка</option></select></div><div><label class="fL">Ед. измерения</label><select class="fS" id="acp-unit"><option>кг</option><option>шт</option><option>л</option><option>бут.</option><option>мл</option><option>пучок</option></select></div></div><label class="fL">Цены поставщиков (0 = не предлагает)</label><div id="acpPrices" style="display:grid;gap:7px;"></div><div class="m-acts"><button class="m-cancel" onclick="closeModal('addCatProd')">Отмена</button><button class="m-ok" onclick="submitCatProd()">Добавить</button></div></div></div>
+
+<div class="ov" id="ov-editProd"><div class="modal wide"><div class="m-title">✏️ Редактировать товар</div><input type="hidden" id="epId"><div class="g2"><div><label class="fL">Название</label><input class="fI" id="epN"></div><div><label class="fL">Эмодзи</label><input class="fI" id="epEm" style="font-size:20px;"></div></div><div class="g2"><div><label class="fL">Категория</label><select class="fS" id="epCat"><option value="fish">🐟 Рыба</option><option value="meat">🥩 Мясо</option><option value="veg">🥦 Овощи</option><option value="fruit">🍎 Фрукты</option><option value="dairy">🧀 Молочное</option><option value="alcohol">🍷 Алкоголь</option><option value="nonalc">🥤 Безалкогольные</option><option value="coffee">☕ Кофе/чай</option><option value="dry">🌾 Бакалея</option><option value="spice">🌶️ Специи</option><option value="frozen">❄️ Заморозка</option></select></div><div><label class="fL">Ед. измерения</label><select class="fS" id="epUnit"><option>кг</option><option>шт</option><option>л</option><option>бут.</option><option>мл</option><option>пучок</option></select></div></div><label class="fL">Цены поставщиков</label><div id="epPrices" style="display:grid;gap:7px;"></div><div class="m-acts"><button class="m-cancel" onclick="closeModal('editProd')">Отмена</button><button class="m-danger" onclick="deleteProd()">🗑 Удалить</button><button class="m-ok" onclick="saveEditProd()">Сохранить</button></div></div></div>
+
+<div class="ov" id="ov-newTC"><div class="modal wide"><div class="m-title">📋 Новая технологическая карта</div><div class="g2"><div><label class="fL">Название блюда</label><input class="fI" id="tc-n" placeholder="Карпаччо из говядины"></div><div><label class="fL">Категория</label><select class="fS" id="tc-c"><option value="hot">🍲 Горячее</option><option value="cold">🥗 Холодное</option><option value="dessert">🍮 Десерт</option><option value="drinks">🍸 Напиток</option><option value="alcohol">🍷 Алкоголь</option><option value="coffee">☕ Кофе/чай</option></select></div></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;"><div><label class="fL">Вход (г)</label><input class="fI" type="number" id="tc-i" placeholder="300" style="margin:0;"></div><div><label class="fL">Потери (%)</label><input class="fI" type="number" id="tc-l" placeholder="15" style="margin:0;"></div><div><label class="fL">Выход (г)</label><input class="fI" type="number" id="tc-y" placeholder="250" style="margin:0;"></div><div><label class="fL">Наценка (%)</label><input class="fI" type="number" id="tc-m" placeholder="300" style="margin:0;"></div></div><label class="fL" style="margin-top:10px;">Ингредиенты</label><div id="tcRows"></div><button onclick="addTCRow()" style="width:100%;background:var(--bg3);border:1px dashed var(--br2);border-radius:var(--r);padding:8px;color:var(--t3);font-size:12px;cursor:pointer;margin-bottom:12px;">+ Добавить ингредиент</button><div class="m-acts"><button class="m-cancel" onclick="closeModal('newTC')">Отмена</button><button class="m-ok" onclick="submitTC()">Создать карту</button></div></div></div>
+
+<div class="ov" id="ov-editTC"><div class="modal wide"><div class="m-title">✏️ Редактировать тех. карту</div><input type="hidden" id="etcId"><div class="g2"><div><label class="fL">Название</label><input class="fI" id="etcN"></div><div><label class="fL">Категория</label><select class="fS" id="etcC"><option value="hot">🍲 Горячее</option><option value="cold">🥗 Холодное</option><option value="dessert">🍮 Десерт</option><option value="drinks">🍸 Напиток</option><option value="alcohol">🍷 Алкоголь</option><option value="coffee">☕ Кофе/чай</option></select></div></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;"><div><label class="fL">Вход (г)</label><input class="fI" type="number" id="etcI" style="margin:0;"></div><div><label class="fL">Потери (%)</label><input class="fI" type="number" id="etcL" style="margin:0;"></div><div><label class="fL">Выход (г)</label><input class="fI" type="number" id="etcY" style="margin:0;"></div><div><label class="fL">Наценка (%)</label><input class="fI" type="number" id="etcM" style="margin:0;"></div></div><label class="fL" style="margin-top:10px;">Ингредиенты</label><div id="etcRows"></div><button onclick="addETCRow()" style="width:100%;background:var(--bg3);border:1px dashed var(--br2);border-radius:var(--r);padding:8px;color:var(--t3);font-size:12px;cursor:pointer;margin-bottom:12px;">+ Добавить ингредиент</button><div class="m-acts"><button class="m-cancel" onclick="closeModal('editTC')">Отмена</button><button class="m-danger" onclick="deleteTC()">🗑 Удалить</button><button class="m-ok" onclick="saveTC()">Сохранить</button></div></div></div>
+
+<div class="ov" id="ov-uploadTender"><div class="modal wide"><div class="m-title">📤 Загрузить тендер</div><div onclick="pickTF()" style="background:var(--bg3);border:2px dashed var(--br2);border-radius:var(--r2);padding:22px;text-align:center;cursor:pointer;margin-bottom:12px;transition:border-color .2s;" onmouseenter="this.style.borderColor='var(--ac)'" onmouseleave="this.style.borderColor='var(--br2)'"><div style="font-size:26px;margin-bottom:6px;">📂</div><div style="font-weight:600;margin-bottom:2px;">Нажмите для выбора файла CSV/TXT</div><div style="font-size:11px;color:var(--t3);">Формат: Продукт, Цена, Поставщик</div></div><div style="font-size:11px;color:var(--t3);text-align:center;margin-bottom:9px;">— или введите вручную —</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:5px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);"><span>Продукт</span><span>Новая цена (₽)</span><span>Поставщик</span></div><div id="tRows"></div><button onclick="addTRow()" style="width:100%;background:var(--bg3);border:1px dashed var(--br2);border-radius:var(--r);padding:7px;color:var(--t3);font-size:12px;cursor:pointer;margin-bottom:7px;">+ Добавить строку</button><button onclick="fillDemoT()" style="width:100%;background:var(--aD);border:1px solid rgba(200,240,80,.2);border-radius:var(--r);padding:7px;color:var(--ac);font-size:12px;cursor:pointer;font-weight:600;margin-bottom:12px;">🎯 Демо-данные</button><div class="m-acts"><button class="m-cancel" onclick="closeModal('uploadTender')">Отмена</button><button class="m-ok" onclick="submitTender()">Применить →</button></div></div></div>
+
+<div class="ov" id="ov-restPick"><div class="modal"><div class="m-title">🍽️ Выбор ресторана</div><div id="restPickList" style="display:grid;gap:6px;"></div><div class="m-acts"><button class="m-cancel" onclick="closeModal('restPick')">Закрыть</button><button class="m-ok" onclick="openModal('addRest');closeModal('restPick')">+ Добавить</button></div></div></div>
+
+<div class="ov" id="ov-addRest"><div class="modal"><div class="m-title">🍽️ Добавить заведение</div><div class="g2"><div><label class="fL">Название</label><input class="fI" id="ar-n" placeholder="Ресторан «Арома»"></div><div><label class="fL">Эмодзи</label><input class="fI" id="ar-em" placeholder="🍽️" style="font-size:20px;"></div></div><div class="g2"><div><label class="fL">Тип</label><select class="fS" id="ar-t"><option>Ресторан</option><option>Кафе</option><option>Бар</option><option>Кофейня</option><option>Отель</option><option>Столовая</option></select></div><div><label class="fL">Город</label><input class="fI" id="ar-city" placeholder="Москва"></div></div><div class="g2"><div><label class="fL">Бренд</label><input class="fI" id="ar-brand" placeholder="Арома"></div><div><label class="fL">Адрес</label><input class="fI" id="ar-addr" placeholder="ул. Тверская, 1"></div></div><label class="fL">Основное юр. лицо</label><input class="fI" id="ar-legal" placeholder="ООО «Арома Групп»"><label class="fL">Юр. лица сети <span style="font-size:11px;color:var(--t3);">(по одному с новой строки)</span></label><textarea class="fI" id="ar-legals" rows="4" placeholder="ООО «Арома Групп»&#10;ООО «Арома Центр»&#10;ИП Иванов И.И." style="resize:vertical;"></textarea><label class="fL">Юр. лица, доступные для заказов в этом заведении <span style="font-size:11px;color:var(--t3);">(по одному с новой строки; можно указать несколько)</span></label><textarea class="fI" id="ar-assigned-legals" rows="3" placeholder="ООО «Арома Групп»&#10;ИП Иванов И.И." style="resize:vertical;"></textarea><div class="g2"><div><label class="fL">Директор</label><input class="fI" id="ar-director" placeholder="ФИО / контакт"></div><div><label class="fL">Закупщик</label><input class="fI" id="ar-buyer" placeholder="ФИО / контакт"></div></div><div class="g2"><div><label class="fL">Бухгалтер</label><input class="fI" id="ar-accountant" placeholder="ФИО / контакт"></div><div><label class="fL">Управляющий</label><input class="fI" id="ar-manager" placeholder="ФИО / контакт"></div></div><div class="g2"><div><label class="fL">Зона доставки</label><input class="fI" id="ar-delivery-zone" placeholder="ЦАО, Хамовники, север города"></div><div><label class="fL">График приёмки</label><input class="fI" id="ar-receiving-schedule" placeholder="Пн-Пт 08:00-12:00"></div></div><label class="fL">Склады / зоны <span style="font-size:11px;color:var(--t3);">(по одному с новой строки)</span></label><textarea class="fI" id="ar-zones" rows="3" placeholder="Кухня&#10;Бар&#10;Склад" style="resize:vertical;"></textarea><div class="m-acts"><button class="m-cancel" onclick="closeModal('addRest')">Отмена</button><button class="m-ok" onclick="submitRest()">Добавить</button></div></div></div>
+<div class="ov" id="ov-restTemplate"><div class="modal wide"><div class="m-title">📋 Шаблон заказа</div><div style="font-size:12px;color:var(--t3);margin-bottom:12px;">Шаблон привязан к конкретному заведению и помогает быстро запускать типовые закупки без повторного ручного ввода.</div><div class="g2"><div><label class="fL">Название шаблона</label><input class="fI" id="rt-name" placeholder="Ежедневная молочка"></div><div><label class="fL">Заведение</label><div id="rt-rest-label" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:10px 12px;font-size:13px;color:var(--tx);min-height:42px;box-sizing:border-box;">Не выбрано</div></div></div><label class="fL">Описание</label><input class="fI" id="rt-desc" placeholder="Утренний заказ для кухни"><label class="fL">Товары <span style="font-size:11px;color:var(--t3);">(каждый с новой строки; можно: Молоко | 6 | л)</span></label><textarea class="fI" id="rt-items" rows="8" placeholder="Молоко | 6 | л&#10;Сметана | 4 | кг&#10;Сыр моцарелла | 3 | кг" style="resize:vertical;"></textarea><label class="fL">Рекомендуемые поставщики <span style="font-size:11px;color:var(--t3);">(по одному с новой строки)</span></label><textarea class="fI" id="rt-sups" rows="4" placeholder="Кодекс&#10;Фреш Милл" style="resize:vertical;"></textarea><div class="m-acts"><button class="m-cancel" onclick="closeModal('restTemplate')">Отмена</button><button class="m-ok" onclick="saveRestTemplate()">Сохранить шаблон</button></div></div></div>
+<div class="ov" id="ov-restRules"><div class="modal wide"><div class="m-title">⚙️ Правила закупки</div><div style="font-size:12px;color:var(--t3);margin-bottom:12px;">Настройки действуют для выбранного заведения и помогают стандартизировать заказы команды.</div><div class="g2"><div><label class="fL">Минимальная сумма заказа по поставщику</label><input class="fI" id="rr-min-order" type="number" min="0" placeholder="5000"></div><div><label class="fL">Дедлайн отправки заказа</label><input class="fI" id="rr-deadline" placeholder="до 16:00 ежедневно"></div></div><label class="fL">Разрешённые дни заказа <span style="font-size:11px;color:var(--t3);">(по одному с новой строки)</span></label><textarea class="fI" id="rr-order-days" rows="3" placeholder="Понедельник&#10;Среда&#10;Пятница" style="resize:vertical;"></textarea><label class="fL">Стоп-поставщики <span style="font-size:11px;color:var(--t3);">(по одному с новой строки)</span></label><textarea class="fI" id="rr-stop-sups" rows="3" placeholder="Поставщик, которому нельзя отправлять заказ" style="resize:vertical;"></textarea><label class="fL">Приоритетные поставщики <span style="font-size:11px;color:var(--t3);">(по одному с новой строки)</span></label><textarea class="fI" id="rr-priority-sups" rows="4" placeholder="Кодекс&#10;Фреш Милл" style="resize:vertical;"></textarea><div class="m-acts"><button class="m-cancel" onclick="closeModal('restRules')">Отмена</button><button class="m-ok" onclick="saveRestRules()">Сохранить правила</button></div></div></div>
+
+<div class="ov" id="ov-platSettings"><div class="modal"><div class="m-title">⚙️ Настройки платформы</div><label class="fL">Название платформы</label><input class="fI" id="ps-name" value="КальКа"><label class="fL">Слоган</label><input class="fI" id="ps-tag" value="Платформа управления закупками"><label class="fL">Email поддержки</label><input class="fI" type="email" id="ps-email" value="support@provision.ru"><div class="g2"><div><label class="fL">Валюта</label><select class="fS" id="ps-cur"><option>₽ Рубль</option><option>$ Доллар</option><option>€ Евро</option></select></div><div><label class="fL">Часовой пояс</label><select class="fS" id="ps-tz"><option>UTC+3 Москва</option><option>UTC+5 Екатеринбург</option><option>UTC+7 Красноярск</option></select></div></div><label class="fL">Домен / URL платформы</label><input class="fI" id="ps-domain" placeholder="https://app.example.ru"><label style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg3);border-radius:var(--r);font-size:13px;margin-top:10px;">Расширенные права администратора<input type="checkbox" id="ps-admin-advanced" style="width:16px;height:16px;"></label><div style="font-size:11px;color:var(--t3);margin-top:6px;">Когда включено, администратор получает доступ к расширенной управленческой панели владельца.</div><div class="m-acts"><button class="m-cancel" onclick="closeModal('platSettings')">Отмена</button><button class="m-ok" onclick="savePlatSettings()">Сохранить</button></div></div></div>
+
+<div class="ov" id="ov-addNavItem"><div class="modal"><div class="m-title">📁 Добавить вкладку / папку</div><div class="g2"><div><label class="fL">Название</label><input class="fI" id="ani-n" placeholder="Новый раздел"></div><div><label class="fL">Иконка (эмодзи)</label><input class="fI" id="ani-i" placeholder="📁" style="font-size:20px;"></div></div><label class="fL">Описание</label><input class="fI" id="ani-d" placeholder="Краткое описание раздела..."><label class="fL">Тип</label><select class="fS" id="ani-t"><option value="page">📄 Страница</option><option value="folder">📁 Папка</option><option value="link">🔗 Ссылка</option></select><label class="fL">Комментарий / заметка</label><input class="fI" id="ani-c" placeholder="Дополнительная информация..."><label class="fL">Доступно для ролей</label><div id="aniRoles" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;"></div><div class="m-acts"><button class="m-cancel" onclick="closeModal('addNavItem')">Отмена</button><button class="m-ok" onclick="submitNavItem()">Добавить</button></div></div></div>
+
+<div class="ov" id="ov-manageRoles"><div class="modal xl"><div class="m-title">🔐 Управление ролями и доступами</div><div style="font-size:12px;color:var(--t2);margin-bottom:12px;">Включите или выключите доступ к разделам для каждой роли.</div><div class="tw" style="overflow-x:auto;max-height:400px;overflow-y:auto;"><table><thead><tr id="mrH"></tr></thead><tbody id="mrB"></tbody></table></div><div class="m-acts"><button class="m-cancel" onclick="closeModal('manageRoles')">Закрыть</button><button class="m-ok" onclick="saveRoles()">Сохранить</button></div></div></div>
+
+<div class="ov" id="ov-blockUser"><div class="modal"><div class="m-title">🚫 Ограничить / разблокировать</div><label class="fL">Пользователь</label><select class="fS" id="buSel"></select><label class="fL">Действие</label><select class="fS" id="buAction" onchange="document.getElementById('buRoleRow').classList.toggle('hidden',this.value!=='role')"><option value="block">🚫 Заблокировать</option><option value="unblock">✅ Разблокировать</option><option value="restrict">⚠️ Ограничить доступ</option><option value="role">🔄 Изменить роль</option></select><div id="buRoleRow" class="hidden"><label class="fL">Новая роль</label><select class="fS" id="buNewRole"></select></div><label class="fL">Причина</label><input class="fI" id="buReason" placeholder="Нарушение правил..."><div class="m-acts"><button class="m-cancel" onclick="closeModal('blockUser')">Отмена</button><button class="m-ok" onclick="applyBlock()">Применить</button></div></div></div>
+
+<div class="ov" id="ov-auditLog"><div class="modal xl"><div class="m-title">📋 Журнал действий</div><div id="auditBody" style="max-height:380px;overflow-y:auto;"></div><div class="m-acts"><button class="m-cancel" onclick="closeModal('auditLog')">Закрыть</button><button class="m-ok" onclick="exportAudit()">📥 Экспорт CSV</button></div></div></div>
+
+<div class="ov" id="ov-companyManager"><div class="modal xl"><div class="m-title">🏢 Компании и тарифы</div><div style="font-size:12px;color:var(--t2);margin-bottom:12px;">Управляйте статусом клиента, тарифом, лимитами и внутренними заметками.</div><div id="companyManagerBody" style="max-height:420px;overflow:auto;"></div><div class="m-acts"><button class="m-cancel" onclick="closeModal('companyManager')">Закрыть</button><button class="m-ok" onclick="saveCompanyManager()">Сохранить изменения</button></div></div></div>
+
+<div class="ov" id="ov-dashboardAccess"><div class="modal wide"><div class="m-title">📊 Доступ к дашборду</div><div id="da-user" style="font-size:12px;color:var(--t3);margin-bottom:12px;"></div><label style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg3);border-radius:var(--r);font-size:13px;margin-bottom:12px;">Разрешить доступ к дашборду<input type="checkbox" id="da-enabled" style="width:16px;height:16px;" onchange="toggleDashboardAccessForm()"></label><div id="da-form"><label class="fL">Уровень доступа</label><select class="fS" id="da-scope" onchange="toggleDashboardAccessForm()"><option value="assigned">Только назначенные заведения</option><option value="selected">Выбранные заведения вручную</option><option value="all_orgs">Весь дашборд по всем организациям</option></select><div id="da-all-orgs-note" style="display:none;font-size:11px;color:var(--t3);margin:-4px 0 10px;">Полный обзор по всем организациям. Обычно включается только владельцем для администратора.</div><label class="fL" id="da-rest-label">Доступные заведения</label><div id="da-rest-list" style="max-height:220px;overflow:auto;border:1px solid var(--br);border-radius:var(--r);padding:8px;background:var(--bg3);display:grid;gap:6px;"></div></div><div class="m-acts"><button class="m-cancel" onclick="closeModal('dashboardAccess')">Отмена</button><button class="m-ok" onclick="saveDashboardAccess()">Сохранить</button></div></div></div>
+
+<div class="ov" id="ov-billingManager"><div class="modal xl"><div class="m-title">💳 Подписки и биллинг</div><div style="font-size:12px;color:var(--t2);margin-bottom:12px;">Контроль коммерческого статуса клиентов: подписка, сумма, дата следующего списания, просрочка.</div><div id="billingManagerBody" style="max-height:420px;overflow:auto;"></div><div class="m-acts"><button class="m-cancel" onclick="closeModal('billingManager')">Закрыть</button><button class="m-ok" onclick="saveBillingManager()">Сохранить изменения</button></div></div></div>
+
+<div class="ov" id="ov-priceImportMonitor"><div class="modal xl"><div class="m-title">📊 Проблемные прайсы</div><div style="font-size:12px;color:var(--t2);margin-bottom:12px;">Ошибки и предупреждения импорта прайсов с фильтром по поставщику.</div><div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;"><input class="fI" id="priceImportFilter" placeholder="Фильтр по поставщику..." oninput="renderPriceImportMonitor(this.value)" style="margin:0;"><button class="tbBtn" onclick="renderPriceImportMonitor('')">Сбросить</button></div><div id="priceImportMonitorBody" style="max-height:420px;overflow:auto;"></div><div class="m-acts"><button class="m-cancel" onclick="closeModal('priceImportMonitor')">Закрыть</button><button class="m-ok" onclick="exportPriceImportMonitor()">📥 Экспорт CSV</button></div></div></div>
+
+<div class="ov" id="ov-systemLog"><div class="modal xl"><div class="m-title">🖥️ Системный журнал</div><div style="font-size:12px;color:var(--t2);margin-bottom:12px;">Технические события платформы: загрузки прайсов, резервные копии, настройки и ошибки.</div><div id="systemLogBody" style="max-height:420px;overflow:auto;"></div><div class="m-acts"><button class="m-cancel" onclick="closeModal('systemLog')">Закрыть</button><button class="m-ok" onclick="exportSystemLog()">📥 Экспорт CSV</button></div></div></div>
+
+<div class="ov" id="ov-backup"><div class="modal"><div class="m-title">💾 Резервное копирование</div><div style="display:grid;gap:10px;"><button class="m-ok" onclick="exportBackup()">📥 Экспортировать данные (JSON)</button><button class="m-cancel" onclick="importBackup()">📁 Импортировать данные</button><div style="font-size:11px;color:var(--t3);padding:10px;background:var(--bg3);border-radius:var(--r);">⚠️ При импорте данные заменятся. Сделайте экспорт перед импортом!</div></div><div class="m-acts"><button class="m-cancel" onclick="closeModal('backup')">Закрыть</button></div></div></div>
+
+<div class="ov" id="ov-apiKeys"><div class="modal"><div class="m-title">🔑 API ключи и интеграции</div><div style="display:grid;gap:10px;"><div style="background:var(--bg3);border-radius:var(--r);padding:12px;"><div style="font-size:10px;color:var(--t3);margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Публичный API ключ</div><code id="apiKeyVal" style="font-size:11px;color:var(--ac);background:var(--bg4);padding:6px 10px;border-radius:5px;display:block;word-break:break-all;">pv_live_mk_xxxxxxxxxxxxxxxxxxx</code></div><div style="background:var(--bg3);border-radius:var(--r);padding:12px;"><div style="font-size:10px;color:var(--t3);margin-bottom:5px;text-transform:uppercase;letter-spacing:1px;">Webhook URL</div><code id="apiWebhookVal" style="font-size:11px;color:var(--bl);background:var(--bg4);padding:6px 10px;border-radius:5px;display:block;word-break:break-all;">https://api.kalka.local/webhook</code></div><div style="font-size:12px;color:var(--t2);line-height:1.8;background:var(--bg3);border-radius:var(--r);padding:12px;">Интеграции:<br>• Supabase Auth и база данных<br>• Email / уведомления<br>• ERP / учётная система<br>• Telegram / webhook-боты</div><button class="m-ok" onclick="genApiKey()">🔄 Сгенерировать новый ключ</button></div><div class="m-acts"><button class="m-cancel" onclick="closeModal('apiKeys')">Закрыть</button></div></div></div>
+
+<div class="ov" id="ov-notifSettings"><div class="modal"><div class="m-title">🔔 Настройки уведомлений</div><div style="display:grid;gap:8px;"><label style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg3);border-radius:var(--r);font-size:13px;">📲 Браузерные push<input type="checkbox" id="ns-push" checked style="width:16px;height:16px;"></label><label style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg3);border-radius:var(--r);font-size:13px;">📧 Email уведомления<input type="checkbox" id="ns-email" checked style="width:16px;height:16px;"></label><label style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg3);border-radius:var(--r);font-size:13px;">⚠️ Алерты подорожания<input type="checkbox" id="ns-price-alerts" checked style="width:16px;height:16px;"></label><label style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg3);border-radius:var(--r);font-size:13px;">📦 Новые заказы<input type="checkbox" id="ns-orders" checked style="width:16px;height:16px;"></label><label style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg3);border-radius:var(--r);font-size:13px;">👤 Новые заявки пользователей<input type="checkbox" id="ns-users" checked style="width:16px;height:16px;"></label><label style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg3);border-radius:var(--r);font-size:13px;">📊 Ошибки загрузки прайсов<input type="checkbox" id="ns-price-import" checked style="width:16px;height:16px;"></label></div><div class="m-acts"><button class="m-cancel" onclick="closeModal('notifSettings')">Отмена</button><button class="m-ok" onclick="saveNotifSettings()">Сохранить</button></div></div></div>
+
+<div class="ov" id="ov-catCols"><div class="modal"><div class="m-title">⚙️ Поставщики в каталоге</div><div style="font-size:12px;color:var(--t2);margin-bottom:12px;">Выберите, каких поставщиков показывать в открытой карточке товара. Цены здесь не отображаются.</div><div id="catColList" style="display:grid;gap:7px;"></div><div class="m-acts"><button class="m-cancel" onclick="closeModal('catCols')">Отмена</button><button class="m-ok" onclick="applyCatCols()">Применить</button></div></div></div>
+
+<div class="ov" id="ov-deployGuide"><div class="modal xl"><div class="m-title">🚀 Инструкция запуска КальКа</div>
+<div style="font-size:13px;color:var(--t2);line-height:2;">
+<div style="font-family:var(--fH);font-size:14px;font-weight:800;color:var(--ac);margin-bottom:10px;">📋 Рекомендуемый стек для продакшена</div>
+<div><b style="color:var(--tx);">1.</b> Размещайте фронтенд на Netlify, Vercel или собственном домене.</div>
+<div><b style="color:var(--tx);">2.</b> Проверьте, что в Supabase заполнены <b>Site URL</b> и <b>Redirect URLs</b>.</div>
+<div><b style="color:var(--tx);">3.</b> Включите резервные копии и храните экспорт базы отдельно.</div>
+<div><b style="color:var(--tx);">4.</b> Перед релизом проверьте роли, RLS-политики и владельца платформы.</div>
+<div><b style="color:var(--tx);">5.</b> Подключите свой домен и почту поддержки в настройках платформы.</div>
+<div style="background:var(--aD);border:1px solid rgba(200,240,80,.2);border-radius:var(--r);padding:14px;margin-top:16px;">
+  <div style="font-weight:800;margin-bottom:8px;color:var(--ac);">✅ Что уже есть в этом проекте</div>
+  <div>• Авторизация через Supabase</div>
+  <div>• Общая схема данных для коммерческой работы</div>
+  <div>• Загрузка прайсов, каталог, поставщики, заказы</div>
+  <div>• Панель владельца с контролем пользователей и данных</div>
+</div>
+<div style="background:var(--blD);border:1px solid rgba(79,195,247,.2);border-radius:var(--r);padding:14px;margin-top:10px;">
+  <div style="font-weight:800;margin-bottom:8px;color:var(--bl);">💡 Чек-лист перед запуском</div>
+  <div>• Создать отдельного владельца и сменить тестовые пароли</div>
+  <div>• Проверить доступы ролей и блокировки</div>
+  <div>• Убедиться, что прайсы и заказы сохраняются в Supabase</div>
+  <div>• Настроить уведомления и почту поддержки</div>
+</div>
+</div>
+<div class="m-acts"><button class="m-cancel" onclick="closeModal('deployGuide')">Закрыть</button></div>
+</div></div>
+
+
+<div class="ov" id="ov-createUser"><div class="modal wide">
+  <div class="m-title">➕ Создать аккаунт пользователя</div>
+  <div style="background:var(--aD);border:1px solid var(--ac);border-radius:var(--r);padding:10px 13px;margin-bottom:14px;font-size:12px;color:var(--t2);">
+    ✅ Аккаунт создаётся сразу активным. Пользователь может войти немедленно с любого устройства.
+  </div>
+  <div class="g2">
+    <div><label class="fL">Имя</label><input class="fI" id="cu-fi" placeholder="Иван"></div>
+    <div><label class="fL">Фамилия</label><input class="fI" id="cu-la" placeholder="Иванов"></div>
+  </div>
+  <label class="fL">Компания / Заведение</label>
+  <input class="fI" id="cu-co" placeholder="ООО «Ресторан»">
+  <label class="fL">Email (логин для входа)</label>
+  <input class="fI" type="email" id="cu-em" placeholder="user@company.ru">
+  <label class="fL">Пароль</label>
+  <div class="pw" style="margin-bottom:8px;">
+    <input class="fI" type="password" id="cu-pa" placeholder="Минимум 4 символа" style="margin:0;">
+    <button class="eyeB" onclick="eyeT('cu-pa',this)">👁</button>
+  </div>
+  <div class="g2">
+    <div>
+      <label class="fL">Роль</label>
+      <select class="fS" id="cu-ro">
+        <option value="manager">👔 Управляющий</option>
+        <option value="chef">🧑‍🍳 Шеф-повар</option>
+        <option value="buyer">🛒 Байер / Закупщик</option>
+        <option value="supplier">🏭 Поставщик</option>
+        <option value="accountant">📊 Бухгалтер</option>
+        <option value="admin">🛡️ Администратор</option>
+      </select>
+    </div>
+    <div>
+      <label class="fL">Заметка (необязательно)</label>
+      <input class="fI" id="cu-note" placeholder="Должность, филиал...">
+    </div>
+  </div>
+  <div id="cu-err" style="color:var(--rd);font-size:12px;min-height:16px;margin-top:4px;"></div>
+  <div class="m-acts">
+    <button class="m-cancel" onclick="closeModal('createUser')">Отмена</button>
+    <button class="m-ok" onclick="submitCreateUser(false)">✅ Создать аккаунт</button>
+  </div>
+</div></div><div class="ov" id="ov-myProfile"><div class="modal">
+  <div class="m-title">👤 Мой профиль</div>
+  <div id="myProfileInfo" style="background:var(--bg3);border-radius:var(--r);padding:12px 14px;margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+    <div id="mpAva" style="width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;"></div>
+    <div><div id="mpName" style="font-weight:700;font-size:15px;"></div><div id="mpRole" style="font-size:12px;color:var(--t2);"></div><div id="mpEmail" style="font-size:11px;color:var(--t3);"></div></div>
+  </div>
+  <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:10px;border-bottom:1px solid var(--br);padding-bottom:8px;">Личные данные</div>
+  <div class="g2">
+    <div><label class="fL">Имя</label><input class="fI" id="mp-fi" placeholder="Имя"></div>
+    <div><label class="fL">Фамилия</label><input class="fI" id="mp-la" placeholder="Фамилия"></div>
+  </div>
+  <label class="fL">Компания / Заведение</label><input class="fI" id="mp-co" placeholder="Название компании">
+  <label class="fL">Email (логин для входа)</label><input class="fI" type="email" id="mp-em" placeholder="your@email.ru">
+  <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin:12px 0 8px;border-bottom:1px solid var(--br);padding-bottom:8px;">Изменить пароль <span style="font-size:9px;text-transform:none;color:var(--t4);">(оставьте пустым если не меняете)</span></div>
+  <label class="fL">Текущий пароль</label>
+  <div class="pw"><input class="fI" type="password" id="mp-old" placeholder="Текущий пароль" style="margin:0;"><button class="eyeB" onclick="eyeT('mp-old',this)">👁</button></div>
+  <label class="fL" style="margin-top:10px;">Новый пароль</label>
+  <div class="pw"><input class="fI" type="password" id="mp-new" placeholder="Минимум 4 символа" style="margin:0;"><button class="eyeB" onclick="eyeT('mp-new',this)">👁</button></div>
+  <label class="fL" style="margin-top:10px;">Повторите новый пароль</label>
+  <div class="pw" style="margin-bottom:10px;"><input class="fI" type="password" id="mp-new2" placeholder="Повторите" style="margin:0;"><button class="eyeB" onclick="eyeT('mp-new2',this)">👁</button></div>
+  <div id="mp-err" style="color:var(--rd);font-size:12px;min-height:16px;"></div>
+  <div id="mp-ok" style="color:var(--gr);font-size:12px;min-height:16px;"></div>
+  <div class="m-acts">
+    <button class="m-cancel" onclick="closeModal('myProfile')">Закрыть</button>
+    <button class="m-ok" onclick="saveMyProfile()">💾 Сохранить изменения</button>
+  </div>
+</div></div>
+
+<div class="ov" id="ov-orgInvites"><div class="modal wide">
+  <div class="m-title">✉️ Приглашения в организации</div>
+  <div style="font-size:12px;color:var(--t2);margin-bottom:12px;">Вступить в организацию можно только по приглашению от владельца, администратора или участника заведения.</div>
+  <div id="orgInvitesBody" style="display:grid;gap:10px;max-height:420px;overflow:auto;"></div>
+  <div class="m-acts">
+    <button class="m-cancel" onclick="closeModal('orgInvites')">Закрыть</button>
+  </div>
+</div></div>
+
+
+<div class="ov" id="ov-uploadPrice"><div class="modal wide">
+  <div class="m-title">📊 Загрузка прайс-листа</div>
+  <div style="background:var(--aD);border:1px solid var(--ac);border-radius:var(--r);padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--t2);">
+    ℹ️ Выберите организации, которым будут видны <b>цены</b> из этого прайса. Ассортимент (без цен) виден всем.
+  </div>
+  <label class="fL">Для каких компаний открыть цены?</label>
+  <div id="priceCompList" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:10px;max-height:200px;overflow-y:auto;margin-bottom:12px;"></div>
+  <div style="display:flex;gap:8px;margin-bottom:14px;">
+    <button onclick="selectAllPriceComps(true)" style="font-size:11px;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:5px;padding:4px 10px;cursor:pointer;">Выбрать все</button>
+    <button onclick="selectAllPriceComps(false)" style="font-size:11px;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:5px;padding:4px 10px;cursor:pointer;">Снять все</button>
+  </div>
+  <label class="fL">Файл (CSV или Excel→CSV)</label>
+  <div style="display:flex;gap:8px;">
+    <input type="file" id="priceFileInput" accept=".csv,.txt,.xlsx,.xls" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;color:var(--tx);font-size:12px;">
+  </div>
+  <div id="priceUploadErr" style="color:var(--rd);font-size:12px;min-height:16px;margin-top:8px;"></div>
+  <div class="m-acts">
+    <button class="m-cancel" onclick="closeModal('uploadPrice')">Отмена</button>
+    <button class="m-ok" id="priceUploadBtn" onclick="doUploadPrice()">📤 Загрузить прайс</button>
+  </div>
+</div></div>
+
+
+<div class="ov" id="ov-catalogUpload"><div class="modal wide">
+  <div class="m-title">📊 Загрузка каталога товаров (Excel / CSV)</div>
+  <div style="background:var(--aD);border:1px solid var(--ac);border-radius:var(--r);padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--t2);">
+    ℹ️ Файл добавит товары в каталог. Выберите компании которым будут <b>видны цены</b>. Остальные видят только ассортимент.
+  </div>
+  <div style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-size:11px;color:var(--t3);">
+    <b>Формат файла (Excel или CSV):</b><br>
+    Колонка A: Название товара | B: Категория | C: Эмодзи | D: Единица (кг/шт/л) | E: Цена/кг | F: Цена/шт | G: Цена/л | H: Поставщик
+  </div>
+  <label class="fL">Кому открыть цены (можно выбрать несколько):</label>
+  <div id="catUploadCompList" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;max-height:160px;overflow-y:auto;margin-bottom:10px;"></div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;">
+    <button onclick="selectAllCatComps(true)" style="font-size:11px;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:5px;padding:4px 10px;cursor:pointer;">Выбрать все</button>
+    <button onclick="selectAllCatComps(false)" style="font-size:11px;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:5px;padding:4px 10px;cursor:pointer;">Снять все</button>
+  </div>
+  <label class="fL">Файл (.xlsx, .xls, .csv)</label>
+  <input type="file" id="catUploadFile" accept=".xlsx,.xls,.csv,.txt" style="width:100%;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;color:var(--tx);font-size:12px;box-sizing:border-box;">
+  <div id="catUploadErr" style="color:var(--rd);font-size:12px;min-height:16px;margin-top:8px;"></div>
+  <div class="m-acts">
+    <button class="m-cancel" onclick="closeModal('catalogUpload')">Отмена</button>
+    <button class="m-ok" id="catUploadSubmitBtn" onclick="doUploadCatalog()">📤 Загрузить в каталог</button>
+  </div>
+</div></div>
+
+<div class="ov" id="ov-tenderUploadFile"><div class="modal wide">
+  <div class="m-title">📊 Загрузка цен в тендер / каталог</div>
+  <div style="background:var(--aD);border:1px solid var(--ac);border-radius:var(--r);padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--t2);">
+    ℹ️ Файл обновит цены в тендере и каталоге. Укажите компании которым будут видны цены.
+  </div>
+  <div style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-size:11px;color:var(--t3);line-height:1.8;">
+    <b>Формат файла (Excel .xlsx или .csv):</b><br>
+    Колонка A: <b>Наименование</b> | B: <b>Единица измерения</b> | C: <b>Цена с НДС</b> | D: Поставщик (необяз.)<br>
+    <span style="color:var(--ac);">Заголовок первой строки — пропускается автоматически</span>
+  </div>
+  <label class="fL">Кому видны цены:</label>
+  <div id="tenderCompList" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;max-height:150px;overflow-y:auto;margin-bottom:8px;"></div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;">
+    <button onclick="selectAllTenderComps(true)" style="font-size:11px;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:5px;padding:4px 10px;cursor:pointer;">Выбрать все</button>
+    <button onclick="selectAllTenderComps(false)" style="font-size:11px;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:5px;padding:4px 10px;cursor:pointer;">Снять все</button>
+  </div>
+  <label class="fL">Файл (.xlsx, .xls, .csv)</label>
+  <input type="file" id="tenderUploadFile" accept=".xlsx,.xls,.csv,.txt" style="width:100%;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;color:var(--tx);font-size:12px;box-sizing:border-box;margin-bottom:8px;">
+  <div style="display:flex;gap:8px;margin-bottom:8px;">
+    <button onclick="downloadTenderTemplate()" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:7px 12px;font-size:12px;cursor:pointer;color:var(--t2);">📥 Скачать шаблон CSV</button>
+  </div>
+  <div id="tenderUploadErr" style="color:var(--rd);font-size:12px;min-height:16px;"></div>
+  <div class="m-acts">
+    <button class="m-cancel" onclick="closeModal('tenderUploadFile')">Отмена</button>
+    <button class="m-ok" id="tenderUploadBtn" onclick="doUploadTenderFile()">📤 Загрузить</button>
+  </div>
+</div></div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/app-config.js"></script>
+<script src="js/app-supabase.js"></script>
+<script src="js/app-supabase-commerce.js"></script>
+<script src="js/app-legacy.js"></script>
+<script src="js/app-overrides.js"></script>
+
+<div class="ov" id="ov-supPriceUpload"><div class="modal wide">
+  <div class="m-title" id="supPriceUploadTitle">Загрузка прайса поставщика</div>
+
+  <!-- Шапка: поставщик + кнопка шаблона -->
+  <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:10px 14px;margin-bottom:12px;">
+    <div>
+      <div style="font-size:11px;color:var(--t3);">Поставщик</div>
+      <div style="font-size:14px;font-weight:700;color:var(--ac);" id="supPriceSupName"></div>
+    </div>
+    <button onclick="downloadPriceTemplate()" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer;color:var(--t2);">Скачать шаблон</button>
+  </div>
+
+  <!-- Поля ввода -->
+  <label class="fL">Название прайса</label>
+  <input class="fI" type="text" id="supPriceName" placeholder="Основной / Акции / Сезонный">
+
+  <label class="fL">Файл (.xlsx, .xls, .csv)</label>
+  <input type="file" id="supPriceFile" accept=".xlsx,.xls,.csv,.txt"
+    style="width:100%;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);
+           padding:8px;color:var(--tx);font-size:12px;box-sizing:border-box;margin-bottom:12px;">
+
+  <!-- Доступ к ценам -->
+  <div style="font-size:11px;font-weight:700;color:var(--t3);margin-bottom:6px;border-bottom:1px solid var(--br);padding-bottom:6px;">
+    Доступ к ценам
+  </div>
+  <div style="font-size:11px;color:var(--t3);margin-bottom:8px;">Без галочки — пользователь видит ассортимент, но не цены</div>
+  <div id="supPriceCompList" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;max-height:140px;overflow-y:auto;margin-bottom:6px;"></div>
+  <div style="display:flex;gap:8px;margin-bottom:14px;">
+    <button onclick="selectAllSupPriceComps(true)" style="font-size:11px;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:5px;padding:4px 10px;cursor:pointer;">Все</button>
+    <button onclick="selectAllSupPriceComps(false)" style="font-size:11px;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:5px;padding:4px 10px;cursor:pointer;">Снять</button>
+  </div>
+
+  <!-- ПРЕВЬЮ АВТОРАСПОЗНАВАНИЯ (показывается после выбора файла) -->
+  <div id="pricePreviewSection" style="display:none;border:1px solid var(--br);border-radius:var(--r);margin-bottom:12px;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg3);border-bottom:1px solid var(--br);">
+      <div>
+        <div style="font-size:12px;font-weight:700;">Предварительный просмотр</div>
+        <div style="font-size:11px;color:var(--t3);">Подтвердите автоматически определённые колонки</div>
+      </div>
+      <span id="priceMethodBadge" style="font-size:10px;background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:4px;padding:2px 8px;"></span>
+    </div>
+    <div style="padding:10px 12px;">
+      <div id="pricePreviewTable"></div>
+    </div>
+    <div style="display:flex;gap:8px;padding:8px 12px;border-top:1px solid var(--br);background:var(--bg3);flex-wrap:wrap;">
+      <button id="priceConfirmBtn"
+        style="flex:2;min-width:140px;background:var(--gr);color:#fff;border:none;border-radius:var(--r);padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;">
+        Сохранить и загрузить
+      </button>
+      <button onclick="priceAddRow()"
+        style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);padding:8px 12px;font-size:12px;cursor:pointer;color:var(--t2);">
+        + Строка
+      </button>
+      <button id="priceChangeColsBtn"
+        style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);padding:8px 12px;font-size:12px;cursor:pointer;color:var(--t2);">
+        Колонки
+      </button>
+    </div>
+  </div>
+
+  <!-- Строки требующие проверки -->
+  <div id="priceReviewSection" style="display:none;border:1px solid var(--rd);border-radius:var(--r);margin-bottom:12px;overflow:hidden;">
+    <div style="padding:8px 12px;background:var(--rdD);border-bottom:1px solid var(--rd);font-size:12px;font-weight:700;color:var(--rd);">
+      Строки требуют проверки (пропущены при загрузке)
+    </div>
+    <div id="priceReviewList" style="max-height:140px;overflow-y:auto;"></div>
+  </div>
+
+  <div id="supPriceErr" style="color:var(--rd);font-size:12px;min-height:14px;margin-bottom:4px;"></div>
+  <div class="m-acts">
+    <button class="m-cancel" onclick="closeModal('supPriceUpload')">Закрыть</button>
+    <button class="m-ok" id="supPriceUploadBtn" onclick="doSupPriceUpload()">Загрузить прайс</button>
+  </div>
+</div></div>
+
+<div class="ov" id="ov-cartProdSearch"><div class="modal wide">
+  <div class="m-title">🔍 Поиск в прайсе поставщика</div>
+  <div id="cartSearchSupName" style="font-size:12px;color:var(--t3);margin-bottom:12px;"></div>
+  <input class="fI" id="cartSearchInput" placeholder="Введите название товара..." oninput="filterCartSearch(this.value)" style="margin-bottom:10px;">
+  <div id="cartSearchResults" style="max-height:400px;overflow-y:auto;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);"></div>
+  <div class="m-acts">
+    <button class="m-cancel" onclick="closeModal('cartProdSearch')">Закрыть</button>
+  </div>
+</div></div>
+
+
+<!-- Модал: Создание тендера -->
+<div class="ov" id="ov-createTender"><div class="modal wide">
+  <div class="m-title">Создание тендера</div>
+  <label class="fL">Организация / заведение <span style="color:var(--rd);">*</span></label>
+  <select class="fS" id="ct-rest" style="margin-bottom:14px;">
+    <option value="">— выберите организацию —</option>
+  </select>
+  <label class="fL">Юр. лицо для тендера <span style="color:var(--rd);">*</span></label>
+  <div id="ct-legal-hint" style="font-size:12px;color:var(--t3);margin:-4px 0 8px;">Сначала выберите организацию.</div>
+  <div id="ct-legal-list" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);
+    padding:10px;max-height:170px;overflow-y:auto;margin-bottom:14px;"></div>
+  <label class="fL">Поставщики <span style="color:var(--rd);">*</span></label>
+  <div style="position:relative;margin-bottom:8px;">
+    <input type="text" id="ct-sup-search" placeholder="Поиск поставщика..."
+      oninput="filterTenderSupList(this.value)"
+      style="width:100%;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);
+             padding:7px 12px;color:var(--tx);font-size:13px;outline:none;box-sizing:border-box;">
+  </div>
+  <div id="ct-sups-list" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;max-height:240px;overflow-y:auto;margin-bottom:10px;"></div>
+  <div style="display:flex;gap:8px;margin-bottom:14px;">
+    <button onclick="selectAllTenderSups(true)" style="font-size:11px;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:5px;padding:4px 10px;cursor:pointer;">Выбрать всех</button>
+    <button onclick="selectAllTenderSups(false)" style="font-size:11px;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:5px;padding:4px 10px;cursor:pointer;">Снять всех</button>
+  </div>
+  <label class="fL">Список товаров для быстрого старта</label>
+  <textarea class="fI" id="ct-search-input" rows="5"
+    placeholder="Необязательно. Можно сразу вставить список товаров с количеством, чтобы тендер открылся уже по нужным позициям."
+    style="resize:vertical;min-height:110px;"></textarea>
+  <div id="ct-err" style="color:var(--rd);font-size:12px;min-height:16px;"></div>
+  <div class="m-acts">
+    <button class="m-cancel" onclick="closeModal('createTender')">Отмена</button>
+    <button class="m-ok" onclick="submitCreateTender()">Создать тендер</button>
+  </div>
+</div></div>
+
+<!-- Модал: Ручное сопоставление колонок -->
+<div class="ov" id="ov-manualColumnMap"><div class="modal wide">
+  <div class="m-title">Сопоставление колонок прайса</div>
+  <div style="background:var(--aD);border:1px solid var(--ac);border-radius:var(--r);padding:8px 12px;margin-bottom:12px;font-size:12px;color:var(--t2);">
+    Укажите вручную какая колонка содержит название, цену и единицу измерения.
+    <div id="mcm-method" style="margin-top:4px;font-size:11px;color:var(--t3);"></div>
+  </div>
+  <!-- Превью таблицы -->
+  <div id="mcm-preview" style="overflow-x:auto;margin-bottom:12px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;max-height:160px;overflow-y:auto;"></div>
+  <!-- Выбор колонок -->
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+    <div>
+      <label class="fL">Наименование <span style="color:var(--rd);">*</span></label>
+      <select class="fS" id="mcm-name-col"></select>
+    </div>
+    <div>
+      <label class="fL">Единица измерения</label>
+      <select class="fS" id="mcm-unit-col">
+        <option value="-1">— нет —</option>
+      </select>
+    </div>
+    <div>
+      <label class="fL">Цена <span style="color:var(--rd);">*</span></label>
+      <select class="fS" id="mcm-price-col"></select>
+    </div>
+  </div>
+  <!-- Начало строки данных -->
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+    <label class="fL" style="margin:0;white-space:nowrap;">Строка начала данных:</label>
+    <input type="number" id="mcm-start-row" value="1" min="1" max="20"
+      style="width:60px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);
+             padding:5px 8px;font-size:13px;color:var(--tx);outline:none;text-align:center;">
+    <span style="font-size:11px;color:var(--t3);">(строка 1 = первая строка файла)</span>
+  </div>
+  <div id="mcm-err" style="color:var(--rd);font-size:12px;min-height:14px;"></div>
+  <div class="m-acts">
+    <button class="m-cancel" onclick="closeModal('manualColumnMap')">Отмена</button>
+    <button class="m-ok" onclick="applyManualColumnMap()">Применить и загрузить</button>
+  </div>
+</div></div>
+
+
+<!-- Модал: Создать заказ (Заказ и корзина) -->
+<div class="ov" id="ov-createOrder"><div class="modal wide">
+  <div class="m-title">Создать заказ</div>
+
+  <!-- Выбор заведения -->
+  <label class="fL">Заведение <span style="color:var(--rd);">*</span></label>
+  <select class="fS" id="co-rest" style="margin-bottom:14px;">
+    <option value="">— выберите заведение —</option>
+  </select>
+
+  <label class="fL">Юр. лицо для заказа <span style="color:var(--rd);">*</span></label>
+  <div id="co-legal-hint" style="font-size:12px;color:var(--t3);margin:-4px 0 8px;">Сначала выберите заведение.</div>
+  <div id="co-legal-list" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);
+    padding:10px;max-height:170px;overflow-y:auto;margin-bottom:14px;"></div>
+
+  <!-- Поиск поставщиков -->
+  <label class="fL">Поставщики <span style="color:var(--rd);">*</span></label>
+  <div style="position:relative;margin-bottom:8px;">
+    <input type="text" id="co-sup-search" placeholder="Поиск поставщика..."
+      oninput="filterOrderSupList(this.value)"
+      style="width:100%;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);
+             padding:7px 12px;color:var(--tx);font-size:13px;outline:none;box-sizing:border-box;">
+  </div>
+  <div id="co-sups-list" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);
+    padding:8px;max-height:200px;overflow-y:auto;margin-bottom:8px;"></div>
+  <div style="display:flex;gap:8px;margin-bottom:14px;">
+    <button onclick="selectAllOrderSups(true)" style="font-size:11px;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:5px;padding:4px 10px;cursor:pointer;">Все</button>
+    <button onclick="selectAllOrderSups(false)" style="font-size:11px;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:5px;padding:4px 10px;cursor:pointer;">Снять</button>
+  </div>
+
+  <div id="co-err" style="color:var(--rd);font-size:12px;min-height:14px;"></div>
+  <div class="m-acts">
+    <button class="m-cancel" onclick="closeModal('createOrder')">Отмена</button>
+    <button class="m-ok" onclick="submitCreateOrder()">Создать заказ</button>
+  </div>
+</div></div>
+
+<!-- Модал: Поиск в прайсе поставщика (Заказ) -->
+<div class="ov" id="ov-orderSupSearch"><div class="modal wide">
+  <div class="m-title">Поиск в прайсе</div>
+  <div style="font-size:12px;color:var(--t3);margin-bottom:10px;" id="oss-sup-label"></div>
+  <input type="text" id="oss-input" placeholder="Введите название товара..."
+    oninput="ossFilter(this.value)"
+    style="width:100%;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);
+           padding:9px 12px;color:var(--tx);font-size:13px;outline:none;box-sizing:border-box;margin-bottom:10px;">
+  <div id="oss-results" style="max-height:320px;overflow-y:auto;border:1px solid var(--br);border-radius:var(--r);"></div>
+  <div class="m-acts">
+    <button class="m-cancel" onclick="closeModal('orderSupSearch')">Закрыть</button>
+  </div>
+</div></div>
+
+</body>
+</html>
