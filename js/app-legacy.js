@@ -321,6 +321,7 @@ function maxP(p){return p.suppliers.length?Math.max(...p.suppliers.map(s=>s.pric
 function sav(p){return p.suppliers.length>1?maxP(p)-minP(p):0;}
 function curP(pid){const t=tenderChanges.find(x=>x.pid===pid);if(t)return t.newPrice;const p=PRODUCTS.find(x=>x.id===pid);return p?minP(p):0;}
 function logAudit(user,action,page){const db=dbGet();db.audit.unshift({ts:new Date().toLocaleString('ru'),user,action,page});if(db.audit.length>100)db.audit.pop();dbSet(db);try{if(document.getElementById('pg-owner')?.classList.contains('on'))renderOwner();}catch(e){}}
+function auditActor(){return (((CU&&CU.first)||'')+' '+((CU&&CU.last)||'')).trim()||'Система';}
 function logSystemEvent(type,title,details,severity,source){
   var db=dbGet();
   if(!Array.isArray(db.systemLog)) db.systemLog=[];
@@ -1213,7 +1214,7 @@ function checkoutSup(si){
   cart=cart.filter(function(x){return x.supplier!==supName;});
   delete cartComments[supName];
   ORDERS=ORDERS; saveOrdersData(); updBdg();renderCart();renderDash();
-  logAudit((CU?CU.first:'')+' '+(CU?CU.last:''),'Оформил заказ к '+supName+' · ₽'+total.toLocaleString()+(extraItems.length?' · с доп. накладной':''),'Корзина');
+  logAudit(auditActor(), 'Оформил заказ к '+supName+' · ₽'+total.toLocaleString()+(extraItems.length?' · с доп. накладной':''),'Корзина');
 }
 function doCheckoutAll(){
   var sups=_supOrder.slice();
@@ -1674,7 +1675,7 @@ function deleteSup(i){
   renderCatalog();
   savePriceData();
   toast('🗑 Поставщик «'+name+'» удалён','ok');
-  logAudit((CU?CU.first:'')+' '+(CU?CU.last||'':''),'Удалил поставщика «'+name+'»','Поставщики');
+  logAudit(auditActor(), 'Удалил поставщика «'+name+'»','Поставщики');
 }
 function renderAnalytics(){
   var orders=getAnalyticsOrders();
@@ -2076,7 +2077,7 @@ function approveUser(id){
   renderAdmin();renderDemoG();renderOwner();
   toast('✅ '+u.first+' '+u.last+' — доступ открыт!','ok');
   showPush('ok','✅ Пользователь одобрен','',u.first+' '+u.last+'<br>'+u.email+'<br>'+u.company);
-  logAudit((CU?CU.first:'')+' '+(CU?CU.last:''),'Одобрил пользователя '+u.email,'Пользователи');
+  logAudit(auditActor(), 'Одобрил пользователя '+u.email,'Пользователи');
   updPendBadge();
 }
 function rejectUser(id){
@@ -2084,7 +2085,7 @@ function rejectUser(id){
   u.status='rejected';dbSet(db);
   renderAdmin();renderOwner();
   toast('❌ '+u.first+' '+u.last+' — отклонён','ok');
-  logAudit((CU?CU.first:'')+' '+(CU?CU.last:''),'Отклонил '+u.email,'Пользователи');
+  logAudit(auditActor(), 'Отклонил '+u.email,'Пользователи');
   updPendBadge();
 }
 function changeRole(id,role){const db=dbGet();const u=db.users.find(x=>x.id===id);if(!u||!ROLES[role])return;u.role=role;dbSet(db);renderOwner();toast(`✅ Роль изменена на ${ROLES[role].label}`,'ok');logAudit(CU?.first+' '+(CU?.last||''),`Изменил роль ${u.email} на ${role}`,'Пользователи');}
@@ -3020,7 +3021,7 @@ function submitSup(){
   renderCatalog();
   savePriceData();
   toast('Поставщик «'+n+'» '+(existing?'обновлён':'добавлен')+'!','ok');
-  logAudit((CU?CU.first:'')+' '+(CU?(CU.last||''):''),(existing?'Обновил':'Добавил')+' поставщика «'+n+'»','Поставщики');
+  logAudit(auditActor(), (existing?'Обновил':'Добавил')+' поставщика «'+n+'»','Поставщики');
 }
 function renderAniRoles(){const el=document.getElementById('aniRoles');if(!el)return;el.innerHTML=Object.entries(ROLES).map(([k,r])=>`<label style="display:flex;align-items:center;gap:7px;padding:7px;background:var(--bg3);border-radius:var(--r);cursor:pointer;font-size:12px;"><input type="checkbox" id="ani-r-${k}" style="width:14px;height:14px;accent-color:var(--ac);"> ${r.emoji} ${r.label}</label>`).join('');}
 function submitNavItem(){const n=document.getElementById('ani-n')?.value.trim();if(!n){toast('❗ Укажите название','err');return;}const ico=document.getElementById('ani-i')?.value||'📄';const desc=document.getElementById('ani-d')?.value||'';const pg='custom_'+Date.now();const selectedRoles=Object.keys(ROLES).filter(k=>document.getElementById('ani-r-'+k)?.checked);if(!selectedRoles.length){toast('❗ Выберите роли','err');return;}selectedRoles.forEach(k=>{if(k!=='owner')ROLES[k].pages.push(pg);});ROLES.owner.pages.push(pg);PM[pg]={sec:'📁 Доп. разделы',ico,lbl:n};PT[pg]=n;if(CU)buildNav(CU);closeModal('addNavItem');toast(`✅ Вкладка «${n}» добавлена в навигацию!`,'ok');}
@@ -3068,7 +3069,7 @@ function submitCreateUser(forceCreate){
     closeModal('createUser');
     ['cu-fi','cu-la','cu-co','cu-em','cu-note'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
     var stEl=document.getElementById('cu-status'); if(stEl)stEl.value='active';
-    logAudit((CU?CU.first:'')+' '+(CU?CU.last||''),'Добавил пользователя '+em+' ('+ro+')','Пользователи');
+    logAudit(auditActor(), 'Добавил пользователя '+em+' ('+ro+')','Пользователи');
     var rl=ROLES[ro]?(ROLES[ro].emoji+' '+ROLES[ro].label):ro;
     var stLabel=st==='active'
       ? 'будет активен сразу после самостоятельной регистрации'
@@ -3317,8 +3318,7 @@ function doUploadPrice(){
     resetBtn();
     var compNames=selectedComps.length?selectedComps.join(', '):'все компании';
     toast('Загружено: +'+added+' новых, обновлено '+updated+'. Доступ: '+compNames,'ok');
-    logAudit((CU?CU.first:'')+' '+(CU?CU.last||'':''),
-      'Загрузил прайс (+'+added+'/обн '+updated+') для: '+compNames,'Прайс');
+    logAudit(auditActor(), 'Загрузил прайс (+'+added+'/обн '+updated+') для: '+compNames,'Прайс');
   }
 
   if(ext==='xlsx'||ext==='xls'){
@@ -3768,8 +3768,7 @@ function addRestMember(restId){
     rest.members.push({userId:userId,role:role});
     dbSet(db);
     toast('✅ '+targetUser.first+' '+targetUser.last+' добавлен в '+rest.name,'ok');
-    logAudit((CU?CU.first:'')+' '+(CU?CU.last||'':''),
-      'Добавил '+targetUser.email+' в '+rest.name,'Рестораны');
+    logAudit(auditActor(), 'Добавил '+targetUser.email+' в '+rest.name,'Рестораны');
   } else {
     db.orgInvites.unshift({
       id:'oinv'+Date.now()+Math.random().toString(36).slice(2,6),
@@ -3783,8 +3782,7 @@ function addRestMember(restId){
     });
     dbSet(db);
     toast('✉️ Приглашение отправлено пользователю '+targetUser.first,'ok');
-    logAudit((CU?CU.first:'')+' '+(CU?CU.last||'':''),
-      'Пригласил '+targetUser.email+' в '+rest.name,'Рестораны');
+    logAudit(auditActor(), 'Пригласил '+targetUser.email+' в '+rest.name,'Рестораны');
     if(targetUser.id===CU.id){
       renderOrgInviteBadge();
       renderOrgInvites();
@@ -3803,8 +3801,7 @@ function removeRestMember(restId,userId){
   rest.members=rest.members.filter(function(m){return m.userId!==userId;});
   dbSet(db);
   toast('Пользователь удалён из '+rest.name,'ok');
-  logAudit((CU?CU.first:'')+' '+(CU?CU.last||'':''),
-    'Удалил '+(u?u.email:'?')+' из '+rest.name,'Рестораны');
+  logAudit(auditActor(), 'Удалил '+(u?u.email:'?')+' из '+rest.name,'Рестораны');
   renderRestaurants();
 }
 
@@ -3818,7 +3815,7 @@ function changeRestMemberRole(restId,userId,newRole){
   dbSet(db);
   var u=db.users.find(function(u){return u.id===userId;});
   toast('Роль '+(u?u.first:'')+' изменена на '+newRole,'ok');
-  logAudit((CU?CU.first:'')+' '+(CU?CU.last||'':''),'Изменил роль участника '+(u?u.email:'?')+' в '+rest.name,'Рестораны');
+  logAudit(auditActor(), 'Изменил роль участника '+(u?u.email:'?')+' в '+rest.name,'Рестораны');
 }
 
 function deleteRest(restId){
@@ -3832,7 +3829,7 @@ function deleteRest(restId){
   }
   dbSet(db);
   toast('🗑 «'+rest.name+'» удалён','ok');
-  logAudit((CU?CU.first:'')+' '+(CU?CU.last||'':''),'Удалил заведение «'+rest.name+'»','Рестораны');
+  logAudit(auditActor(), 'Удалил заведение «'+rest.name+'»','Рестораны');
   renderRestaurants();
 }
 
@@ -4074,7 +4071,7 @@ function submitRest(){
     dbSet(db);
     closeModal('addRest');
     toast('✅ «'+n+'» добавлен!','ok');
-    logAudit((CU?CU.first:'')+' '+(CU?CU.last||'':''),'Создал заведение «'+n+'»','Рестораны');
+    logAudit(auditActor(), 'Создал заведение «'+n+'»','Рестораны');
   }
   renderRestaurants();
   renderRestPick();
@@ -4190,8 +4187,7 @@ function doUploadCatalog(){
     resetBtn();
     var who=selectedComps.length?selectedComps.join(', '):'все';
     toast('Каталог: +'+added+' новых, обн. '+updated+'. Цены для: '+who,'ok');
-    logAudit((CU?CU.first:'')+' '+(CU?CU.last||'':''),
-      'Загрузил в каталог +'+added+'/обн '+updated,'Каталог');
+    logAudit(auditActor(), 'Загрузил в каталог +'+added+'/обн '+updated,'Каталог');
   }
 
   function readExcel(file,cb){
@@ -4338,8 +4334,7 @@ function doUploadTenderFile(){
     resetBtn();
     var who=selectedComps.length?selectedComps.join(', '):'все';
     toast('Загружено '+loaded+' позиций. Цены для: '+who,'ok');
-    logAudit((CU?CU.first:'')+' '+(CU?CU.last||'':''),
-      'Загрузил прайс в тендер: '+loaded+' позиций для '+who,'Тендер');
+    logAudit(auditActor(), 'Загрузил прайс в тендер: '+loaded+' позиций для '+who,'Тендер');
   }
 
   function readExcel(f,cb){
