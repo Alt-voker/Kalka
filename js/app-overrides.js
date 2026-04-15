@@ -7,6 +7,7 @@
     dbSave: window.dbSave,
     doLogin: window.doLogin,
     doLogout: window.doLogout,
+    saveMyProfile: window.saveMyProfile,
     detectStructure: window.detectStructure,
     extractPrice: window.extractPrice,
     cleanRows: window.cleanRows,
@@ -415,6 +416,16 @@
         if (errEl) errEl.textContent = 'Аккаунт заблокирован';
         return;
       }
+      if (user.status === 'pending') {
+        await client.auth.signOut();
+        if (errEl) errEl.textContent = 'Заявка ещё не одобрена владельцем или администратором';
+        return;
+      }
+      if (user.status === 'rejected') {
+        await client.auth.signOut();
+        if (errEl) errEl.textContent = 'Заявка отклонена. Обратитесь к владельцу платформы';
+        return;
+      }
       if (typeof window.enterApp === 'function') window.enterApp(user);
     } catch (error) {
       if (errEl) errEl.textContent = error && error.message ? error.message : 'Ошибка входа';
@@ -541,6 +552,139 @@
     }
     if (legacy.doLogout) legacy.doLogout();
     loggingOut = false;
+  };
+
+  window.saveMyProfile = async function () {
+    if (!window.CU) {
+      if (legacy.saveMyProfile) return legacy.saveMyProfile();
+      return;
+    }
+
+    var err = document.getElementById('mp-err');
+    var ok = document.getElementById('mp-ok');
+    if (err) err.textContent = '';
+    if (ok) ok.textContent = '';
+
+    var first = ((document.getElementById('mp-fi') || {}).value || '').trim();
+    var last = ((document.getElementById('mp-la') || {}).value || '').trim();
+    var company = ((document.getElementById('mp-co') || {}).value || '').trim();
+    var newEmail = (((document.getElementById('mp-em') || {}).value || '').trim()).toLowerCase();
+    var oldPw = ((document.getElementById('mp-old') || {}).value || '');
+    var newPw = ((document.getElementById('mp-new') || {}).value || '');
+    var newPw2 = ((document.getElementById('mp-new2') || {}).value || '');
+
+    if (!first || !last) {
+      if (err) err.textContent = 'Укажите имя и фамилию';
+      return;
+    }
+    if (!company) {
+      if (err) err.textContent = 'Укажите компанию';
+      return;
+    }
+    if (!newEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail)) {
+      if (err) err.textContent = 'Введите корректный email';
+      return;
+    }
+    if ((newPw || oldPw) && newPw.length < 6) {
+      if (err) err.textContent = 'Новый пароль должен быть не короче 6 символов';
+      return;
+    }
+    if ((newPw || oldPw) && newPw !== newPw2) {
+      if (err) err.textContent = 'Новые пароли не совпадают';
+      return;
+    }
+
+    if (!app.supabase || !app.supabase.isEnabled || !app.supabase.isEnabled()) {
+      if (legacy.saveMyProfile) return legacy.saveMyProfile();
+      if (err) err.textContent = 'Supabase не настроен';
+      return;
+    }
+
+    try {
+      var client = app.supabase.getClient();
+      var db = ensureArrays(window._dbCache || readLocalState() || getDefaults());
+      var currentUser = window.CU || null;
+      var idx = db.users.findIndex(function (item) {
+        return currentUser && item && item.id === currentUser.id;
+      });
+      if (idx < 0) {
+        if (err) err.textContent = 'Пользователь не найден';
+        return;
+      }
+
+      var currentEmail = String((db.users[idx] && db.users[idx].email) || (currentUser && currentUser.email) || '').toLowerCase();
+      if (newEmail !== currentEmail) {
+        var taken = db.users.some(function (item, index) {
+          return index !== idx && item && String(item.email || '').toLowerCase() === newEmail;
+        });
+        if (taken) {
+          if (err) err.textContent = 'Этот email уже занят другим пользователем';
+          return;
+        }
+      }
+
+      if (newPw) {
+        if (!oldPw) {
+          if (err) err.textContent = 'Введите текущий пароль';
+          return;
+        }
+        var reauth = await client.auth.signInWithPassword({
+          email: currentEmail,
+          password: oldPw
+        });
+        if (reauth.error) {
+          if (err) err.textContent = 'Неверный текущий пароль';
+          return;
+        }
+      }
+
+      var payload = {
+        data: {
+          first_name: first,
+          last_name: last,
+          company: company,
+          role: db.users[idx].role || (currentUser && currentUser.role) || 'manager',
+          status: db.users[idx].status || (currentUser && currentUser.status) || 'active'
+        }
+      };
+      if (newEmail !== currentEmail) payload.email = newEmail;
+      if (newPw) payload.password = newPw;
+
+      var updateResult = await client.auth.updateUser(payload);
+      if (updateResult.error) throw updateResult.error;
+
+      db.users[idx].first = first;
+      db.users[idx].last = last;
+      db.users[idx].company = company;
+      db.users[idx].email = newEmail;
+      window.dbSet(db);
+
+      if (currentUser) {
+        currentUser.first = first;
+        currentUser.last = last;
+        currentUser.company = company;
+        currentUser.email = newEmail;
+      }
+
+      var sbName = document.getElementById('sbName');
+      if (sbName) sbName.textContent = first + ' ' + last;
+      var sbRole = document.getElementById('sbRole');
+      if (sbRole) sbRole.textContent = company;
+      var mpEmail = document.getElementById('mpEmail');
+      if (mpEmail) mpEmail.textContent = newEmail;
+      ['mp-old', 'mp-new', 'mp-new2'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.value = '';
+      });
+
+      if (ok) {
+        ok.textContent = newPw || newEmail !== currentEmail
+          ? 'Профиль обновлён. Если для email включено подтверждение, завершите его по письму.'
+          : 'Данные профиля сохранены.';
+      }
+    } catch (error) {
+      if (err) err.textContent = error && error.message ? error.message : 'Не удалось обновить профиль';
+    }
   };
 
   app.auth = {

@@ -834,7 +834,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
 <div class="page" id="pg-admin">
 <div class="pg-hd">
   <div><div class="pg-title">Управление пользователями</div><div class="pg-sub" id="adminSub"></div></div>
-  <div class="pg-acts"><button class="tbBtn" onclick="adSw('pending')" id="tabPend">⏳ Заявки <span class="badge br" id="pendCnt" style="margin-left:4px;">0</span></button><button class="tbBtn" onclick="adSw('all')" id="tabAll">👥 Все пользователи</button><button class="tbBtn" onclick="adSw('matrix')" id="tabMatrix">⚙️ Права</button><button class="tbBtn acc" onclick="openModal('createUser')">➕ Создать аккаунт</button></div>
+  <div class="pg-acts"><button class="tbBtn" onclick="adSw('pending')" id="tabPend">⏳ Заявки <span class="badge br" id="pendCnt" style="margin-left:4px;">0</span></button><button class="tbBtn" onclick="adSw('all')" id="tabAll">👥 Все пользователи</button><button class="tbBtn" onclick="adSw('matrix')" id="tabMatrix">⚙️ Права</button><button class="tbBtn acc" onclick="openModal('createUser')">➕ Добавить пользователя</button></div>
 </div>
 <div id="adPending"></div>
 <div id="adAll" class="hidden"></div>
@@ -867,7 +867,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
 </div>
 <div class="owner-grid">
   <div class="owner-tool" onclick="goPage('admin')"><div class="owner-tool-ico">👥</div><div class="owner-tool-name">Пользователи</div><div class="owner-tool-desc">Роли, заявки, блокировки</div></div>
-  <div class="owner-tool" onclick="openModal('createUser')"><div class="owner-tool-ico">➕</div><div class="owner-tool-name">Создать аккаунт</div><div class="owner-tool-desc">Новый пользователь сразу активен</div></div>
+  <div class="owner-tool" onclick="openModal('createUser')"><div class="owner-tool-ico">➕</div><div class="owner-tool-name">Добавить пользователя</div><div class="owner-tool-desc">Подготовить роль и доступ до регистрации</div></div>
   <div class="owner-tool" onclick="goPage('restaurants')"><div class="owner-tool-ico">🍽️</div><div class="owner-tool-name">Рестораны</div><div class="owner-tool-desc">Заведения, команды, роли</div></div>
   <div class="owner-tool" onclick="openModal('platSettings')"><div class="owner-tool-ico">⚙️</div><div class="owner-tool-name">Настройки платформы</div><div class="owner-tool-desc">Название, поддержка, валюта, таймзона</div></div>
   <div class="owner-tool" onclick="openModal('manageRoles')"><div class="owner-tool-ico">🔐</div><div class="owner-tool-name">Роли и доступы</div><div class="owner-tool-desc">Матрица прав по разделам</div></div>
@@ -985,7 +985,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
 </div>
 <div style="background:var(--blD);border:1px solid rgba(79,195,247,.2);border-radius:var(--r);padding:14px;margin-top:10px;">
   <div style="font-weight:800;margin-bottom:8px;color:var(--bl);">💡 Чек-лист перед запуском</div>
-  <div>• Создать отдельного владельца и сменить тестовые пароли</div>
+  <div>• Проверить роли владельца и администратора</div>
   <div>• Проверить доступы ролей и блокировки</div>
   <div>• Убедиться, что прайсы и заказы сохраняются в Supabase</div>
   <div>• Настроить уведомления и почту поддержки</div>
@@ -996,10 +996,10 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
 
 
 <div class="ov" id="ov-createUser"><div class="modal wide">
-  <div class="m-title">➕ Создать аккаунт пользователя</div>
+  <div class="m-title">➕ Добавить пользователя</div>
   <div style="background:var(--aD);border:1px solid var(--ac);border-radius:var(--r);padding:10px 13px;margin-bottom:14px;font-size:12px;color:var(--t2);">
-    Этот инструмент создаёт внутреннюю карточку пользователя и доступы в системе.
-    Для обычного входа пользователю лучше использовать самостоятельную регистрацию на экране входа.
+    Здесь настраиваются роль и статус пользователя внутри платформы.
+    Сам вход пользователь завершает сам через кнопку <b>Регистрация</b> на экране входа с этим же email.
   </div>
   <div class="g2">
     <div><label class="fL">Имя</label><input class="fI" id="cu-fi" placeholder="Иван"></div>
@@ -1007,13 +1007,8 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
   </div>
   <label class="fL">Компания / Заведение</label>
   <input class="fI" id="cu-co" placeholder="ООО «Ресторан»">
-  <label class="fL">Email (логин для входа)</label>
+  <label class="fL">Email пользователя</label>
   <input class="fI" type="email" id="cu-em" placeholder="user@company.ru">
-  <label class="fL">Пароль</label>
-  <div class="pw" style="margin-bottom:8px;">
-    <input class="fI" type="password" id="cu-pa" placeholder="Минимум 4 символа" style="margin:0;">
-    <button class="eyeB" onclick="eyeT('cu-pa',this)">👁</button>
-  </div>
   <div class="g2">
     <div>
       <label class="fL">Роль</label>
@@ -1031,10 +1026,15 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
       <input class="fI" id="cu-note" placeholder="Должность, филиал...">
     </div>
   </div>
+  <label class="fL">Статус доступа</label>
+  <select class="fS" id="cu-status">
+    <option value="active">Активен после регистрации</option>
+    <option value="pending">Ожидает ручного одобрения</option>
+  </select>
   <div id="cu-err" style="color:var(--rd);font-size:12px;min-height:16px;margin-top:4px;"></div>
   <div class="m-acts">
     <button class="m-cancel" onclick="closeModal('createUser')">Отмена</button>
-    <button class="m-ok" onclick="submitCreateUser(false)">✅ Создать аккаунт</button>
+    <button class="m-ok" onclick="submitCreateUser(false)">✅ Сохранить пользователя</button>
   </div>
 </div></div>
 
@@ -1078,6 +1078,8 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
     <div id="mpAva" style="width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;flex-shrink:0;"></div>
     <div><div id="mpName" style="font-weight:700;font-size:15px;"></div><div id="mpRole" style="font-size:12px;color:var(--t2);"></div><div id="mpEmail" style="font-size:11px;color:var(--t3);"></div></div>
   </div>
+  <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:10px;border-bottom:1px solid var(--br);padding-bottom:8px;">Мои организации</div>
+  <div id="mp-orgs" style="display:grid;gap:8px;margin-bottom:16px;"></div>
   <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:10px;border-bottom:1px solid var(--br);padding-bottom:8px;">Личные данные</div>
   <div class="g2">
     <div><label class="fL">Имя</label><input class="fI" id="mp-fi" placeholder="Имя"></div>

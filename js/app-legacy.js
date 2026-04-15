@@ -3,11 +3,14 @@ let ROLES={
   owner:     {label:'Владелец',     emoji:'👑',color:'#5ba3f5',dim:'rgba(200,240,80,.12)',   pages:['owner','admin','restaurants','dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-dashboard','sup-products','sup-orders','sup-analytics']},
   admin:     {label:'Администратор',emoji:'🛡️',color:'#ab7df8',dim:'rgba(171,125,248,.12)', pages:['admin','restaurants','dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products']},
   manager:   {label:'Управляющий',  emoji:'👔',color:'#4fc3f7',dim:'rgba(79,195,247,.12)',  pages:['dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products','restaurants']},
-  chef:      {label:'Шеф-повар',    emoji:'👨‍🍳',color:'#ff7043',dim:'rgba(255,112,67,.12)',  pages:['dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products']},
-  buyer:     {label:'Закупщик',     emoji:'🛒',color:'#4caf82',dim:'rgba(76,175,130,.12)',  pages:['dashboard','catalog','order','favorites','orders','suppliers','analytics','tender']},
+  chef:      {label:'Шеф-повар',    emoji:'👨‍🍳',color:'#ff7043',dim:'rgba(255,112,67,.12)',  pages:['dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products','restaurants']},
+  buyer:     {label:'Закупщик',     emoji:'🛒',color:'#4caf82',dim:'rgba(76,175,130,.12)',  pages:['dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','restaurants']},
   supplier:  {label:'Поставщик',    emoji:'🏭',color:'#8a9ba8',dim:'rgba(138,155,168,.12)', pages:['sup-dashboard','sup-products','sup-orders','sup-analytics']},
-  accountant:{label:'Бухгалтер',    emoji:'📊',color:'#ffd54f',dim:'rgba(255,213,79,.12)',  pages:['analytics','orders','dashboard']},
+  accountant:{label:'Бухгалтер',    emoji:'📊',color:'#ffd54f',dim:'rgba(255,213,79,.12)',  pages:['analytics','orders','dashboard','restaurants']},
 };
+const ROLE_DEFAULT_PAGES=Object.fromEntries(Object.entries(ROLES).map(function(entry){
+  return [entry[0], (entry[1].pages||[]).slice()];
+}));
 const PM={
   owner:          {sec:'Владелец',    ico:'', lbl:'Панель владельца'},
   admin:          {sec:'Управление',  ico:'', lbl:'Пользователи'},
@@ -254,7 +257,20 @@ function _writeToFirebase(d, cb){
 
 function dbGet(){
   if(!_dbCache) _dbCache = _getLocal();
+  syncRolePagesFromDb(_dbCache);
   return _dbCache;
+}
+
+function syncRolePagesFromDb(db){
+  db=db||_dbCache;
+  var stored=db&&db.platformSettings&&db.platformSettings.rolePages&&typeof db.platformSettings.rolePages==='object'
+    ? db.platformSettings.rolePages
+    : null;
+  Object.keys(ROLES).forEach(function(roleKey){
+    var fallback=(ROLE_DEFAULT_PAGES[roleKey]||[]).slice();
+    var saved=stored&&Array.isArray(stored[roleKey]) ? stored[roleKey].filter(Boolean) : null;
+    ROLES[roleKey].pages=(saved&&saved.length ? saved : fallback).slice();
+  });
 }
 
 function dbSet(d){
@@ -282,14 +298,15 @@ function _getDefaults(){
   return {
     users:[
       {id:'u1',first:'Owner',last:'Account',company:'КальКа',
-       email:'owner@kalka.local',pass:'change-me-now',role:'owner',
-       status:'active',ev:true,created:'2026-01-01'}
+       email:'bootstrap-owner@local.invalid',pass:'__disabled__',role:'owner',
+       status:'blocked',ev:false,created:'2026-01-01',bootstrapOnly:true}
     ],
     restaurants:[],
     orgInvites:[],
     audit:[{ts:new Date().toLocaleString('ru'),user:'Система',
             action:'Инициализация',page:'-'}],
     systemLog:[{ts:new Date().toLocaleString('ru'),type:'system',severity:'info',title:'Инициализация',details:'Платформа создана',source:'core'}],
+    platformSettings:{},
     companySettings:{},
     supplierRatings:{},
     userFavorites:{}
@@ -468,6 +485,11 @@ function setSupplierRating(supName, value){
 function eyeT(id,btn){const e=document.getElementById(id);if(!e)return;e.type=e.type==='password'?'text':'password';btn.textContent=e.type==='password'?'👁':'🙈';}
 
 function doLogin(){
+  if(window.KalkaApp && window.KalkaApp.supabase && window.KalkaApp.supabase.isEnabled && window.KalkaApp.supabase.isEnabled()){
+    var authErr=document.getElementById('liErr');
+    if(authErr) authErr.textContent='Авторизация выполняется через защищённый Supabase Auth';
+    return;
+  }
   var er=document.getElementById('liErr'); er.textContent='';
   var em=(document.getElementById('liE').value||'').trim().toLowerCase();
   var pw=document.getElementById('liP').value||'';
@@ -544,10 +566,11 @@ function setupUI(u){
   const av=document.getElementById('sbAva');av.style.background=`linear-gradient(135deg,${rd.color},${rd.color}88)`;av.style.color=tc;av.textContent=(u.first[0]+u.last[0]).toUpperCase();
   document.getElementById('sbName').textContent=u.first+' '+u.last;document.getElementById('sbRole').textContent=u.company;
   const isS=u.role==='supplier',isAcc=u.role==='accountant';
+  const scopedRestaurants=getUserScopedRestaurantIds(u, dbGet());
   document.getElementById('cartBtn').style.display=(!isS&&!isAcc)?'flex':'none';
   document.getElementById('favBtn').style.display=(!isS&&!isAcc)?'flex':'none';
   document.getElementById('tbSearch').style.display=isS?'none':'flex';
-  document.getElementById('restBtn').style.display=['owner','admin','manager'].includes(u.role)?'flex':'none';
+  document.getElementById('restBtn').style.display=(!isS && (['owner','admin','manager'].includes(u.role) || scopedRestaurants.length>1))?'flex':'none';
   const ta=document.getElementById('topAct');
   if(u.role==='supplier')                        {ta.textContent='+ Товар';            ta.onclick=()=>openModal('addProduct');}
   else if(['chef','manager','admin'].includes(u.role)){ta.textContent='+ Тех. карта';  ta.onclick=()=>openModal('newTC');}
@@ -2020,10 +2043,10 @@ function renderAdmin(){
     '<div class="empty"><div class="empty-ico">✅</div><div class="empty-txt">Нет новых заявок</div></div>';
   }
   if(adTab==='all'){
-    document.getElementById('adAll').innerHTML=`<div class="panel"><div class="tw"><table><thead><tr><th></th><th>Пользователь</th><th>Компания / Email</th><th>Логин / Пароль</th><th>Роль</th><th>Дашборд</th><th>Статус</th><th>Действия</th></tr></thead><tbody>${all.map(u=>{const rd=ROLES[u.role]||{};const tc=['owner','chef','buyer'].includes(u.role)?'#000':'#fff';const da=normalizeDashboardAccess(u);const restCount=getUserDashboardRestaurantIds(u,db).length;const dashLabel=u.role==='owner'?'Весь дашборд':(!da.enabled?'Нет доступа':da.scope==='all_orgs'?'Все организации':da.scope==='selected'?'Выбрано: '+restCount:'Назначено: '+restCount);const dashTone=u.role==='owner'?'bg':(da.enabled?'bb':'br');const dashAction=(CU&&CU.role==='owner'&&u.role!=='owner')?`<button onclick="openDashboardAccessModal('${u.id}')" style="margin-top:6px;background:var(--bg4);border:1px solid var(--br2);border-radius:5px;padding:4px 8px;font-size:11px;cursor:pointer;color:var(--t2);">⚙️ Настроить</button>`:'';return`<tr><td><div class="u-ava" style="background:linear-gradient(135deg,${rd.color},${rd.color}88);color:${tc};">${(u.first[0]+u.last[0]).toUpperCase()}</div></td><td><b>${u.first} ${u.last}</b></td><td style="font-size:12px;color:var(--t2);">${u.company}<br>${u.email}</td><td style="font-size:11px;color:var(--t3);">${u.email}<br><span style="color:var(--ac);cursor:pointer;" onclick="navigator.clipboard&&navigator.clipboard.writeText('${u.pass}');toast('Скопировано!','ok');" title="Нажмите чтобы скопировать">🔑 ${u.pass}</span></td><td><select class="role-sel" onchange="changeRole('${u.id}',this.value)">${Object.entries(ROLES).map(([k,r])=>`<option value="${k}" ${u.role===k?'selected':''}>${r.emoji} ${r.label}</option>`).join('')}</select></td><td style="font-size:11px;color:var(--t2);"><span class="badge ${dashTone}">${dashLabel}</span>${dashAction}</td><td><span class="badge ${u.status==='active'?'bg':u.status==='blocked'?'br':'by'}">${u.status==='active'?'Активен':u.status==='blocked'?'Заблокирован':'Ожидает'}</span></td><td><button onclick="toggleBlock('${u.id}')" style="background:${u.status==='blocked'?'var(--grD)':'var(--rdD)'};color:${u.status==='blocked'?'var(--gr)':'var(--rd)'};border:1px solid ${u.status==='blocked'?'var(--gr)':'var(--rd)'};border-radius:5px;padding:4px 10px;font-size:11px;cursor:pointer;">${u.status==='blocked'?'✓ Разблокировать':'🚫 Заблокировать'}</button></td></tr>`;}).join('')}</tbody></table></div></div>`;
+    document.getElementById('adAll').innerHTML=`<div class="panel"><div class="tw"><table><thead><tr><th></th><th>Пользователь</th><th>Компания / Email</th><th>Организации</th><th>Роль</th><th>Дашборд</th><th>Статус</th><th>Действия</th></tr></thead><tbody>${all.map(u=>{const rd=ROLES[u.role]||{};const tc=['owner','chef','buyer'].includes(u.role)?'#000':'#fff';const da=normalizeDashboardAccess(u);const restIds=getUserScopedRestaurantIds(u,db);const restCount=restIds.length;const dashCount=getUserDashboardRestaurantIds(u,db).length;const dashLabel=u.role==='owner'?'Весь дашборд':(!da.enabled?'Нет доступа':da.scope==='all_orgs'?'Все организации':da.scope==='selected'?'Выбрано: '+dashCount:'Назначено: '+dashCount);const dashTone=u.role==='owner'?'bg':(da.enabled?'bb':'br');const dashAction=(CU&&CU.role==='owner'&&u.role!=='owner')?`<button onclick="openDashboardAccessModal('${u.id}')" style="margin-top:6px;background:var(--bg4);border:1px solid var(--br2);border-radius:5px;padding:4px 8px;font-size:11px;cursor:pointer;color:var(--t2);">⚙️ Настроить</button>`:'';const orgLabel=u.role==='owner'?'Все организации':(restCount?('Доступно: '+restCount):'Не назначены');return`<tr><td><div class="u-ava" style="background:linear-gradient(135deg,${rd.color},${rd.color}88);color:${tc};">${(u.first[0]+u.last[0]).toUpperCase()}</div></td><td><b>${u.first} ${u.last}</b></td><td style="font-size:12px;color:var(--t2);">${u.company}<br>${u.email}</td><td style="font-size:11px;color:var(--t3);">${orgLabel}</td><td><select class="role-sel" onchange="changeRole('${u.id}',this.value)">${Object.entries(ROLES).map(([k,r])=>`<option value="${k}" ${u.role===k?'selected':''}>${r.emoji} ${r.label}</option>`).join('')}</select></td><td style="font-size:11px;color:var(--t2);"><span class="badge ${dashTone}">${dashLabel}</span>${dashAction}</td><td><span class="badge ${u.status==='active'?'bg':u.status==='blocked'?'br':'by'}">${u.status==='active'?'Активен':u.status==='blocked'?'Заблокирован':'Ожидает'}</span></td><td><button onclick="toggleBlock('${u.id}')" style="background:${u.status==='blocked'?'var(--grD)':'var(--rdD)'};color:${u.status==='blocked'?'var(--gr)':'var(--rd)'};border:1px solid ${u.status==='blocked'?'var(--gr)':'var(--rd)'};border-radius:5px;padding:4px 10px;font-size:11px;cursor:pointer;">${u.status==='blocked'?'✓ Разблокировать':'🚫 Заблокировать'}</button></td></tr>`;}).join('')}</tbody></table></div></div>`;
   }
   if(adTab==='matrix'){
-    const pages=['dashboard','catalog','compare','cart','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products','admin','owner'];
+    const pages=['restaurants','dashboard','catalog','order','cart','orders','favorites','suppliers','analytics','tender','techcards','chef-calc','sup-products','sup-dashboard','sup-orders','sup-analytics','admin','owner'];
     const roleKeys=Object.keys(ROLES);
     document.getElementById('pmH').innerHTML=`<th style="padding:9px 13px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);">Раздел</th>`+roleKeys.map(k=>`<th style="padding:9px 13px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:${ROLES[k].color};">${ROLES[k].emoji} ${ROLES[k].label}</th>`).join('');
     document.getElementById('pmB').innerHTML=pages.map(pg=>`<tr><td style="padding:9px 13px;font-size:12px;font-weight:600;">${PM[pg]?.ico||'•'} ${PM[pg]?.lbl||pg}</td>${roleKeys.map(k=>`<td style="padding:9px 13px;text-align:center;"><span style="font-size:16px;">${(ROLES[k].pages||[]).includes(pg)?'✅':'—'}</span></td>`).join('')}</tr>`).join('');
@@ -2820,15 +2843,23 @@ function exportAll(){
   toast('📥 Все данные экспортированы','ok');
 }
 function renderManageRoles(){
-  const pages=['dashboard','catalog','compare','cart','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products','sup-dashboard','sup-orders','sup-analytics','admin','owner'];
+  syncRolePagesFromDb(dbGet());
+  const pages=['restaurants','dashboard','catalog','order','cart','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products','sup-dashboard','sup-orders','sup-analytics','admin','owner'];
   const roleKeys=Object.keys(ROLES).filter(k=>k!=='owner');
   document.getElementById('mrH').innerHTML=`<th style="padding:9px 13px;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);">Раздел</th>`+roleKeys.map(k=>`<th style="padding:9px 13px;font-size:11px;color:${ROLES[k].color};">${ROLES[k].emoji} ${ROLES[k].label}</th>`).join('');
   document.getElementById('mrB').innerHTML=pages.map(pg=>`<tr><td style="padding:9px 13px;font-size:12px;font-weight:600;">${PM[pg]?.ico||'•'} ${PM[pg]?.lbl||pg}</td>${roleKeys.map(k=>`<td style="padding:9px 13px;text-align:center;"><input type="checkbox" id="mr-${k}-${pg}" ${(ROLES[k].pages||[]).includes(pg)?'checked':''} style="width:15px;height:15px;cursor:pointer;accent-color:var(--ac);"></td>`).join('')}</tr>`).join('');
 }
 function saveRoles(){
-  const pages=['dashboard','catalog','compare','cart','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products','sup-dashboard','sup-orders','sup-analytics','admin','owner'];
+  const db=dbGet();
+  const pages=['restaurants','dashboard','catalog','order','cart','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products','sup-dashboard','sup-orders','sup-analytics','admin','owner'];
   const roleKeys=Object.keys(ROLES).filter(k=>k!=='owner');
   roleKeys.forEach(k=>{ROLES[k].pages=pages.filter(pg=>document.getElementById(`mr-${k}-${pg}`)?.checked);});
+  if(!db.platformSettings) db.platformSettings={};
+  if(!db.platformSettings.rolePages || typeof db.platformSettings.rolePages!=='object') db.platformSettings.rolePages={};
+  roleKeys.forEach(function(roleKey){
+    db.platformSettings.rolePages[roleKey]=(ROLES[roleKey].pages||[]).slice();
+  });
+  dbSet(db);
   closeModal('manageRoles');renderOwner();toast('✅ Права обновлены! Изменения применены для новых сессий.','ok');
 }
 function renderBlockUserSel(){
@@ -2999,28 +3030,21 @@ let toastT=null;
 function toast(msg,type='ok'){const old=document.querySelector('.toast');if(old && typeof old.remove === "function")old.remove();if(toastT)clearTimeout(toastT);const el=document.createElement('div');el.className=`toast ${type}`;el.innerHTML=`<span>${type==='ok'?'✓':'✕'}</span>${msg}`;document.body.appendChild(el);toastT=setTimeout(function(){el.style.opacity='0';setTimeout(function(){el.remove();},300);},3000);}
 
 
-function genPass(){
-  var chars='abcdefghjkmnpqrstuvwxyz23456789';
-  var pass='';for(var i=0;i<8;i++)pass+=chars[Math.floor(Math.random()*chars.length)];
-  var el=document.getElementById('cu-pa');if(el)el.value=pass;
-}
-
 function submitCreateUser(forceCreate){
   var errEl=document.getElementById('cu-err'); if(errEl)errEl.textContent='';
   var fi=(document.getElementById('cu-fi')||{value:''}).value.trim();
   var la=(document.getElementById('cu-la')||{value:''}).value.trim();
   var co=(document.getElementById('cu-co')||{value:''}).value.trim();
   var em=((document.getElementById('cu-em')||{value:''}).value||'').trim().toLowerCase();
-  var pa=(document.getElementById('cu-pa')||{value:''}).value.trim();
   var ro=(document.getElementById('cu-ro')||{value:'manager'}).value;
   var note=(document.getElementById('cu-note')||{value:''}).value.trim();
+  var st=(document.getElementById('cu-status')||{value:'active'}).value;
   if(!fi||!la){if(errEl)errEl.textContent='Укажите имя и фамилию';return;}
   if(!co){if(errEl)errEl.textContent='Укажите компанию';return;}
   if(!em||!isEmail(em)){if(errEl)errEl.textContent='Введите корректный email';return;}
-  if(pa.length<4){if(errEl)errEl.textContent='Пароль минимум 4 символа';return;}
   var btn=document.querySelector('#ov-createUser .m-ok');
   if(btn){btn.textContent='Сохраняем...';btn.disabled=true;}
-  function resetBtn(){if(btn){btn.textContent='\u2705 \u0421\u043e\u0437\u0434\u0430\u0442\u044c \u0430\u043a\u043a\u0430\u0443\u043d\u0442';btn.disabled=false;}}
+  function resetBtn(){if(btn){btn.textContent='✅ Сохранить пользователя';btn.disabled=false;}}
   function create(db){
     if(!db||!Array.isArray(db.users))db=_getDefaults();
     if(!forceCreate){
@@ -3035,20 +3059,25 @@ function submitCreateUser(forceCreate){
       }
     }
     if(forceCreate)db.users=db.users.filter(function(u){return !u||!u.email||u.email.toLowerCase()!==em;});
-    var nu={id:'u'+Date.now(),first:fi,last:la,company:co,email:em,pass:pa,role:ro,
-      status:'active',ev:true,created:today(),createdBy:CU?CU.email:'system'};
+    var nu={id:'u'+Date.now(),first:fi,last:la,company:co,email:em,role:ro,
+      status:st,ev:true,created:today(),reason:note,createdBy:CU?CU.email:'system',precreated:true};
     db.users.push(nu);
     dbSet(db);
     resetBtn();
     renderDemoG();
     closeModal('createUser');
-    ['cu-fi','cu-la','cu-co','cu-em','cu-pa','cu-note'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
-    logAudit((CU?CU.first:'')+' '+(CU?CU.last||'':''),'\u0421\u043e\u0437\u0434\u0430\u043b \u0430\u043a\u043a\u0430\u0443\u043d\u0442 '+em+' ('+ro+')','Пользователи');
+    ['cu-fi','cu-la','cu-co','cu-em','cu-note'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
+    var stEl=document.getElementById('cu-status'); if(stEl)stEl.value='active';
+    logAudit((CU?CU.first:'')+' '+(CU?CU.last||''),'Добавил пользователя '+em+' ('+ro+')','Пользователи');
     var rl=ROLES[ro]?(ROLES[ro].emoji+' '+ROLES[ro].label):ro;
-    showPush('ok','\u2705 \u0410\u043a\u043a\u0430\u0443\u043d\u0442 \u0441\u043e\u0437\u0434\u0430\u043d!','',
-      '<b>'+fi+' '+la+'</b><br>\u0415\u043c\u0430\u0438\u043b: <b>'+em+'</b><br>\u041f\u0430\u0440\u043e\u043b\u044c: <b>'+pa+'</b><br>\u0420\u043e\u043b\u044c: '+rl+
-      '<br><br><span style="color:var(--ac);font-size:11px;">\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043c\u043e\u0436\u0435\u0442 \u0432\u043e\u0439\u0442\u0438 \u043d\u0435\u043c\u0435\u0434\u043b\u0435\u043d\u043d\u043e \u0441 \u043b\u044e\u0431\u043e\u0433\u043e \u0443\u0441\u0442\u0440\u043e\u0439\u0441\u0442\u0432\u0430</span>');
-    toast('\u0410\u043a\u043a\u0430\u0443\u043d\u0442 '+fi+' '+la+' \u0441\u043e\u0437\u0434\u0430\u043d!','ok');
+    var stLabel=st==='active'
+      ? 'будет активен сразу после самостоятельной регистрации'
+      : 'потребует дополнительного одобрения';
+    showPush('ok','✅ Пользователь сохранён!','',
+      '<b>'+fi+' '+la+'</b><br>Email: <b>'+em+'</b><br>Роль: '+rl+
+      '<br>Статус: <b>'+stLabel+'</b>'+
+      '<br><br><span style="color:var(--ac);font-size:11px;">Теперь пользователь должен сам завершить регистрацию на экране входа.</span>');
+    toast('Пользователь '+fi+' '+la+' сохранён','ok');
   }
   // Reload fresh from Firebase
   var xhr=new XMLHttpRequest();
@@ -3095,6 +3124,27 @@ function openMyProfile(){
   var nm=document.getElementById('mpName'); if(nm)nm.textContent=(u.first||'')+' '+(u.last||'');
   var rl=document.getElementById('mpRole'); if(rl)rl.textContent=rd.emoji+' '+rd.label+(u.company?' · '+u.company:'');
   var em2=document.getElementById('mpEmail'); if(em2)em2.textContent=u.email;
+  var orgBox=document.getElementById('mp-orgs');
+  if(orgBox){
+    var memberRests=(db.restaurants||[]).filter(function(rest){
+      return rest.id!=='r0' && Array.isArray(rest.members) && rest.members.some(function(member){ return member.userId===u.id; });
+    });
+    orgBox.innerHTML=memberRests.length
+      ? memberRests.map(function(rest){
+          var member=(rest.members||[]).find(function(item){ return item.userId===u.id; })||{};
+          var restRole=ROLES[member.role] ? (ROLES[member.role].emoji+' '+ROLES[member.role].label) : (member.role||'Участник');
+          return '<div style="padding:10px 12px;border:1px solid var(--br);border-radius:10px;background:var(--bg2);">'
+            +'<div style="font-size:13px;font-weight:700;">'+(rest.name||'Организация')+'</div>'
+            +'<div style="font-size:11px;color:var(--t3);margin-top:4px;">'
+            +(rest.legalName||'Юр. лицо не указано')
+            +(rest.city?' · '+rest.city:'')
+            +(rest.addr?' · '+rest.addr:'')
+            +'</div>'
+            +'<div style="font-size:11px;color:var(--t2);margin-top:6px;">Моя роль в организации: '+restRole+'</div>'
+            +'</div>';
+        }).join('')
+      : '<div style="padding:12px;border:1px dashed var(--br2);border-radius:10px;color:var(--t3);font-size:12px;">Вы пока не состоите ни в одной организации.</div>';
+  }
 }
 function saveMyProfile(){
   if(!CU)return;
