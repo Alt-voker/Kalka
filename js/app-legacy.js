@@ -8863,7 +8863,8 @@ function applyManualColumnMapAndSave(){
 
 function saveCurrentSupPriceTemplate(){
   syncMcmRolesFromPreview();
-  if(!_supPriceImportState.mapping.name.length || !_supPriceImportState.mapping.price.length){
+  var mapping = _supPriceImportState.mapping || { name: [], unit: [], price: [], price2: [] };
+  if(!mapping.name.length || !mapping.price.length){
     var err = document.getElementById('mcm-err');
     if(err) err.textContent = 'Сначала назначьте обязательные колонки: наименование и цена.';
     return;
@@ -8872,10 +8873,10 @@ function saveCurrentSupPriceTemplate(){
     sheetName: _supPriceImportState.sheetName || '',
     headerRow: Math.max(0, (_supPriceImportState.dataStartRow || 1) - 1),
     dataStartRow: Math.max(1, _supPriceImportState.dataStartRow || 1),
-    nameCols: (_supPriceImportState.mapping.name || []).slice(),
-    unitCols: (_supPriceImportState.mapping.unit || []).slice(),
-    priceCols: (_supPriceImportState.mapping.price || []).slice(),
-    price2Cols: (_supPriceImportState.mapping.price2 || []).slice(),
+    nameCols: (mapping.name || []).slice(),
+    unitCols: (mapping.unit || []).slice(),
+    priceCols: (mapping.price || []).slice(),
+    price2Cols: (mapping.price2 || []).slice(),
     skipRules: { dropEmpty: true, requirePrice: true }
   });
   toast('Шаблон импорта сохранён', 'ok');
