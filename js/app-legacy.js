@@ -4732,13 +4732,28 @@ function filterCartSearch(q){
 
 function selectCartProduct(name, price, unit){
   if(_cartSearchIdx>=0 && _cartSearchIdx<cart.length){
+    var prevName=cart[_cartSearchIdx].name;
     cart[_cartSearchIdx].name=name;
     cart[_cartSearchIdx].price=price;
     cart[_cartSearchIdx].unit=unit;
     cart[_cartSearchIdx].emoji='📦';
+    cart[_cartSearchIdx].replacedFrom = prevName && prevName!==name ? prevName : (cart[_cartSearchIdx].replacedFrom||'');
+    if(cart[_cartSearchIdx]._orderQuery && cart[_cartSearchIdx].supplier){
+      _orderSetDraftEntry(cart[_cartSearchIdx]._orderQuery, cart[_cartSearchIdx].supplier, {
+        name: name,
+        price: price,
+        unit: unit || 'кг',
+        _type: cart[_cartSearchIdx]._type || 'main',
+        replacedFrom: cart[_cartSearchIdx].replacedFrom || ''
+      });
+    }
   }
   closeModal('cartProdSearch');
   renderCart();
+  flashCartUI();
+  if(typeof _renderOrderTable === 'function'){
+    _renderOrderTable((document.getElementById('orderTableSearch')||{value:''}).value);
+  }
   toast('Товар заменён: '+name,'ok');
 }
 
@@ -6148,6 +6163,11 @@ function renderCart(){
         // Наименование
         +'<td style="padding:8px 12px;font-weight:600;font-size:13px;">'
           +item.emoji+' '+item.name
+          +(item.replacedFrom
+            ? '<div style="font-size:10px;color:var(--or);font-weight:800;margin-top:3px;line-height:1.35;">'
+              +'было: '+item.replacedFrom+'<br>стало: '+item.name
+              +'</div>'
+            : '')
           +(item.comment?'<div style="font-size:10px;color:var(--t3);margin-top:2px;">'+item.comment+'</div>':'')
         +'</td>'
         // Кол-во
@@ -6325,6 +6345,7 @@ function orderAdd(pid, name, emoji, supplier, price){
   }
   updBdg();
   renderCart();
+  flashCartUI();
   // Перерисовать результаты (кнопка → «В корзине»)
   var inp = document.getElementById('orderSearchInput');
   if(inp && inp.value) orderSearch(inp.value);
@@ -6340,6 +6361,9 @@ function orderRemove(name, supplier, query){
   });
   updBdg();
   renderCart();
+  if(typeof _renderOrderTable === 'function'){
+    _renderOrderTable((document.getElementById('orderTableSearch')||{value:''}).value);
+  }
   var inp = document.getElementById('orderSearchInput');
   if(inp && inp.value) orderSearch(inp.value);
 }
@@ -8030,6 +8054,8 @@ function _orderUpsertItem(query, name, sup, price, unit, itemType, qty){
   var q = query || name;
   var prod = PRODUCTS.find(function(p){ return p.name===name; }) || {id:Date.now(), emoji:''};
   var normalizedQty=Math.max(0.001, parseFloat(qty)||1);
+  var selected = _orderDraftEntryByQuery(q, sup);
+  var replacementLabel = selected && selected.name===name ? (selected.replacedFrom || '') : '';
   var existing = cart.findIndex(function(c){
     return c.supplier===sup && (c._orderQuery||'')===q;
   });
@@ -8044,7 +8070,8 @@ function _orderUpsertItem(query, name, sup, price, unit, itemType, qty){
       qty: normalizedQty,
       unit: unit || cart[existing].unit || 'кг',
       _type: itemType || cart[existing]._type || 'main',
-      _orderQuery: q
+      _orderQuery: q,
+      replacedFrom: replacementLabel || cart[existing].replacedFrom || ''
     });
     return 'replaced';
   }
@@ -8059,7 +8086,8 @@ function _orderUpsertItem(query, name, sup, price, unit, itemType, qty){
     unit: unit || 'кг',
     comment: '',
     _type: itemType || 'main',
-    _orderQuery: q
+    _orderQuery: q,
+    replacedFrom: replacementLabel
   });
   return 'added';
 }
@@ -8174,11 +8202,7 @@ function ossSelect(itemName, price, unit, itemType){
     rowNode.classList.add('order-replaced');
     setTimeout(function(){ rowNode.classList.remove('order-replaced'); }, 1500);
   }
-  var cartBtn = document.getElementById('cartBtn');
-  if(cartBtn){
-    cartBtn.classList.add('cart-flash');
-    setTimeout(function(){ cartBtn.classList.remove('cart-flash'); }, 1200);
-  }
+  flashCartUI();
   closeModal('orderSupSearch');
   if(_orderSups.length > 0 && _orderSups.indexOf(sup) >= 0){
     _renderOrderTable((document.getElementById('orderTableSearch')||{value:''}).value);
