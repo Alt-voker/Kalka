@@ -9141,10 +9141,30 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
 function priceSaveEdited(){
   if(!_priceEditContext) return;
   var ctx = _priceEditContext;
+  var startRowInput = document.getElementById('mcm-start-row');
+  _supPriceImportState.dataStartRow = Math.max(1, parseInt((startRowInput || { value: '1' }).value, 10) || 1);
   syncMcmRolesFromPreview();
+  _supplierImportRenderParsedPreview();
+
   var validRows = _priceEditRows.filter(function(r){
     return String(r.name || '').trim() && ((r.price1 && r.price1 > 0) || (r.price2 && r.price2 > 0));
   });
+  if(!validRows.length){
+    var rebuilt = _supplierImportBuildParsedRows();
+    if(rebuilt && rebuilt.length){
+      validRows = rebuilt.map(function(r){
+        return {
+          sourceRow: r.sourceRow,
+          name: r.name,
+          unit: r.unit,
+          price1: r.price1,
+          price2: r.price2
+        };
+      });
+      _priceEditRows = validRows.slice();
+      _renderEditTable();
+    }
+  }
   var invalidCount = _priceEditRows.length - validRows.length;
   if(!validRows.length){
     toast('Нет ни одной корректной строки для загрузки', 'err');
