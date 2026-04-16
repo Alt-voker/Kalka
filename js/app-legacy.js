@@ -6349,6 +6349,47 @@ function _looksLikeProductName(text) {
   return true;
 }
 
+function _scoreDataRow(row) {
+  if(!row || !row.length) return 0;
+  var score = 0;
+  var hasProduct = false;
+  var hasPrice = false;
+  for(var i=0;i<row.length;i++){
+    var val = (row[i] || '').toString().trim();
+    if(!val) continue;
+    if(_looksLikeProductName(val)) {
+      score += 3;
+      hasProduct = true;
+    }
+    if(extractPrice(val) > 0) {
+      score += 2;
+      hasPrice = true;
+    }
+    if(_isUnitValue(val)) score += 1;
+  }
+  if(hasProduct) score += 2;
+  if(hasPrice) score += 1;
+  return score;
+}
+
+function _detectDataStartRow(rows) {
+  if(!rows || !rows.length) return 0;
+  var bestRow = 0;
+  var bestScore = -1;
+  for(var ri=0; ri<Math.min(rows.length, 60); ri++){
+    var sc = _scoreDataRow(rows[ri]);
+    if(sc > bestScore){
+      bestScore = sc;
+      bestRow = ri;
+    }
+  }
+  // Обычно товарный блок идёт после шапки, поэтому ищем первую хорошую строку
+  for(var j=0; j<Math.min(rows.length, 60); j++){
+    if(_scoreDataRow(rows[j]) >= Math.max(4, bestScore * 0.55)) return j;
+  }
+  return bestRow;
+}
+
 // ── ИЗВЛЕЧЕНИЕ ЦЕНЫ ──────────────────────────────────────────
 
 function extractPrice(raw) {
@@ -6545,6 +6586,8 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
 
   var added=0, updated=0, skipped=0, needsReview=[];
   var headerRow = cols.headerRow >= 0 ? cols.headerRow : 0;
+  var dataStartRow = _detectDataStartRow(rows);
+  if(dataStartRow > headerRow) headerRow = dataStartRow - 1;
   
   // Очистить строки от мусора
   var cleanedRows = cleanRows(rows, headerRow);
@@ -6816,7 +6859,9 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
   _mcmPriceName = priceName;
 
   if(!rows.length) return;
-  var sampleRows = rows.slice(0, Math.min(rows.length, 6));
+  var dataStartRow = _detectDataStartRow(rows);
+  var sampleRows = rows.slice(Math.max(0, dataStartRow), Math.min(rows.length, dataStartRow + 8));
+  if(!sampleRows.length) sampleRows = rows.slice(0, Math.min(rows.length, 8));
   var maxCols = sampleRows.reduce(function(max, row){
     return Math.max(max, row ? row.length : 0);
   }, 0);
@@ -6873,6 +6918,11 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
     hint.textContent = 'Выберите нужные колонки вручную. Автоподсказка уже учла вероятные значения, но финальный выбор остаётся за вами.';
   }
 
+  var startRowEl = document.getElementById('mcm-start-row');
+  if(startRowEl){
+    startRowEl.value = String(Math.max(1, dataStartRow + 1));
+  }
+
   var opts = '<option value="-1">— не указана —</option>'
     + headers.map(function(h,i){
       return '<option value="'+i+'">'+h+'</option>';
@@ -6908,7 +6958,7 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
   // Сразу показать редактируемый предпросмотр по текущим колонкам
   if(detectedLayout) {
     _mcmLayout = {
-      headerRow: detectedLayout.headerRow,
+      headerRow: Math.max(0, Math.min(detectedLayout.headerRow >= 0 ? detectedLayout.headerRow : 0, dataStartRow - 1)),
       nameCol: detectedLayout.nameCol,
       unitCol: detectedLayout.unitCol,
       priceCol: detectedLayout.priceCol,
@@ -6920,7 +6970,7 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
 
   // Если первый прогноз не дал колонки, показать базовый шаблон
   if(!detectedLayout || (detectedLayout.nameCol<0 && detectedLayout.priceCol<0 && detectedLayout.unitCol<0)) {
-    var base = {headerRow:-1,nameCol:0,unitCol:1,priceCol:2,priceCol2:3,method:'manual',confidence:0};
+    var base = {headerRow:Math.max(0, dataStartRow - 1),nameCol:0,unitCol:1,priceCol:2,priceCol2:3,method:'manual',confidence:0};
     _mcmLayout = base;
   }
   syncMcmRolesFromPreview();
