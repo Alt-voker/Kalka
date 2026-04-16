@@ -8862,8 +8862,7 @@ function applyManualColumnMapAndSave(){
 }
 
 function saveCurrentSupPriceTemplate(){
-  syncMcmRolesFromPreview();
-  var mapping = _supPriceImportState.mapping || { name: [], unit: [], price: [], price2: [] };
+  var mapping = syncMcmRolesFromPreview() || _supPriceImportState.mapping || { name: [], unit: [], price: [], price2: [] };
   if(!mapping.name.length || !mapping.price.length){
     var err = document.getElementById('mcm-err');
     if(err) err.textContent = 'Сначала назначьте обязательные колонки: наименование и цена.';
@@ -8999,10 +8998,14 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
 
   items.forEach(function(row, idx){
     var parts = Array.isArray(row) ? row : [row.name, row.unit, row.price1, row.price2];
-    var name = _supplierImportRowText(parts, nameCols);
-    var unit = _supplierImportRowText(parts, unitCols);
-    var price1 = _supplierImportRowPrice(parts, priceCols);
-    var price2 = _supplierImportRowPrice(parts, price2Cols);
+    var directName = row && typeof row === 'object' && !Array.isArray(row) ? row.name : '';
+    var directUnit = row && typeof row === 'object' && !Array.isArray(row) ? row.unit : '';
+    var directPrice1 = row && typeof row === 'object' && !Array.isArray(row) ? row.price1 : 0;
+    var directPrice2 = row && typeof row === 'object' && !Array.isArray(row) ? row.price2 : 0;
+    var name = String(directName || _supplierImportRowText(parts, nameCols) || '').trim();
+    var unit = String(directUnit || _supplierImportRowText(parts, unitCols) || '').trim();
+    var price1 = directPrice1 || _supplierImportRowPrice(parts, priceCols);
+    var price2 = directPrice2 || _supplierImportRowPrice(parts, price2Cols);
     var price = price1 || price2;
 
     if(!name || !String(name).trim()){
@@ -9108,6 +9111,7 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
 function priceSaveEdited(){
   if(!_priceEditContext) return;
   var ctx = _priceEditContext;
+  syncMcmRolesFromPreview();
   var invalid = _priceEditRows.filter(function(r){
     return !String(r.name || '').trim() || ((!r.price1 || r.price1 <= 0) && (!r.price2 || r.price2 <= 0));
   });
@@ -9115,18 +9119,6 @@ function priceSaveEdited(){
     toast('Проверьте строки: не заполнены название или цена', 'err');
     return;
   }
-
-  var rows = _priceEditRows.map(function(r){
-    return [r.name || '', r.unit || '', (r.price1 || '').toString(), (r.price2 || '').toString()];
-  });
-  var layout = {
-    name: [0],
-    unit: [1],
-    price: [2],
-    price2: [3],
-    headerRow: 0,
-    method: 'manual'
-  };
 
   var previewSec = document.getElementById('pricePreviewSection');
   if(previewSec) previewSec.style.display = 'none';
@@ -9144,7 +9136,15 @@ function priceSaveEdited(){
     skipRules: { dropEmpty: true, requirePrice: true }
   });
 
-  processSupPriceRows(rows, layout, ctx.supName, ctx.append, ctx.priceName, ctx.allowedUserIds);
+  processSupPriceRows(_priceEditRows.map(function(r){
+    return {
+      sourceRow: r.sourceRow,
+      name: r.name,
+      unit: r.unit,
+      price1: r.price1,
+      price2: r.price2
+    };
+  }), _supPriceImportState.mapping, ctx.supName, ctx.append, ctx.priceName, ctx.allowedUserIds);
 }
 
 function _showPreviewAndConfirm(rows, layout, supName, append, priceName, allowedUserIds, fi, resetBtn){
