@@ -1239,8 +1239,8 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
   <div id="pricePreviewSection" style="display:none;border:1px solid var(--br);border-radius:var(--r);margin-bottom:12px;overflow:hidden;">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:12px 14px;background:var(--bg3);border-bottom:1px solid var(--br);gap:12px;">
       <div style="min-width:0;flex:1;">
-        <div style="font-size:13px;font-weight:800;">Предпросмотр и сопоставление колонок</div>
-        <div style="font-size:11px;color:var(--t3);margin-top:2px;">Сначала выберите лист, затем назначьте роли прямо над колонками и проверьте строки ниже.</div>
+        <div style="font-size:13px;font-weight:800;">Предпросмотр файла</div>
+        <div style="font-size:11px;color:var(--t3);margin-top:2px;">Выберите лист, назначьте роли прямо в таблице и проверьте результат перед загрузкой.</div>
       </div>
       <span id="priceMethodBadge" style="font-size:10px;background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:999px;padding:4px 10px;white-space:nowrap;"></span>
     </div>
@@ -1258,7 +1258,6 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
         <span id="previewColPrice1" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;white-space:nowrap;">Цена 1</span>
         <span id="previewColPrice2" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;white-space:nowrap;">Цена 2</span>
       </div>
-      <button type="button" onclick="openSupPriceManualMap()" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:999px;padding:7px 12px;font-weight:700;cursor:pointer;">Назначить роли</button>
     </div>
     <div style="padding:12px 14px 8px;">
       <div id="pricePreviewHint" style="font-size:11px;color:var(--t3);margin:0 0 8px;">Файл еще не открыт.</div>
@@ -1355,7 +1354,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
     Назначьте роли прямо в предпросмотре файла, затем проверьте строки и загрузите прайс.
   </div>
   <!-- Превью таблицы -->
-  <div id="mcm-preview" style="overflow-x:auto;margin-bottom:12px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;max-height:160px;overflow-y:auto;"></div>
+  <div id="mcm-preview" style="margin-bottom:12px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;"></div>
   <div style="font-size:12px;font-weight:700;color:var(--t2);margin:2px 0 8px;">Редактируемый предпросмотр</div>
   <div id="mcm-edit-preview" style="margin-bottom:12px;"></div>
   <!-- Начало строки данных -->

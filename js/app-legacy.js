@@ -8444,6 +8444,746 @@ function renderOrder(){
 }
 
 
+// ═══════════════════════════════════════════════════════════════
+// ИМПОРТ ПРАЙСОВ ПОСТАВЩИКОВ — НОВЫЙ РУЧНОЙ МАСТЕР
+// ═══════════════════════════════════════════════════════════════
+
+var _supPriceImportState = {
+  book: null,
+  fileName: '',
+  sheetNames: [],
+  sheetName: '',
+  rows: [],
+  maxCols: 0,
+  dataStartRow: 1,
+  mapping: { name: [], unit: [], price: [], price2: [] },
+  parsedRows: [],
+  template: null
+};
+
+function _excelColLabel(idx){
+  var n = idx + 1;
+  var out = '';
+  while(n > 0){
+    var r = (n - 1) % 26;
+    out = String.fromCharCode(65 + r) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
+function _supplierImportResetState(){
+  _supPriceImportState = {
+    book: null,
+    fileName: '',
+    sheetNames: [],
+    sheetName: '',
+    rows: [],
+    maxCols: 0,
+    dataStartRow: 1,
+    mapping: { name: [], unit: [], price: [], price2: [] },
+    parsedRows: [],
+    template: null
+  };
+  _mcmRows = [];
+  _mcmLayout = null;
+  _mcmMaxCols = 0;
+  _mcmSelectedRoleByCol = {};
+  _priceEditRows = [];
+  _priceEditLayout = null;
+  _priceEditContext = null;
+}
+
+function _supplierImportNormalizeRows(rows){
+  return (Array.isArray(rows) ? rows : []).map(function(row){
+    return Array.isArray(row) ? row.map(function(cell){
+      return cell === null || cell === undefined ? '' : String(cell);
+    }) : [];
+  });
+}
+
+function _supplierImportGetSheetRows(book, sheetName){
+  if(!book || !sheetName) return [];
+  var ws = book.Sheets && book.Sheets[sheetName];
+  if(!ws) return [];
+  return _supplierImportNormalizeRows(XLSX.utils.sheet_to_json(ws, {
+    header: 1,
+    defval: '',
+    raw: false,
+    blankrows: true
+  }));
+}
+
+function _supplierImportFirstPopulatedSheet(book){
+  if(!book || !book.SheetNames) return '';
+  for(var i=0; i<book.SheetNames.length; i++){
+    var name = book.SheetNames[i];
+    var rows = _supplierImportGetSheetRows(book, name);
+    if(rows.some(function(row){
+      return row.some(function(cell){ return String(cell || '').trim(); });
+    })) return name;
+  }
+  return book.SheetNames[0] || '';
+}
+
+function _supplierImportApplyStateFromTemplate(){
+  var tpl = _loadSupPriceTemplate(_currentSupName || '');
+  if(!tpl) return;
+  if(tpl.sheetName && _supPriceImportState.sheetNames.indexOf(tpl.sheetName) >= 0){
+    _supPriceImportState.sheetName = tpl.sheetName;
+  }
+  _supPriceImportState.dataStartRow = Math.max(1, parseInt(tpl.dataStartRow || 1, 10) || 1);
+  _supPriceImportState.mapping = {
+    name: Array.isArray(tpl.nameCols) ? tpl.nameCols.slice() : (tpl.nameCol >= 0 ? [tpl.nameCol] : []),
+    unit: Array.isArray(tpl.unitCols) ? tpl.unitCols.slice() : (tpl.unitCol >= 0 ? [tpl.unitCol] : []),
+    price: Array.isArray(tpl.priceCols) ? tpl.priceCols.slice() : (tpl.priceCol >= 0 ? [tpl.priceCol] : []),
+    price2: Array.isArray(tpl.price2Cols) ? tpl.price2Cols.slice() : (tpl.priceCol2 >= 0 ? [tpl.priceCol2] : [])
+  };
+  _supPriceImportState.template = tpl;
+}
+
+function _supplierImportSetSheet(sheetName){
+  if(!_supPriceImportState.book) return;
+  _supPriceImportState.sheetName = sheetName || '';
+  _supPriceImportState.rows = _supplierImportGetSheetRows(_supPriceImportState.book, _supPriceImportState.sheetName);
+  _supPriceImportState.maxCols = _supPriceImportState.rows.reduce(function(max, row){
+    return Math.max(max, row ? row.length : 0);
+  }, 0);
+  if(_supPriceImportState.maxCols < 1) _supPriceImportState.maxCols = 1;
+  _supPriceImportState.dataStartRow = 1;
+  _supPriceImportState.mapping = { name: [], unit: [], price: [], price2: [] };
+  _supplierImportApplyStateFromTemplate();
+
+  _mcmRows = _supPriceImportState.rows.slice();
+  _mcmMaxCols = _supPriceImportState.maxCols;
+  _mcmSelectedRoleByCol = {};
+  (_supPriceImportState.mapping.name || []).forEach(function(i){ if(i >= 0) _mcmSelectedRoleByCol[i] = 'name'; });
+  (_supPriceImportState.mapping.unit || []).forEach(function(i){ if(i >= 0) _mcmSelectedRoleByCol[i] = 'unit'; });
+  (_supPriceImportState.mapping.price || []).forEach(function(i){ if(i >= 0) _mcmSelectedRoleByCol[i] = 'price'; });
+  (_supPriceImportState.mapping.price2 || []).forEach(function(i){ if(i >= 0) _mcmSelectedRoleByCol[i] = 'price2'; });
+}
+
+function _supplierImportRowText(parts, cols){
+  if(!Array.isArray(cols) || !cols.length) return '';
+  var vals = [];
+  cols.forEach(function(col){
+    if(col < 0 || !parts || col >= parts.length) return;
+    var val = parts[col];
+    if(val === null || val === undefined) val = '';
+    val = String(val);
+    if(val.trim()) vals.push(val.trim());
+  });
+  return vals.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+function _supplierImportRowPrice(parts, cols){
+  if(!Array.isArray(cols) || !cols.length) return 0;
+  for(var i=0; i<cols.length; i++){
+    var col = cols[i];
+    if(col < 0 || !parts || col >= parts.length) continue;
+    var price = extractPrice(parts[col]);
+    if(price > 0) return price;
+  }
+  return 0;
+}
+
+function _supplierImportBuildMappingFromSelects(){
+  var mapping = { name: [], unit: [], price: [], price2: [] };
+  for(var i=0; i<_mcmMaxCols; i++){
+    var sel = document.getElementById('mcm-role-' + i);
+    var role = sel ? sel.value : (_mcmSelectedRoleByCol[i] || 'ignore');
+    _mcmSelectedRoleByCol[i] = role || 'ignore';
+    if(role === 'name') mapping.name.push(i);
+    else if(role === 'unit') mapping.unit.push(i);
+    else if(role === 'price') mapping.price.push(i);
+    else if(role === 'price2') mapping.price2.push(i);
+  }
+  _supPriceImportState.mapping = mapping;
+  return mapping;
+}
+
+function _supplierImportBuildParsedRows(){
+  var rows = Array.isArray(_supPriceImportState.rows) ? _supPriceImportState.rows : [];
+  var startRow = Math.max(1, parseInt(_supPriceImportState.dataStartRow, 10) || 1);
+  var mapping = _supPriceImportState.mapping || { name: [], unit: [], price: [], price2: [] };
+  var out = [];
+  for(var ri = startRow - 1; ri < rows.length; ri++){
+    var parts = rows[ri] || [];
+    var name = _supplierImportRowText(parts, mapping.name);
+    var unit = _supplierImportRowText(parts, mapping.unit);
+    var price = _supplierImportRowPrice(parts, mapping.price);
+    var price2 = _supplierImportRowPrice(parts, mapping.price2);
+    if(!price && price2) price = price2;
+    if(!name || !String(name).trim()) continue;
+    if(!price || price <= 0) continue;
+    out.push({
+      sourceRow: ri + 1,
+      name: name,
+      unit: unit,
+      price1: price,
+      price2: price2 || 0,
+      rawRow: parts.slice ? parts.slice() : []
+    });
+  }
+  _supPriceImportState.parsedRows = out;
+  return out;
+}
+
+function _supplierImportRenderSheetSelect(){
+  var sel = document.getElementById('supPriceSheetSelect');
+  if(!sel) return;
+  var sheets = _supPriceImportState.sheetNames || [];
+  sel.innerHTML = sheets.length ? sheets.map(function(name){
+    return '<option value="' + _esc(name) + '"' + (name === _supPriceImportState.sheetName ? ' selected' : '') + '>' + _esc(name) + '</option>';
+  }).join('') : '<option value="">Лист не найден</option>';
+  sel.disabled = sheets.length <= 1;
+}
+
+function _supplierImportRenderRawPreview(){
+  var el = document.getElementById('mcm-preview');
+  if(!el) return;
+  var rows = _supPriceImportState.rows || [];
+  var maxCols = _supPriceImportState.maxCols || 0;
+  var startRow = Math.max(1, parseInt((document.getElementById('mcm-start-row') || { value: '1' }).value, 10) || 1);
+  var html = '<div style="overflow:auto;max-height:300px;border:1px solid var(--br);border-radius:12px;background:var(--bg);">'
+    + '<table style="border-collapse:collapse;width:100%;min-width:' + Math.max(8, maxCols) * 160 + 'px;">';
+  html += '<thead style="position:sticky;top:0;z-index:3;background:var(--bg3);">';
+  html += '<tr>';
+  html += '<th style="position:sticky;left:0;z-index:4;background:var(--bg3);padding:8px 10px;border:1px solid var(--br);min-width:64px;">#</th>';
+  for(var ci=0; ci<maxCols; ci++){
+    html += '<th style="padding:6px 8px;border:1px solid var(--br);min-width:160px;vertical-align:top;">'
+      + '<div style="display:flex;flex-direction:column;gap:6px;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+      + '<span style="font-size:10px;color:var(--t4);font-weight:700;">' + _excelColLabel(ci) + '</span>'
+      + '<span style="font-size:10px;color:var(--t3);background:var(--bg2);border:1px solid var(--br);border-radius:999px;padding:2px 6px;">Колонка ' + (ci + 1) + '</span>'
+      + '</div>'
+      + '<select id="mcm-role-' + ci + '" onchange="_setMcmRole(' + ci + ', this.value)" style="width:100%;background:var(--bg2);border:1px solid var(--br);border-radius:8px;padding:7px 8px;font-size:11px;color:var(--tx);outline:none;">'
+      + '<option value="ignore">Игнорировать</option>'
+      + '<option value="name">Наименование</option>'
+      + '<option value="unit">Единица измерения</option>'
+      + '<option value="price">Цена 1</option>'
+      + '<option value="price2">Цена 2</option>'
+      + '</select>'
+      + '</div>'
+    + '</th>';
+  }
+  html += '</tr></thead><tbody>';
+  rows.forEach(function(row, ri){
+    var bg = ri + 1 === startRow ? 'background:rgba(91,163,245,.08);' : (ri % 2 ? 'background:var(--bg2);' : '');
+    html += '<tr style="' + bg + '">';
+    html += '<td style="position:sticky;left:0;z-index:2;background:inherit;padding:6px 10px;border:1px solid var(--br);font-size:11px;color:var(--t3);text-align:center;">' + (ri + 1) + '</td>';
+    for(var cj=0; cj<maxCols; cj++){
+      var val = row && row[cj] !== undefined && row[cj] !== null ? String(row[cj]) : '';
+      html += '<td style="padding:6px 10px;border:1px solid var(--br);max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _esc(val) + '</td>';
+    }
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  el.innerHTML = html;
+}
+
+function _supplierImportSyncSelectsToMapping(){
+  for(var i=0; i<_mcmMaxCols; i++){
+    var sel = document.getElementById('mcm-role-' + i);
+    if(sel){
+      sel.value = _mcmSelectedRoleByCol[i] || 'ignore';
+    }
+  }
+}
+
+function _supplierImportRenderParsedPreview(){
+  var data = _supplierImportBuildParsedRows();
+  renderPriceEditTable(_supPriceImportState.rows, _supPriceImportState.mapping, _currentSupName, _supPriceAppend, (document.getElementById('supPriceName') || { value: '' }).value.trim() || (_supPriceAppend ? 'Дополнительный прайс' : 'Основной прайс'), [], 'mcm-edit-preview');
+  var err = document.getElementById('mcm-err');
+  if(err){
+    err.textContent = data.length
+      ? 'Найдено товарных строк: ' + data.length
+      : 'Нет корректных строк для импорта. Проверьте роли колонок и строку начала данных.';
+  }
+}
+
+function _supplierImportApplyStateToUI(){
+  _updatePricePreviewSectionFromRows(_supPriceImportState.rows, _supPriceImportState.sheetName, _supPriceImportState.fileName);
+  _supplierImportRenderSheetSelect();
+  _supplierImportRenderRawPreview();
+  _supplierImportSyncSelectsToMapping();
+  _supplierImportRenderParsedPreview();
+  _setImportPreviewBadges(_supPriceImportState.mapping);
+}
+
+function prepareSupPriceImportPreview(){
+  var errEl = document.getElementById('supPriceErr');
+  if(errEl) errEl.textContent = '';
+  var fi = document.getElementById('supPriceFile');
+  if(!fi || !fi.files || !fi.files[0]){
+    if(errEl) errEl.textContent = 'Сначала выберите файл прайса';
+    return;
+  }
+  var file = fi.files[0];
+  var ext = (file.name.split('.').pop() || '').toLowerCase();
+  if(['xlsx','xls','csv','txt'].indexOf(ext) < 0){
+    if(errEl) errEl.textContent = 'Файл не поддерживается. Загрузите Excel или CSV.';
+    return;
+  }
+  if(typeof XLSX === 'undefined'){
+    if(errEl) errEl.textContent = 'Не загружена библиотека для чтения таблиц';
+    return;
+  }
+
+  _supplierImportResetState();
+  _supPriceImportState.fileName = file.name || '';
+
+  var reader = new FileReader();
+  reader.onload = function(ev){
+    try{
+      var wb = ext === 'csv' || ext === 'txt'
+        ? XLSX.read(String(ev.target.result || ''), { type: 'string' })
+        : XLSX.read(new Uint8Array(ev.target.result), { type: 'array' });
+      _supPriceImportState.book = wb;
+      _supPriceImportState.sheetNames = (wb.SheetNames || []).slice();
+      _supPriceImportState.sheetName = _supplierImportFirstPopulatedSheet(wb) || _supPriceImportState.sheetNames[0] || '';
+      _supplierImportSetSheet(_supPriceImportState.sheetName);
+      _supplierImportApplyStateToUI();
+      showManualColumnMap(_supPriceImportState.rows, _currentSupName, _supPriceAppend, (document.getElementById('supPriceName')||{value:''}).value.trim() || (_supPriceAppend?'Дополнительный прайс':'Основной прайс'), {method:'manual'});
+      openModal('manualColumnMap');
+      _bindPricePreviewActions();
+    } catch(e){
+      if(errEl) errEl.textContent = 'Ошибка Excel: ' + e.message;
+    }
+  };
+  if(ext === 'csv' || ext === 'txt') reader.readAsText(file, 'utf-8');
+  else reader.readAsArrayBuffer(file);
+}
+
+function selectSupPriceSheet(sheetName){
+  if(!_supPriceImportState.book || !sheetName) return;
+  _supPriceImportState.sheetName = sheetName;
+  _supplierImportSetSheet(sheetName);
+  _supplierImportApplyStateToUI();
+}
+
+function openSupPriceManualMap(){
+  if(!_supPriceImportState.rows || !_supPriceImportState.rows.length){
+    prepareSupPriceImportPreview();
+    return;
+  }
+  openModal('manualColumnMap');
+  _supplierImportApplyStateToUI();
+}
+
+function updatePricePreviewHeader(layout){
+  var map = [
+    ['previewColName', layout && layout.name && layout.name.length ? 'Наименование: ' + layout.name.map(function(i){ return _excelColLabel(i); }).join(', ') : 'Наименование'],
+    ['previewColUnit', layout && layout.unit && layout.unit.length ? 'Единица: ' + layout.unit.map(function(i){ return _excelColLabel(i); }).join(', ') : 'Единица'],
+    ['previewColPrice1', layout && layout.price && layout.price.length ? 'Цена 1: ' + layout.price.map(function(i){ return _excelColLabel(i); }).join(', ') : 'Цена 1'],
+    ['previewColPrice2', layout && layout.price2 && layout.price2.length ? 'Цена 2: ' + layout.price2.map(function(i){ return _excelColLabel(i); }).join(', ') : 'Цена 2']
+  ];
+  map.forEach(function(item){
+    var el = document.getElementById(item[0]);
+    if(el) el.textContent = item[1];
+  });
+}
+
+function _setImportPreviewBadges(layout){
+  updatePricePreviewHeader(layout || _supPriceImportState.mapping);
+  var methodBadge = document.getElementById('priceMethodBadge');
+  if(methodBadge) methodBadge.textContent = 'ручной режим';
+}
+
+function syncMcmRolesFromPreview(){
+  return _supplierImportBuildMappingFromSelects();
+}
+
+function _setMcmRole(col, role){
+  _mcmSelectedRoleByCol[col] = role || 'ignore';
+  syncMcmRolesFromPreview();
+  _supplierImportRenderParsedPreview();
+}
+
+function showManualColumnMap(rows, supName, append, priceName, detectedLayout){
+  _mcmRows = _supplierImportNormalizeRows(rows);
+  _mcmSupName = supName;
+  _mcmAppend = append;
+  _mcmPriceName = priceName;
+  _mcmMaxCols = _supPriceImportState.maxCols || _mcmRows.reduce(function(max, row){ return Math.max(max, row.length); }, 0);
+  if(_mcmMaxCols < 1) _mcmMaxCols = 1;
+  _mcmSelectedRoleByCol = {};
+
+  (_supPriceImportState.mapping.name || []).forEach(function(i){ _mcmSelectedRoleByCol[i] = 'name'; });
+  (_supPriceImportState.mapping.unit || []).forEach(function(i){ _mcmSelectedRoleByCol[i] = 'unit'; });
+  (_supPriceImportState.mapping.price || []).forEach(function(i){ _mcmSelectedRoleByCol[i] = 'price'; });
+  (_supPriceImportState.mapping.price2 || []).forEach(function(i){ _mcmSelectedRoleByCol[i] = 'price2'; });
+
+  var hint = document.getElementById('mcm-manual-hint');
+  if(hint) hint.textContent = 'Назначьте роли прямо над колонками. Одна роль может встречаться в двух колонках. Система читает строки строго по выбранным колонкам и строке начала данных.';
+
+  var startRowEl = document.getElementById('mcm-start-row');
+  if(startRowEl){
+    startRowEl.value = String(_supPriceImportState.dataStartRow || 1);
+    startRowEl.oninput = function(){
+      _supPriceImportState.dataStartRow = Math.max(1, parseInt(this.value, 10) || 1);
+      _supplierImportRenderParsedPreview();
+    };
+  }
+
+  var methodEl = document.getElementById('mcm-method');
+  if(methodEl) methodEl.textContent = 'Режим: ручное сопоставление колонок';
+
+  _setImportPreviewBadges(_supPriceImportState.mapping);
+  renderPriceEditTable(_supPriceImportState.rows, _supPriceImportState.mapping, supName, append, priceName, [], 'mcm-edit-preview');
+  _bindPricePreviewActions();
+  openModal('manualColumnMap');
+  _supplierImportSyncSelectsToMapping();
+}
+
+function applyManualColumnMap(){
+  var err = document.getElementById('mcm-err');
+  var startRow = parseInt((document.getElementById('mcm-start-row') || { value: '1' }).value, 10) || 1;
+  if(startRow < 1) startRow = 1;
+  _supPriceImportState.dataStartRow = startRow;
+  syncMcmRolesFromPreview();
+  if(!_supPriceImportState.mapping.name.length){
+    if(err) err.textContent = 'Выберите хотя бы одну колонку с наименованием.';
+    return;
+  }
+  if(!_supPriceImportState.mapping.price.length){
+    if(err) err.textContent = 'Выберите хотя бы одну колонку с ценой.';
+    return;
+  }
+  if(err) err.textContent = 'Настройки применены. Проверьте предпросмотр ниже.';
+  _supplierImportRenderParsedPreview();
+}
+
+function applyManualColumnMapAndSave(){
+  applyManualColumnMap();
+  var err = document.getElementById('mcm-err');
+  if(err && /Выберите/.test(err.textContent || '')) return;
+  priceSaveEdited();
+}
+
+function saveCurrentSupPriceTemplate(){
+  syncMcmRolesFromPreview();
+  if(!_supPriceImportState.mapping.name.length || !_supPriceImportState.mapping.price.length){
+    var err = document.getElementById('mcm-err');
+    if(err) err.textContent = 'Сначала назначьте обязательные колонки: наименование и цена.';
+    return;
+  }
+  _saveSupPriceTemplate(_currentSupName, {
+    sheetName: _supPriceImportState.sheetName || '',
+    headerRow: Math.max(0, (_supPriceImportState.dataStartRow || 1) - 1),
+    dataStartRow: Math.max(1, _supPriceImportState.dataStartRow || 1),
+    nameCols: (_supPriceImportState.mapping.name || []).slice(),
+    unitCols: (_supPriceImportState.mapping.unit || []).slice(),
+    priceCols: (_supPriceImportState.mapping.price || []).slice(),
+    price2Cols: (_supPriceImportState.mapping.price2 || []).slice(),
+    skipRules: { dropEmpty: true, requirePrice: true }
+  });
+  toast('Шаблон импорта сохранён', 'ok');
+}
+
+function renderPriceEditTable(rows, layout, supName, append, priceName, allowedUserIds, containerId){
+  _priceEditContext = { rows: rows, supName: supName, append: append, priceName: priceName, allowedUserIds: allowedUserIds };
+  _priceEditLayout = layout || { name: [], unit: [], price: [], price2: [] };
+  _priceEditContainerId = containerId || 'pricePreviewTable';
+  var parsed = [];
+  var data = Array.isArray(rows) ? rows : [];
+  var startRow = Math.max(1, _supPriceImportState.dataStartRow || 1);
+  var nameCols = (_priceEditLayout.name || _priceEditLayout.nameCols || []).slice ? (_priceEditLayout.name || _priceEditLayout.nameCols || []).slice() : (_priceEditLayout.name || _priceEditLayout.nameCols || []);
+  var unitCols = (_priceEditLayout.unit || _priceEditLayout.unitCols || []).slice ? (_priceEditLayout.unit || _priceEditLayout.unitCols || []).slice() : (_priceEditLayout.unit || _priceEditLayout.unitCols || []);
+  var priceCols = (_priceEditLayout.price || _priceEditLayout.priceCols || []).slice ? (_priceEditLayout.price || _priceEditLayout.priceCols || []).slice() : (_priceEditLayout.price || _priceEditLayout.priceCols || []);
+  var price2Cols = (_priceEditLayout.price2 || _priceEditLayout.price2Cols || []).slice ? (_priceEditLayout.price2 || _priceEditLayout.price2Cols || []).slice() : (_priceEditLayout.price2 || _priceEditLayout.price2Cols || []);
+  for(var ri=startRow - 1; ri < data.length; ri++){
+    var parts = data[ri] || [];
+    var name = _supplierImportRowText(parts, nameCols);
+    var unit = _supplierImportRowText(parts, unitCols);
+    var price1 = _supplierImportRowPrice(parts, priceCols);
+    var price2 = _supplierImportRowPrice(parts, price2Cols);
+    if(!price1 && price2) price1 = price2;
+    if(!name || (!price1 && !price2)) continue;
+    parsed.push({
+      sourceRow: ri + 1,
+      name: name,
+      unit: unit,
+      price1: price1,
+      price2: price2 || 0
+    });
+  }
+  _priceEditRows = parsed;
+  _renderEditTable();
+}
+
+function _renderEditTable(){
+  var el = document.getElementById(_priceEditContainerId || 'pricePreviewTable');
+  if(!el) return;
+  var units = ['', 'шт', 'кг', 'г', 'л', 'мл', 'пачка', 'бут.', 'уп.', 'пор.'];
+  var html = '<div style="overflow:auto;max-height:380px;border:1px solid var(--br);border-radius:12px;background:var(--bg);">'
+    + '<table style="border-collapse:collapse;width:100%;min-width:760px;font-size:13px;">'
+    + '<thead><tr style="background:var(--bg3);position:sticky;top:0;z-index:1;">'
+    + '<th style="padding:8px 10px;text-align:center;border:1px solid var(--br);min-width:70px;">Строка</th>'
+    + '<th style="padding:8px 10px;text-align:left;border:1px solid var(--br);min-width:260px;">Наименование</th>'
+    + '<th style="padding:8px 10px;text-align:center;border:1px solid var(--br);min-width:90px;">Ед. изм.</th>'
+    + '<th style="padding:8px 10px;text-align:right;border:1px solid var(--br);min-width:120px;">Цена 1, ₽</th>'
+    + '<th style="padding:8px 10px;text-align:right;border:1px solid var(--br);min-width:120px;">Цена 2, ₽</th>'
+    + '<th style="padding:8px 10px;text-align:center;border:1px solid var(--br);width:42px;"></th>'
+    + '</tr></thead><tbody>';
+  _priceEditRows.forEach(function(row, i){
+    html += '<tr>'
+      + '<td style="padding:4px 8px;border:1px solid var(--br);text-align:center;color:var(--t3);font-size:11px;">' + row.sourceRow + '</td>'
+      + '<td style="padding:4px 8px;border:1px solid var(--br);">'
+        + '<input value="' + _esc(row.name) + '" oninput="_priceEditRows[' + i + '].name=this.value" style="width:100%;background:transparent;border:none;outline:none;font-size:13px;color:var(--tx);padding:4px;">'
+      + '</td>'
+      + '<td style="padding:4px 8px;border:1px solid var(--br);text-align:center;">'
+        + '<select onchange="_priceEditRows[' + i + '].unit=this.value" style="background:var(--bg2);border:1px solid var(--br);border-radius:8px;padding:4px 6px;font-size:12px;color:var(--tx);outline:none;">'
+        + units.map(function(u){ return '<option value="' + _esc(u) + '"' + (u === (row.unit || '') ? ' selected' : '') + '>' + (u || '—') + '</option>'; }).join('')
+        + '</select>'
+      + '</td>'
+      + '<td style="padding:4px 8px;border:1px solid var(--br);">'
+        + '<input type="text" value="' + _fmtPrice(row.price1) + '" oninput="_priceEditRows[' + i + '].price1=_parseInputPrice(this.value)" onblur="this.value=_fmtPrice(_priceEditRows[' + i + '].price1)" pattern="[0-9.,]*" style="width:100%;background:transparent;border:none;outline:none;font-size:13px;color:var(--ac);font-weight:700;text-align:right;padding:4px;">'
+      + '</td>'
+      + '<td style="padding:4px 8px;border:1px solid var(--br);">'
+        + '<input type="text" value="' + _fmtPrice(row.price2 || 0) + '" oninput="_priceEditRows[' + i + '].price2=_parseInputPrice(this.value)" onblur="this.value=_fmtPrice(_priceEditRows[' + i + '].price2||0)" pattern="[0-9.,]*" style="width:100%;background:transparent;border:none;outline:none;font-size:13px;color:var(--ac);font-weight:700;text-align:right;padding:4px;">'
+      + '</td>'
+      + '<td style="padding:4px 8px;border:1px solid var(--br);text-align:center;">'
+        + '<button onclick="priceDeleteRow(' + i + ')" style="background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:8px;padding:2px 7px;font-size:12px;cursor:pointer;" title="Удалить строку">✕</button>'
+      + '</td>'
+    + '</tr>';
+  });
+  html += '</tbody></table></div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:11px;color:var(--t3);margin-top:6px;">'
+    + '<span>Отображено строк: ' + _priceEditRows.length + '</span>'
+    + '<span>Редактируйте строки перед сохранением</span>'
+    + '</div>';
+  el.innerHTML = html;
+}
+
+function priceDeleteRow(i){
+  _priceEditRows.splice(i, 1);
+  _renderEditTable();
+}
+
+function priceAddRow(){
+  _priceEditRows.push({sourceRow: '-', name: '', unit: '', price1: 0, price2: 0});
+  _renderEditTable();
+  setTimeout(function(){
+    var el = document.getElementById('pricePreviewTable');
+    if(el) el.scrollTop = el.scrollHeight;
+  }, 50);
+}
+
+function processSupPriceRows(rows, cols, supName, append, priceName, allowedUserIds){
+  var allowedCompanies = [];
+  document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
+    var co = cb.dataset.company;
+    if(co && allowedCompanies.indexOf(co) < 0) allowedCompanies.push(co);
+  });
+  if(!allowedUserIds || !allowedUserIds.length){
+    allowedUserIds = [];
+    document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
+      allowedUserIds.push(cb.value);
+    });
+  }
+
+  if(!append){
+    SUP_PRODS = SUP_PRODS.filter(function(p){
+      return !(p._supplier === supName && (p._priceName === priceName || !p._priceName));
+    });
+  }
+
+  var items = Array.isArray(rows) ? rows : [];
+  var added = 0, updated = 0, skipped = 0, needsReview = [];
+  var nameCols = (cols.name || cols.nameCols || []);
+  var unitCols = (cols.unit || cols.unitCols || []);
+  var priceCols = (cols.price || cols.priceCols || []);
+  var price2Cols = (cols.price2 || cols.price2Cols || []);
+
+  items.forEach(function(row, idx){
+    var parts = Array.isArray(row) ? row : [row.name, row.unit, row.price1, row.price2];
+    var name = _supplierImportRowText(parts, nameCols);
+    var unit = _supplierImportRowText(parts, unitCols);
+    var price1 = _supplierImportRowPrice(parts, priceCols);
+    var price2 = _supplierImportRowPrice(parts, price2Cols);
+    var price = price1 || price2;
+
+    if(!name || !String(name).trim()){
+      skipped++;
+      return;
+    }
+    if(!price || price <= 0){
+      needsReview.push({row: idx + 1, name: name, reason: 'Нет цены'});
+      skipped++;
+      return;
+    }
+
+    var normUnit = String(unit || '').trim();
+    var pKg = 0, pSh = 0, pL = 0, pMl = 0;
+    var uLow = normUnit.toLowerCase();
+    if(uLow === 'кг' || uLow === 'kg') pKg = price;
+    else if(uLow === 'г' || uLow === 'гр' || uLow === 'g') pKg = Math.round(price * 1000 * 100) / 100;
+    else if(uLow === 'л' || uLow === 'l') pL = price;
+    else if(uLow === 'мл' || uLow === 'ml') { pL = Math.round(price * 1000 * 100) / 100; normUnit = 'л'; }
+    else pSh = price;
+    if(!normUnit) normUnit = 'шт';
+
+    var currentType = append ? 'additional' : 'main';
+    var ex = append ? SUP_PRODS.findIndex(function(p){
+      return p.name.toLowerCase() === String(name).toLowerCase()
+        && p._supplier === supName
+        && (p._type || 'main') === 'additional';
+    }) : -1;
+
+    var entry = {
+      id: ex >= 0 ? SUP_PRODS[ex].id : Date.now() + idx,
+      name: String(name).trim(),
+      cat: '—',
+      unit: normUnit,
+      supplier: supName,
+      _supplier: supName,
+      _priceName: priceName,
+      pKg: pKg,
+      pSh: pSh,
+      pL: pL,
+      pMl: pMl,
+      stock: 999,
+      active: true,
+      hidden: false,
+      _type: currentType,
+      allowedUserIds: allowedUserIds.slice(),
+      allowedCompanies: allowedCompanies.slice(),
+      sourceRow: idx + 1
+    };
+
+    if(ex >= 0){ SUP_PRODS[ex] = entry; updated++; }
+    else { SUP_PRODS.push(entry); added++; }
+
+    var prodIdx = PRODUCTS.findIndex(function(p){
+      return p.name.toLowerCase() === String(name).toLowerCase();
+    });
+    if(prodIdx >= 0){
+      var spIdx = PRODUCTS[prodIdx].suppliers.findIndex(function(s){ return s.name === supName; });
+      if(spIdx >= 0) PRODUCTS[prodIdx].suppliers[spIdx].price = price;
+      else PRODUCTS[prodIdx].suppliers.push({ name: supName, price: price });
+      PRODUCTS[prodIdx].unit = PRODUCTS[prodIdx].unit || normUnit;
+    } else {
+      PRODUCTS.push({
+        id: Date.now() + idx + 10000,
+        name: String(name).trim(),
+        cat: 'dry',
+        unit: normUnit,
+        emoji: '',
+        sticker: null,
+        fav: false,
+        allowedCompanies: allowedCompanies.slice(),
+        suppliers: [{ name: supName, price: price }],
+        pKg: pKg,
+        pSh: pSh,
+        pL: pL,
+        pMl: pMl
+      });
+      if(ALL_SUPS.indexOf(supName) < 0) ALL_SUPS.push(supName);
+    }
+  });
+
+  rememberPriceLayout(supName, {
+    headerRow: Math.max(0, (_supPriceImportState.dataStartRow || 1) - 1),
+    nameCols: (cols.name || cols.nameCols || []).slice(),
+    unitCols: (cols.unit || cols.unitCols || []).slice(),
+    priceCols: (cols.price || cols.priceCols || []).slice(),
+    price2Cols: (cols.price2 || cols.price2Cols || []).slice(),
+    dataStartRow: _supPriceImportState.dataStartRow || 1
+  });
+
+  savePriceData();
+  renderSupProducts();
+  if(typeof renderCatalog === 'function') renderCatalog();
+
+  var msg = (append ? 'Доп.' : 'Новый') + ' прайс «' + priceName + '» (' + supName + '): +' + added + ' новых, обн.' + updated + (skipped ? ' · пропущено: ' + skipped : '');
+  toast(msg, 'ok');
+  logAudit(CU ? CU.first + ' ' + CU.last : '', msg, 'Прайсы');
+  logSystemEvent('price_import', 'Загрузка прайса: ' + supName, msg + (needsReview.length ? ' · требует проверки: ' + needsReview.length : ''), needsReview.length || skipped ? 'warn' : 'info', 'price-import');
+
+  if(needsReview.length) _showNeedsReview(needsReview, supName);
+}
+
+function priceSaveEdited(){
+  if(!_priceEditContext) return;
+  var ctx = _priceEditContext;
+  var invalid = _priceEditRows.filter(function(r){
+    return !String(r.name || '').trim() || ((!r.price1 || r.price1 <= 0) && (!r.price2 || r.price2 <= 0));
+  });
+  if(invalid.length){
+    toast('Проверьте строки: не заполнены название или цена', 'err');
+    return;
+  }
+
+  var rows = _priceEditRows.map(function(r){
+    return [r.name || '', r.unit || '', (r.price1 || '').toString(), (r.price2 || '').toString()];
+  });
+  var layout = {
+    name: [0],
+    unit: [1],
+    price: [2],
+    price2: [3],
+    headerRow: 0,
+    method: 'manual'
+  };
+
+  var previewSec = document.getElementById('pricePreviewSection');
+  if(previewSec) previewSec.style.display = 'none';
+  closeModal('manualColumnMap');
+  closeModal('supPriceUpload');
+
+  _saveSupPriceTemplate(ctx.supName, {
+    sheetName: _supPriceImportState.sheetName || '',
+    headerRow: Math.max(0, (_supPriceImportState.dataStartRow || 1) - 1),
+    dataStartRow: Math.max(1, _supPriceImportState.dataStartRow || 1),
+    nameCols: (_supPriceImportState.mapping.name || []).slice(),
+    unitCols: (_supPriceImportState.mapping.unit || []).slice(),
+    priceCols: (_supPriceImportState.mapping.price || []).slice(),
+    price2Cols: (_supPriceImportState.mapping.price2 || []).slice(),
+    skipRules: { dropEmpty: true, requirePrice: true }
+  });
+
+  processSupPriceRows(rows, layout, ctx.supName, ctx.append, ctx.priceName, ctx.allowedUserIds);
+}
+
+function _showPreviewAndConfirm(rows, layout, supName, append, priceName, allowedUserIds, fi, resetBtn){
+  var previewSec = document.getElementById('pricePreviewSection');
+  var confirmBtn = document.getElementById('priceConfirmBtn');
+  var changeBtn  = document.getElementById('priceChangeColsBtn');
+  var methodBadge= document.getElementById('priceMethodBadge');
+
+  if(methodBadge) methodBadge.textContent = 'ручной режим';
+  updatePricePreviewHeader(layout || _supPriceImportState.mapping);
+  renderPriceEditTable(rows, layout, supName, append, priceName, allowedUserIds, 'mcm-edit-preview');
+  if(previewSec) previewSec.style.display = 'block';
+
+  if(confirmBtn){
+    confirmBtn.onclick = function(){
+      if(fi) fi.value = '';
+      if(typeof resetBtn === 'function') resetBtn();
+      priceSaveEdited();
+    };
+  }
+  if(changeBtn){
+    changeBtn.onclick = function(){
+      if(previewSec) previewSec.style.display = 'none';
+      if(typeof resetBtn === 'function') resetBtn();
+      openSupPriceManualMap();
+    };
+  }
+}
+
+function _bindPricePreviewActions(){
+  var confirmBtn = document.getElementById('priceConfirmBtn');
+  var changeBtn = document.getElementById('priceChangeColsBtn');
+  if(confirmBtn){
+    confirmBtn.onclick = function(){ applyManualColumnMapAndSave(); };
+  }
+  if(changeBtn){
+    changeBtn.onclick = function(){ openSupPriceManualMap(); };
+  }
+}
+
 document.addEventListener('DOMContentLoaded',function(){
   loadPriceLayoutsFromStorage();
   document.body.insertAdjacentHTML('beforeend',
