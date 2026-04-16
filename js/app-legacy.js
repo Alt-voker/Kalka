@@ -5005,18 +5005,7 @@ function prepareSupPriceImportPreview(){
     _supPriceImportSheetName = selectedName || '';
     _renderPriceSheetSelect(_supPriceImportSheets, _supPriceImportSheetName);
     _updatePricePreviewSectionFromRows(rows, _supPriceImportSheetName, file.name);
-    var template = _loadSupPriceTemplate(_currentSupName);
-    var layout = template && template.sheetName === _supPriceImportSheetName ? {
-      headerRow: parseInt(template.headerRow, 10) || 0,
-      nameCol: parseInt(template.nameCol, 10),
-      unitCol: parseInt(template.unitCol, 10),
-      priceCol: parseInt(template.priceCol, 10),
-      priceCol2: parseInt(template.priceCol2, 10),
-      method: 'шаблон поставщика',
-      confidence: 100
-    } : detectStructure(rows);
-    if(!layout) layout = {headerRow:0,nameCol:-1,unitCol:-1,priceCol:-1,priceCol2:-1,method:'manual',confidence:0};
-    showManualColumnMap(rows, _currentSupName, _supPriceAppend, (document.getElementById('supPriceName')||{value:''}).value.trim() || (_supPriceAppend?'Дополнительный прайс':'Основной прайс'), layout);
+    showManualColumnMap(rows, _currentSupName, _supPriceAppend, (document.getElementById('supPriceName')||{value:''}).value.trim() || (_supPriceAppend?'Дополнительный прайс':'Основной прайс'), {headerRow:0,nameCol:-1,unitCol:-1,priceCol:-1,priceCol2:-1,method:'manual',confidence:0});
     _bindPricePreviewActions();
   }
 
@@ -5055,18 +5044,7 @@ function selectSupPriceSheet(sheetName){
   _supPriceImportSheetName = sheetName;
   var rows = _sheetToRows(_supPriceImportBook, sheetName);
   _updatePricePreviewSectionFromRows(rows, sheetName, _supPriceImportFileName);
-  var template = _loadSupPriceTemplate(_currentSupName);
-  var layout = template && template.sheetName === sheetName ? {
-    headerRow: parseInt(template.headerRow, 10) || 0,
-    nameCol: parseInt(template.nameCol, 10),
-    unitCol: parseInt(template.unitCol, 10),
-    priceCol: parseInt(template.priceCol, 10),
-    priceCol2: parseInt(template.priceCol2, 10),
-    method: 'шаблон поставщика',
-    confidence: 100
-  } : detectStructure(rows);
-  if(!layout) layout = {headerRow:0,nameCol:-1,unitCol:-1,priceCol:-1,priceCol2:-1,method:'manual',confidence:0};
-  showManualColumnMap(rows, _currentSupName, _supPriceAppend, (document.getElementById('supPriceName')||{value:''}).value.trim() || (_supPriceAppend?'Дополнительный прайс':'Основной прайс'), layout);
+  showManualColumnMap(rows, _currentSupName, _supPriceAppend, (document.getElementById('supPriceName')||{value:''}).value.trim() || (_supPriceAppend?'Дополнительный прайс':'Основной прайс'), {headerRow:0,nameCol:-1,unitCol:-1,priceCol:-1,priceCol2:-1,method:'manual',confidence:0});
   _bindPricePreviewActions();
 }
 
@@ -7094,9 +7072,8 @@ function openSupPriceManualMap(){
       if(errEl) errEl.textContent='Файл пустой';
       return;
     }
-    var layout = detectStructure(rows) || {headerRow:-1,nameCol:0,unitCol:1,priceCol:2,method:'manual',confidence:0};
-    showManualColumnMap(rows, supName, append, priceName, layout);
-  }
+  showManualColumnMap(rows, supName, append, priceName, {headerRow:0,nameCol:-1,unitCol:-1,priceCol:-1,priceCol2:-1,method:'manual',confidence:0});
+}
 
   if(ext==='xlsx'||ext==='xls'){
     if(typeof XLSX==='undefined'){ if(errEl) errEl.textContent='SheetJS не загружен'; return; }
@@ -7159,26 +7136,20 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
   if(prev){
     var tbl = '<div style="overflow-x:auto;font-size:11px;max-height:280px;overflow-y:auto;">'
       +'<table style="border-collapse:collapse;width:100%;min-width:'+(Math.max(8,maxCols)*150)+'px;">';
-    tbl += '<tr>'+headers.map(function(h,i){
+  tbl += '<tr>'+headers.map(function(h,i){
       var guessed = 'ignore';
-      if(detectedLayout && detectedLayout.method === 'шаблон поставщика'){
-        if(detectedLayout.nameCol===i) guessed='name';
-        else if(detectedLayout.unitCol===i) guessed='unit';
-        else if(detectedLayout.priceCol===i) guessed='price';
-        else if(detectedLayout.priceCol2===i) guessed='price2';
-      }
       _mcmSelectedRoleByCol[i] = guessed;
       return '<th style="border:1px solid var(--br);padding:6px 6px;background:var(--bg4);text-align:center;min-width:150px;vertical-align:top;">'
         +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;">'
           +'<span style="font-size:10px;color:var(--t3);font-weight:700;letter-spacing:.02em;">'+('Колонка '+(i+1))+'</span>'
           +'<span style="font-size:10px;color:var(--t4);background:rgba(255,255,255,.35);border:1px solid var(--br);border-radius:999px;padding:2px 6px;">'+h+'</span>'
         +'</div>'
-        +'<select id="mcm-role-'+i+'" onchange="_mcmSelectedRoleByCol['+i+']=this.value;syncMcmRolesFromPreview()" style="width:100%;background:var(--bg2);border:1px solid var(--br);border-radius:8px;padding:7px 8px;font-size:11px;color:var(--tx);outline:none;">'
-        +'<option value="ignore"'+(guessed==='ignore'?' selected':'')+'>Игнорировать</option>'
-        +'<option value="name"'+(guessed==='name'?' selected':'')+'>Наименование</option>'
-        +'<option value="unit"'+(guessed==='unit'?' selected':'')+'>Единица</option>'
-        +'<option value="price"'+(guessed==='price'?' selected':'')+'>Цена 1</option>'
-        +'<option value="price2"'+(guessed==='price2'?' selected':'')+'>Цена 2</option>'
+        +'<select id="mcm-role-'+i+'" onchange="_setMcmRole('+i+', this.value)" style="width:100%;background:var(--bg2);border:1px solid var(--br);border-radius:8px;padding:7px 8px;font-size:11px;color:var(--tx);outline:none;">'
+        +'<option value="ignore" selected>Игнорировать</option>'
+        +'<option value="name">Наименование</option>'
+        +'<option value="unit">Единица</option>'
+        +'<option value="price">Цена 1</option>'
+        +'<option value="price2">Цена 2</option>'
         +'</select>'
       +'</th>';
     }).join('')+'</tr>';
@@ -7198,7 +7169,7 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
 
   var hint = document.getElementById('mcm-manual-hint');
   if(hint){
-    hint.textContent = 'Назначьте роли прямо над колонками. Автоподсказка уже заполнила вероятные варианты, но окончательное решение остаётся за вами.';
+    hint.textContent = 'Назначьте роли прямо над колонками. Автоматическое распознавание отключено: все роли выбираются вручную. Одна колонка может иметь только одну роль.';
   }
 
   var startRowEl = document.getElementById('mcm-start-row');
@@ -7222,54 +7193,49 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
     if(el){ el.innerHTML = opts; }
   });
   
-  if(detectedLayout) {
-    var nc = document.getElementById('mcm-name-col');
-    var pc = document.getElementById('mcm-price-col');
-    var p2 = document.getElementById('mcm-price2-col');
-    var uc = document.getElementById('mcm-unit-col');
-    if(nc && detectedLayout.nameCol  >= 0) nc.value = detectedLayout.nameCol;
-    if(pc && detectedLayout.priceCol >= 0) pc.value = detectedLayout.priceCol;
-    if(p2 && detectedLayout.priceCol2 >= 0) p2.value = detectedLayout.priceCol2;
-    if(uc && detectedLayout.unitCol  >= 0) uc.value = detectedLayout.unitCol;
-  }
-
   var err = document.getElementById('mcm-err');
   if(err) err.textContent = '';
   
   // Показать метод обнаружения
   var methodEl = document.getElementById('mcm-method');
   if(methodEl && detectedLayout) {
-    methodEl.textContent = 'Метод определения: ' + (detectedLayout.method||'не определён')
-      + (detectedLayout.confidence ? ' · уверенность: '+detectedLayout.confidence+'%' : '');
+    methodEl.textContent = 'Режим: ручное сопоставление колонок';
   }
 
   // Сразу показать редактируемый предпросмотр по текущим колонкам
-  if(detectedLayout) {
-    _mcmLayout = {
-      headerRow: Math.max(0, Math.min(detectedLayout.headerRow >= 0 ? detectedLayout.headerRow : 0, dataStartRow - 1)),
-      nameCol: detectedLayout.method === 'шаблон поставщика' ? detectedLayout.nameCol : -1,
-      unitCol: detectedLayout.method === 'шаблон поставщика' ? detectedLayout.unitCol : -1,
-      priceCol: detectedLayout.method === 'шаблон поставщика' ? detectedLayout.priceCol : -1,
-      priceCol2: detectedLayout.method === 'шаблон поставщика' ? detectedLayout.priceCol2 : -1,
-      method: detectedLayout.method,
-      confidence: detectedLayout.confidence
-    };
-  }
+  _mcmLayout = {
+    headerRow: Math.max(0, Math.min(detectedLayout && detectedLayout.headerRow >= 0 ? detectedLayout.headerRow : 0, dataStartRow - 1)),
+    nameCol: -1,
+    unitCol: -1,
+    priceCol: -1,
+    priceCol2: -1,
+    method: 'manual',
+    confidence: 0
+  };
   _setImportPreviewBadges(_mcmLayout);
 
-  // Если первый прогноз не дал колонки, показать базовый шаблон
-  if(!detectedLayout || (detectedLayout.nameCol<0 && detectedLayout.priceCol<0 && detectedLayout.unitCol<0)) {
-    var base = {headerRow:Math.max(0, dataStartRow - 1),nameCol:0,unitCol:1,priceCol:2,priceCol2:3,method:'manual',confidence:0};
-    _mcmLayout = base;
-  }
-  if(detectedLayout && detectedLayout.method !== 'шаблон поставщика'){
-    _mcmLayout = {headerRow:Math.max(0, dataStartRow - 1),nameCol:-1,unitCol:-1,priceCol:-1,priceCol2:-1,method:'manual',confidence:0};
-  }
   _setImportPreviewBadges(_mcmLayout);
   syncMcmRolesFromPreview();
   renderPriceEditTable(rows, _mcmLayout, supName, append, priceName, [], 'mcm-edit-preview');
   openModal('manualColumnMap');
   _bindPricePreviewActions();
+}
+
+function _setMcmRole(col, role){
+  _mcmSelectedRoleByCol[col] = role || 'ignore';
+  for(var ci=0; ci<_mcmMaxCols; ci++){
+    if(ci === col) continue;
+    if((_mcmSelectedRoleByCol[ci] || 'ignore') === role && role !== 'ignore'){
+      _mcmSelectedRoleByCol[ci] = 'ignore';
+      var other = document.getElementById('mcm-role-'+ci);
+      if(other) other.value = 'ignore';
+    }
+  }
+  var current = document.getElementById('mcm-role-'+col);
+  if(current) current.value = role || 'ignore';
+  syncMcmRolesFromPreview();
+  _setImportPreviewBadges(_mcmLayout);
+  renderPriceEditTable(_mcmRows, _mcmLayout, _mcmSupName, _mcmAppend, _mcmPriceName, [], 'mcm-edit-preview');
 }
 
 function applyManualColumnMap(){
