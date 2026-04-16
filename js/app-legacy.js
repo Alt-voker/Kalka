@@ -9138,6 +9138,114 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
   };
 }
 
+function _saveSupplierImportRowsDirect(rows, supName, append, priceName, allowedUserIds){
+  var allowedCompanies = [];
+  document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
+    var co = cb.dataset.company;
+    if(co && allowedCompanies.indexOf(co) < 0) allowedCompanies.push(co);
+  });
+  if(!allowedUserIds || !allowedUserIds.length){
+    allowedUserIds = [];
+    document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
+      allowedUserIds.push(cb.value);
+    });
+  }
+
+  if(!append){
+    SUP_PRODS = SUP_PRODS.filter(function(p){
+      return !(p._supplier === supName && (p._priceName === priceName || !p._priceName));
+    });
+  }
+
+  var added = 0;
+  var updated = 0;
+  var items = Array.isArray(rows) ? rows : [];
+
+  items.forEach(function(row, idx){
+    var name = String((row && row.name) || '').trim();
+    var unit = String((row && row.unit) || '').trim();
+    var price1 = parseFloat((row && row.price1) || 0) || 0;
+    var price2 = parseFloat((row && row.price2) || 0) || 0;
+    var price = price1 || price2;
+    if(!name || !price || price <= 0) return;
+
+    var normUnit = unit || 'шт';
+    var pKg = 0, pSh = 0, pL = 0, pMl = 0;
+    var uLow = normUnit.toLowerCase();
+    if(uLow === 'кг' || uLow === 'kg') pKg = price;
+    else if(uLow === 'г' || uLow === 'гр' || uLow === 'g') pKg = Math.round(price * 1000 * 100) / 100;
+    else if(uLow === 'л' || uLow === 'l') pL = price;
+    else if(uLow === 'мл' || uLow === 'ml') { pL = Math.round(price * 1000 * 100) / 100; normUnit = 'л'; }
+    else pSh = price;
+
+    var currentType = append ? 'additional' : 'main';
+    var ex = append ? SUP_PRODS.findIndex(function(p){
+      return p.name.toLowerCase() === name.toLowerCase()
+        && p._supplier === supName
+        && (p._type || 'main') === 'additional';
+    }) : -1;
+
+    var entry = {
+      id: ex >= 0 ? SUP_PRODS[ex].id : Date.now() + idx,
+      name: name,
+      cat: '—',
+      unit: normUnit,
+      supplier: supName,
+      _supplier: supName,
+      _priceName: priceName,
+      pKg: pKg,
+      pSh: pSh,
+      pL: pL,
+      pMl: pMl,
+      stock: 999,
+      active: true,
+      hidden: false,
+      _type: currentType,
+      allowedUserIds: allowedUserIds.slice(),
+      allowedCompanies: allowedCompanies.slice(),
+      sourceRow: row && row.sourceRow ? row.sourceRow : (idx + 1)
+    };
+
+    if(ex >= 0){ SUP_PRODS[ex] = entry; updated++; }
+    else { SUP_PRODS.push(entry); added++; }
+
+    var prodIdx = PRODUCTS.findIndex(function(p){
+      return p.name.toLowerCase() === name.toLowerCase();
+    });
+    if(prodIdx >= 0){
+      var spIdx = PRODUCTS[prodIdx].suppliers.findIndex(function(s){ return s.name === supName; });
+      if(spIdx >= 0) PRODUCTS[prodIdx].suppliers[spIdx].price = price;
+      else PRODUCTS[prodIdx].suppliers.push({ name: supName, price: price });
+      PRODUCTS[prodIdx].unit = PRODUCTS[prodIdx].unit || normUnit;
+    } else {
+      PRODUCTS.push({
+        id: Date.now() + idx + 30000,
+        name: name,
+        cat: 'dry',
+        unit: normUnit,
+        emoji: '',
+        sticker: null,
+        fav: false,
+        allowedCompanies: allowedCompanies.slice(),
+        suppliers: [{ name: supName, price: price }],
+        pKg: pKg,
+        pSh: pSh,
+        pL: pL,
+        pMl: pMl
+      });
+      if(ALL_SUPS.indexOf(supName) < 0) ALL_SUPS.push(supName);
+    }
+  });
+
+  if(added > 0 || updated > 0){
+    savePriceData();
+    renderSupProducts();
+    if(typeof renderCatalog === 'function') renderCatalog();
+  }
+
+  return { added: added, updated: updated, skipped: Math.max(0, items.length - added - updated), needsReview: 0 };
+}
+
 function priceSaveEdited(){
   if(!_priceEditContext) return;
   var ctx = _priceEditContext;
@@ -9195,10 +9303,13 @@ function priceSaveEdited(){
     }), _supPriceImportState.mapping, ctx.supName, ctx.append, ctx.priceName, ctx.allowedUserIds) || { added: 0, updated: 0, skipped: 0 };
 
     if((result.added || 0) <= 0 && (result.updated || 0) <= 0){
-      toast('Прайс не загружен: не удалось сохранить ни одной строки', 'err');
-      var errEl = document.getElementById('mcm-err');
-      if(errEl) errEl.textContent = 'Прайс не загружен: не удалось сохранить ни одной строки.';
-      return;
+      result = _saveSupplierImportRowsDirect(validRows, ctx.supName, ctx.append, ctx.priceName, ctx.allowedUserIds);
+      if((result.added || 0) <= 0 && (result.updated || 0) <= 0){
+        toast('Прайс не загружен: не удалось сохранить ни одной строки', 'err');
+        var errEl = document.getElementById('mcm-err');
+        if(errEl) errEl.textContent = 'Прайс не загружен: не удалось сохранить ни одной строки.';
+        return;
+      }
     }
 
     if(invalidCount > 0){
