@@ -9142,11 +9142,14 @@ function priceSaveEdited(){
   if(!_priceEditContext) return;
   var ctx = _priceEditContext;
   syncMcmRolesFromPreview();
-  var invalid = _priceEditRows.filter(function(r){
-    return !String(r.name || '').trim() || ((!r.price1 || r.price1 <= 0) && (!r.price2 || r.price2 <= 0));
+  var validRows = _priceEditRows.filter(function(r){
+    return String(r.name || '').trim() && ((r.price1 && r.price1 > 0) || (r.price2 && r.price2 > 0));
   });
-  if(invalid.length){
-    toast('Проверьте строки: не заполнены название или цена', 'err');
+  var invalidCount = _priceEditRows.length - validRows.length;
+  if(!validRows.length){
+    toast('Нет ни одной корректной строки для загрузки', 'err');
+    var emptyErr = document.getElementById('mcm-err');
+    if(emptyErr) emptyErr.textContent = 'Нет ни одной корректной строки для загрузки. Проверьте название и цену.';
     return;
   }
   try{
@@ -9161,7 +9164,7 @@ function priceSaveEdited(){
       skipRules: { dropEmpty: true, requirePrice: true }
     });
 
-    var result = processSupPriceRows(_priceEditRows.map(function(r){
+    var result = processSupPriceRows(validRows.map(function(r){
       return {
         sourceRow: r.sourceRow,
         name: r.name,
@@ -9176,6 +9179,10 @@ function priceSaveEdited(){
       var errEl = document.getElementById('mcm-err');
       if(errEl) errEl.textContent = 'Прайс не загружен: не удалось сохранить ни одной строки.';
       return;
+    }
+
+    if(invalidCount > 0){
+      toast('Загружено с пропуском строк: ' + invalidCount, 'ok');
     }
 
     var previewSec = document.getElementById('pricePreviewSection');
