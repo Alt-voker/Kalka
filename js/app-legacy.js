@@ -7037,6 +7037,15 @@ function applyManualColumnMap(){
   if(err) err.textContent = 'Колонки применены. Проверьте предпросмотр и нажмите "Сохранить и загрузить".';
 }
 
+function applyManualColumnMapAndSave(){
+  var err  = document.getElementById('mcm-err');
+  applyManualColumnMap();
+  if(err && /Выберите|разные колонки/.test(err.textContent || '')) return;
+  if(!_mcmLayout || _mcmLayout.nameCol < 0 || _mcmLayout.priceCol < 0) return;
+  if(err) err.textContent = 'Загружаю прайс...';
+  priceSaveEdited();
+}
+
 function syncMcmRolesFromPreview(){
   var layout = {headerRow:-1,nameCol:-1,unitCol:-1,priceCol:-1,priceCol2:-1,method:'manual',confidence:0};
   for(var ci=0; ci<_mcmMaxCols; ci++){
