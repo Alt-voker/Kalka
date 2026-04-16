@@ -9131,6 +9131,12 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
   logSystemEvent('price_import', 'Загрузка прайса: ' + supName, msg + (needsReview.length ? ' · требует проверки: ' + needsReview.length : ''), needsReview.length || skipped ? 'warn' : 'info', 'price-import');
 
   if(needsReview.length) _showNeedsReview(needsReview, supName);
+  return {
+    added: added,
+    updated: updated,
+    skipped: skipped,
+    needsReview: needsReview.length
+  };
 }
 
 function priceSaveEdited(){
@@ -9144,32 +9150,45 @@ function priceSaveEdited(){
     toast('Проверьте строки: не заполнены название или цена', 'err');
     return;
   }
+  try{
+    _saveSupPriceTemplate(ctx.supName, {
+      sheetName: _supPriceImportState.sheetName || '',
+      headerRow: Math.max(0, (_supPriceImportState.dataStartRow || 1) - 1),
+      dataStartRow: Math.max(1, _supPriceImportState.dataStartRow || 1),
+      nameCols: (_supPriceImportState.mapping.name || []).slice(),
+      unitCols: (_supPriceImportState.mapping.unit || []).slice(),
+      priceCols: (_supPriceImportState.mapping.price || []).slice(),
+      price2Cols: (_supPriceImportState.mapping.price2 || []).slice(),
+      skipRules: { dropEmpty: true, requirePrice: true }
+    });
 
-  var previewSec = document.getElementById('pricePreviewSection');
-  if(previewSec) previewSec.style.display = 'none';
-  closeModal('manualColumnMap');
-  closeModal('supPriceUpload');
+    var result = processSupPriceRows(_priceEditRows.map(function(r){
+      return {
+        sourceRow: r.sourceRow,
+        name: r.name,
+        unit: r.unit,
+        price1: r.price1,
+        price2: r.price2
+      };
+    }), _supPriceImportState.mapping, ctx.supName, ctx.append, ctx.priceName, ctx.allowedUserIds) || { added: 0, updated: 0, skipped: 0 };
 
-  _saveSupPriceTemplate(ctx.supName, {
-    sheetName: _supPriceImportState.sheetName || '',
-    headerRow: Math.max(0, (_supPriceImportState.dataStartRow || 1) - 1),
-    dataStartRow: Math.max(1, _supPriceImportState.dataStartRow || 1),
-    nameCols: (_supPriceImportState.mapping.name || []).slice(),
-    unitCols: (_supPriceImportState.mapping.unit || []).slice(),
-    priceCols: (_supPriceImportState.mapping.price || []).slice(),
-    price2Cols: (_supPriceImportState.mapping.price2 || []).slice(),
-    skipRules: { dropEmpty: true, requirePrice: true }
-  });
+    if((result.added || 0) <= 0 && (result.updated || 0) <= 0){
+      toast('Прайс не загружен: не удалось сохранить ни одной строки', 'err');
+      var errEl = document.getElementById('mcm-err');
+      if(errEl) errEl.textContent = 'Прайс не загружен: не удалось сохранить ни одной строки.';
+      return;
+    }
 
-  processSupPriceRows(_priceEditRows.map(function(r){
-    return {
-      sourceRow: r.sourceRow,
-      name: r.name,
-      unit: r.unit,
-      price1: r.price1,
-      price2: r.price2
-    };
-  }), _supPriceImportState.mapping, ctx.supName, ctx.append, ctx.priceName, ctx.allowedUserIds);
+    var previewSec = document.getElementById('pricePreviewSection');
+    if(previewSec) previewSec.style.display = 'none';
+    closeModal('manualColumnMap');
+    closeModal('supPriceUpload');
+  } catch(e){
+    console.error('priceSaveEdited failed:', e);
+    toast('Ошибка загрузки прайса: ' + (e && e.message ? e.message : 'неизвестная ошибка'), 'err');
+    var errNode = document.getElementById('mcm-err');
+    if(errNode) errNode.textContent = 'Ошибка загрузки прайса: ' + (e && e.message ? e.message : 'неизвестная ошибка');
+  }
 }
 
 function _showPreviewAndConfirm(rows, layout, supName, append, priceName, allowedUserIds, fi, resetBtn){
