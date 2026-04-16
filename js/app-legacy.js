@@ -6063,6 +6063,12 @@ function orderRemove(name, supplier, query){
 
 function detectStructure(rows) {
   // Возвращает {headerRow, nameCol, unitCol, priceCol, confidence, method}
+
+  var known = _detectFreshMillLayout(rows);
+  if(known) {
+    known.method = 'fresh_mill_layout';
+    return known;
+  }
   
   // 1. Поиск строки заголовков
   var result = _findHeaderRow(rows);
@@ -6081,6 +6087,44 @@ function detectStructure(rows) {
   // 3. Вернуть лучшее что есть (частичное)
   result.method = 'partial';
   return result;
+}
+
+function _detectFreshMillLayout(rows) {
+  if(!rows || !rows.length) return null;
+  for(var ri=0; ri<Math.min(rows.length, 20); ri++){
+    var row = rows[ri] || [];
+    var text = row.map(function(c){ return (c||'').toString().trim().toLowerCase(); });
+    var hasName = text.some(function(v){ return v === 'наименование товара' || v.indexOf('наименование товара') >= 0; });
+    var hasPrice = text.some(function(v){ return v.indexOf('цена товара') >= 0 || v.indexOf('цена') >= 0; });
+    if(hasName && hasPrice) {
+      // Ищем вторую строку с "за кг." / "за шт." и реальную колонку цены
+      var headerRow = ri;
+      var nameCol = -1, unitCol = -1, priceCol = -1, priceCol2 = -1;
+      for(var ci=0; ci<row.length; ci++){
+        var v = text[ci];
+        if(v.indexOf('наименование товара') >= 0) nameCol = ci;
+        if(v.indexOf('цена товара') >= 0) {
+          if(ci===5) priceCol2 = ci;
+          else priceCol = ci;
+        }
+      }
+      // Доп. строка подзаголовка
+      var next = rows[ri+1] || [];
+      next.forEach(function(c, ci){
+        var v = (c||'').toString().trim().toLowerCase();
+        if(v.indexOf('за кг') >= 0 || v.indexOf('кг') === v) unitCol = 8;
+        if(v.indexOf('за шт') >= 0 || v.indexOf('шт') === v) {
+          if(priceCol < 0) priceCol = 5;
+          if(priceCol2 < 0) priceCol2 = 7;
+        }
+      });
+      if(nameCol < 0) nameCol = 1;
+      if(priceCol < 0) priceCol = 7;
+      if(unitCol < 0) unitCol = 8;
+      return {headerRow:headerRow, nameCol:nameCol, unitCol:unitCol, priceCol:priceCol, priceCol2:priceCol2, confidence:99};
+    }
+  }
+  return null;
 }
 
 // Поиск строки заголовков (первые 15 строк файла)
@@ -6359,6 +6403,23 @@ function recallPriceLayout(supName) {
   return null;
 }
 
+function _layoutLooksCompatible(rows, layout) {
+  if(!rows || !rows.length || !layout) return false;
+  var headerRow = layout.headerRow >= 0 ? layout.headerRow : 0;
+  var cleaned = cleanRows(rows, headerRow).slice(0, 18);
+  if(!cleaned.length) return false;
+  var nameOk=0, priceOk=0, total=0;
+  cleaned.forEach(function(parts){
+    total++;
+    var name = layout.nameCol >= 0 ? String(parts[layout.nameCol] || '').trim() : '';
+    var p1   = layout.priceCol >= 0 ? extractPrice(parts[layout.priceCol]) : 0;
+    var p2   = layout.priceCol2 >= 0 ? extractPrice(parts[layout.priceCol2]) : 0;
+    if(_looksLikeProductName(name)) nameOk++;
+    if((p1>0) || (p2>0)) priceOk++;
+  });
+  return total > 0 && nameOk/total >= 0.45 && priceOk/total >= 0.45;
+}
+
 function loadPriceLayoutsFromStorage() {
   try {
     var stored = localStorage.getItem('pv_price_layouts');
@@ -6614,22 +6675,12 @@ function doSupPriceUpload(){
   function handleRows(rows){
     if(!rows.length){ if(errEl)errEl.textContent='Файл пустой'; resetBtn(); return; }
     
-    var layout = null;
-    
-    // Проверить запомненную структуру
+    var layout = detectStructure(rows);
     var remembered = recallPriceLayout(supName);
-    if(remembered) {
-      // Сразу показать ручное сопоставление, но с подсказкой из памяти
+    if(remembered && _layoutLooksCompatible(rows, remembered)) {
       layout = Object.assign({method:'memory ('+supName+')'}, remembered);
-      resetBtn();
-      showManualColumnMap(rows, supName, append, priceName, layout);
-      return;
     }
-    
-    // Автоматическое распознавание
-    layout = detectStructure(rows);
 
-    // Для профессионального импорта всегда даём человеку выбрать колонки
     resetBtn();
     if(layout && layout.method){
       logSystemEvent('price_import','Требуется ручная проверка колонок',supName+': предварительно найдено '+(layout.nameCol>=0?'название':'')+(layout.priceCol>=0?' цена':'')+(layout.priceCol2>=0?' цена2':''),'info','price-import');
