@@ -6711,6 +6711,8 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
     return Math.max(max, row ? row.length : 0);
   }, 0);
   if(maxCols < 1) maxCols = 1;
+  _mcmMaxCols = maxCols;
+  _mcmSelectedRoleByCol = {};
   var headers = [];
   for(var hi=0; hi<maxCols; hi++){
     headers.push('Колонка '+(hi+1));
@@ -6722,7 +6724,25 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
     var tbl = '<div style="overflow-x:auto;font-size:11px;max-height:190px;overflow-y:auto;">'
       +'<table style="border-collapse:collapse;width:100%;min-width:'+(maxCols*120)+'px;">';
     tbl += '<tr>'+headers.map(function(h,i){
-      return '<th style="border:1px solid var(--br);padding:4px 8px;background:var(--bg4);text-align:center;">'+h+'</th>';
+      var guessed = 'ignore';
+      if(detectedLayout){
+        if(detectedLayout.nameCol===i) guessed='name';
+        else if(detectedLayout.unitCol===i) guessed='unit';
+        else if(detectedLayout.priceCol===i) guessed='price';
+        else if(detectedLayout.priceCol2===i) guessed='price2';
+      }
+      _mcmSelectedRoleByCol[i] = guessed;
+      return '<th style="border:1px solid var(--br);padding:4px 6px;background:var(--bg4);text-align:center;min-width:140px;">'
+        +'<select id="mcm-role-'+i+'" onchange="_mcmSelectedRoleByCol['+i+']=this.value;syncMcmRolesFromPreview()" style="width:100%;background:var(--bg2);border:1px solid var(--br);border-radius:6px;padding:5px 6px;font-size:11px;color:var(--tx);outline:none;">'
+        +'<option value="-1"'+(guessed==='ignore'?' selected':'')+'>—</option>'
+        +'<option value="name"'+(guessed==='name'?' selected':'')+'>Наименование</option>'
+        +'<option value="unit"'+(guessed==='unit'?' selected':'')+'>Единица</option>'
+        +'<option value="price"'+(guessed==='price'?' selected':'')+'>Цена 1</option>'
+        +'<option value="price2"'+(guessed==='price2'?' selected':'')+'>Цена 2</option>'
+        +'<option value="ignore"'+(guessed==='ignore'?' selected':'')+'>Игнорировать</option>'
+        +'</select>'
+        +'<div style="margin-top:4px;font-size:10px;color:var(--t3);">'+h+'</div>'
+      +'</th>';
     }).join('')+'</tr>';
     sampleRows.forEach(function(r){
       tbl += '<tr>';
@@ -6786,47 +6806,44 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
       method: detectedLayout.method,
       confidence: detectedLayout.confidence
     };
-    renderPriceEditTable(rows, detectedLayout, supName, append, priceName, [], 'mcm-edit-preview');
   }
 
   // Если первый прогноз не дал колонки, показать базовый шаблон
   if(!detectedLayout || (detectedLayout.nameCol<0 && detectedLayout.priceCol<0 && detectedLayout.unitCol<0)) {
     var base = {headerRow:-1,nameCol:0,unitCol:1,priceCol:2,priceCol2:3,method:'manual',confidence:0};
     _mcmLayout = base;
-    renderPriceEditTable(rows, base, supName, append, priceName, [], 'mcm-edit-preview');
   }
-  
+  syncMcmRolesFromPreview();
+  renderPriceEditTable(rows, _mcmLayout, supName, append, priceName, [], 'mcm-edit-preview');
   openModal('manualColumnMap');
 }
 
 function applyManualColumnMap(){
-  var nIdx = parseInt((document.getElementById('mcm-name-col') ||{value:'-1'}).value);
-  var uIdx = parseInt((document.getElementById('mcm-unit-col') ||{value:'-1'}).value);
-  var pIdx = parseInt((document.getElementById('mcm-price-col')||{value:'-1'}).value);
-  var p2Idx = parseInt((document.getElementById('mcm-price2-col')||{value:'-1'}).value);
   var startRow = parseInt((document.getElementById('mcm-start-row')||{value:'1'}).value)||1;
   var err  = document.getElementById('mcm-err');
+  syncMcmRolesFromPreview();
+  if(!_mcmLayout || _mcmLayout.nameCol < 0){ if(err) err.textContent='Выберите колонку с названием'; return; }
+  if(_mcmLayout.priceCol < 0){ if(err) err.textContent='Выберите колонку с ценой'; return; }
+  if(_mcmLayout.nameCol===_mcmLayout.priceCol){ if(err) err.textContent='Название и цена — разные колонки'; return; }
+  if(_mcmLayout.priceCol2>=0 && _mcmLayout.priceCol2===_mcmLayout.priceCol){ if(err) err.textContent='Цена 2 должна быть другой колонкой'; return; }
 
-  if(nIdx<0){ if(err)err.textContent='Выберите колонку с названием'; return; }
-  if(pIdx<0){ if(err)err.textContent='Выберите колонку с ценой'; return; }
-  if(nIdx===pIdx){ if(err)err.textContent='Название и цена — разные колонки'; return; }
-  if(p2Idx>=0 && p2Idx===pIdx){ if(err)err.textContent='Цена 2 должна быть другой колонкой'; return; }
-
-  var layout = {
-    nameCol:   nIdx,
-    unitCol:   uIdx,
-    priceCol:  pIdx,
-    priceCol2: p2Idx,
-    headerRow: startRow - 1,  // 1-based → 0-based
-    method:    'manual',
-    confidence:100
-  };
-
-  _mcmLayout = layout;
-  updatePricePreviewHeader(layout);
-  renderPriceEditTable(_mcmRows, layout, _mcmSupName, _mcmAppend, _mcmPriceName, [], 'mcm-edit-preview');
-  var err = document.getElementById('mcm-err');
+  _mcmLayout.headerRow = startRow - 1;
+  updatePricePreviewHeader(_mcmLayout);
+  renderPriceEditTable(_mcmRows, _mcmLayout, _mcmSupName, _mcmAppend, _mcmPriceName, [], 'mcm-edit-preview');
   if(err) err.textContent = 'Колонки применены. Проверьте предпросмотр и нажмите "Сохранить и загрузить".';
+}
+
+function syncMcmRolesFromPreview(){
+  var layout = {headerRow:-1,nameCol:-1,unitCol:-1,priceCol:-1,priceCol2:-1,method:'manual',confidence:0};
+  for(var ci=0; ci<_mcmMaxCols; ci++){
+    var role = _mcmSelectedRoleByCol[ci] || 'ignore';
+    if(role === 'name') layout.nameCol = ci;
+    else if(role === 'unit') layout.unitCol = ci;
+    else if(role === 'price') layout.priceCol = ci;
+    else if(role === 'price2') layout.priceCol2 = ci;
+  }
+  _mcmLayout = layout;
+  return layout;
 }
 function detectColumns(headers) {
   var layout = _findHeaderRow([headers]);
@@ -7770,6 +7787,8 @@ var _priceEditLayout = null;
 var _priceEditContext = null; // {rows, supName, append, priceName, allowedUserIds}
 var _priceEditContainerId = 'pricePreviewTable';
 var _mcmLayout = null;
+var _mcmMaxCols = 0;
+var _mcmSelectedRoleByCol = {};
 
 function renderPriceEditTable(rows, layout, supName, append, priceName, allowedUserIds, containerId){
   _priceEditLayout  = layout;
