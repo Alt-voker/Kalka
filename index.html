@@ -1246,6 +1246,13 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
       </div>
       <span id="priceMethodBadge" style="font-size:10px;background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:4px;padding:2px 8px;"></span>
     </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px;border-bottom:1px solid var(--br);background:var(--bg2);font-size:11px;">
+      <button type="button" onclick="openSupPriceManualMap()" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:999px;padding:4px 10px;font-weight:700;cursor:pointer;">Колонки</button>
+      <span id="previewColName" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;">Наименование</span>
+      <span id="previewColUnit" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;">Ед. изм.</span>
+      <span id="previewColPrice1" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;">Цена 1</span>
+      <span id="previewColPrice2" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;">Цена 2</span>
+    </div>
     <div style="padding:10px 12px;">
       <div id="pricePreviewTable"></div>
     </div>
@@ -1349,6 +1356,19 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
     <div>
       <label class="fL">Цена <span style="color:var(--rd);">*</span></label>
       <select class="fS" id="mcm-price-col"></select>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+    <div>
+      <label class="fL">Цена 2 <span style="font-size:11px;color:var(--t3);">(если есть)</span></label>
+      <select class="fS" id="mcm-price2-col">
+        <option value="-1">— нет —</option>
+      </select>
+    </div>
+    <div style="display:flex;align-items:flex-end;">
+      <div style="font-size:11px;color:var(--t3);line-height:1.6;">
+        Если в прайсе две ценовые колонки, можно указать обе. Основная цена берётся из <b>Цена 1</b>, а <b>Цена 2</b> используется как запасной вариант.
+      </div>
     </div>
   </div>
   <!-- Начало строки данных -->

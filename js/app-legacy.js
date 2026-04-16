@@ -6399,6 +6399,7 @@ function renderPricePreview(rows, layout) {
   html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:11px;">';
   if(layout.nameCol  >= 0) html += '<span style="color:var(--ac);">🔵 Колонка '+(layout.nameCol+1)+' = Наименование</span>';
   if(layout.priceCol >= 0) html += '<span style="color:var(--gr);">🟢 Колонка '+(layout.priceCol+1)+' = Цена</span>';
+  if(layout.priceCol2>= 0) html += '<span style="color:#ab7df8;">🟣 Колонка '+(layout.priceCol2+1)+' = Цена 2</span>';
   if(layout.unitCol  >= 0) html += '<span style="color:#ff9800;">🟡 Колонка '+(layout.unitCol+1)+' = Единица</span>';
   html += '<span style="color:var(--t3);">Метод: '+(layout.method||'auto')+'</span>';
   html += '</div>';
@@ -6437,9 +6438,11 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
     var rawName  = cols.nameCol  >= 0 ? (parts[cols.nameCol] ||'') : '';
     var rawUnit  = cols.unitCol  >= 0 ? (parts[cols.unitCol] ||'') : '';
     var rawPrice = cols.priceCol >= 0 ? (parts[cols.priceCol]||'') : '';
+    var rawPrice2 = cols.priceCol2 >= 0 ? (parts[cols.priceCol2]||'') : '';
 
     var name  = rawName.toString().trim();
     var price = extractPrice(rawPrice);
+    if((!price || price<=0) && rawPrice2) price = extractPrice(rawPrice2);
     var unit  = normalizeUnit(rawUnit.toString(), name);
 
     if(!name) return;
@@ -6721,7 +6724,7 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
     }).join('');
 
   // Заполнить и предвыбрать обнаруженные колонки
-  ['mcm-name-col','mcm-unit-col','mcm-price-col'].forEach(function(id){
+  ['mcm-name-col','mcm-unit-col','mcm-price-col','mcm-price2-col'].forEach(function(id){
     var el = document.getElementById(id);
     if(el){ el.innerHTML = opts; }
   });
@@ -6729,9 +6732,11 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
   if(detectedLayout) {
     var nc = document.getElementById('mcm-name-col');
     var pc = document.getElementById('mcm-price-col');
+    var p2 = document.getElementById('mcm-price2-col');
     var uc = document.getElementById('mcm-unit-col');
     if(nc && detectedLayout.nameCol  >= 0) nc.value = detectedLayout.nameCol;
     if(pc && detectedLayout.priceCol >= 0) pc.value = detectedLayout.priceCol;
+    if(p2 && detectedLayout.priceCol2 >= 0) p2.value = detectedLayout.priceCol2;
     if(uc && detectedLayout.unitCol  >= 0) uc.value = detectedLayout.unitCol;
   }
 
@@ -6752,12 +6757,14 @@ function applyManualColumnMap(){
   var nIdx = parseInt((document.getElementById('mcm-name-col') ||{value:'-1'}).value);
   var uIdx = parseInt((document.getElementById('mcm-unit-col') ||{value:'-1'}).value);
   var pIdx = parseInt((document.getElementById('mcm-price-col')||{value:'-1'}).value);
+  var p2Idx = parseInt((document.getElementById('mcm-price2-col')||{value:'-1'}).value);
   var startRow = parseInt((document.getElementById('mcm-start-row')||{value:'1'}).value)||1;
   var err  = document.getElementById('mcm-err');
 
   if(nIdx<0){ if(err)err.textContent='Выберите колонку с названием'; return; }
   if(pIdx<0){ if(err)err.textContent='Выберите колонку с ценой'; return; }
   if(nIdx===pIdx){ if(err)err.textContent='Название и цена — разные колонки'; return; }
+  if(p2Idx>=0 && p2Idx===pIdx){ if(err)err.textContent='Цена 2 должна быть другой колонкой'; return; }
 
   closeModal('manualColumnMap');
 
@@ -6765,6 +6772,7 @@ function applyManualColumnMap(){
     nameCol:   nIdx,
     unitCol:   uIdx,
     priceCol:  pIdx,
+    priceCol2: p2Idx,
     headerRow: startRow - 1,  // 1-based → 0-based
     method:    'manual',
     confidence:100
@@ -6996,6 +7004,7 @@ function orderSearchMulti(val) {
       var currentOrderItem = _orderDisplayEntry(row.line, sup, cell);
       var currentCartItem = _orderCartEntryByQuery(row.line, sup);
       var inCart = !!currentCartItem;
+      var replacedFrom = currentOrderItem && currentOrderItem.replacedFrom ? currentOrderItem.replacedFrom : '';
 
       html += '<td style="padding:6px 8px;border:1px solid '+(isBest?'var(--gr)':'var(--br)')+';'
             + 'background:'+cellBg+';vertical-align:top;position:relative;">';
@@ -7008,6 +7017,11 @@ function orderSearchMulti(val) {
       // Название товара
       html += '<div style="font-size:12px;font-weight:600;color:var(--t2);margin-bottom:4px;'
             + 'padding-right:'+(isBest?'36':'0')+'px;">'+(currentOrderItem ? currentOrderItem.name : cell.item.name)+'</div>';
+      if(replacedFrom){
+        html += '<div style="font-size:10px;font-weight:700;color:var(--or);margin-bottom:3px;">'
+              + 'замена: '+replacedFrom+' → '+(currentOrderItem ? currentOrderItem.name : cell.item.name)
+              + '</div>';
+      }
 
       // Цена + единица
       html += '<div style="font-size:15px;font-weight:800;color:'+priceColor+';margin-bottom:6px;">'
@@ -7361,6 +7375,7 @@ function _renderOrderTable(filter){
       var currentOrderItem = _orderDisplayEntry(row.query, sup, cell);
       var currentCartItem = _orderCartEntryByQuery(row.query, sup);
       var inCart = !!currentCartItem;
+      var replacedFrom = currentOrderItem && currentOrderItem.replacedFrom ? currentOrderItem.replacedFrom : '';
 
       return '<td data-order-row="'+_cssAttrVal(row.query)+'" data-order-sup="'+_cssAttrVal(sup)+'" style="padding:6px 8px;border:1px solid '+(isBest?'var(--gr)':'var(--br)')+';'
         +'background:'+cellBg+';vertical-align:top;position:relative;">'
@@ -7371,8 +7386,8 @@ function _renderOrderTable(filter){
         +'<div style="font-size:11px;color:var(--t3);margin-bottom:2px;padding-right:'+(isBest?'36':'0')+'px;">'
           +(currentOrderItem ? currentOrderItem.name : cell.item.name)
         +'</div>'
-        +(currentOrderItem && currentOrderItem.name!==cell.item.name
-          ? '<div style="font-size:10px;color:var(--or);font-weight:700;margin-bottom:3px;">замена: '+_esc(cell.item.name)+'</div>'
+        +(replacedFrom
+          ? '<div style="font-size:10px;color:var(--or);font-weight:700;margin-bottom:3px;">замена: '+_esc(replacedFrom)+' → '+_esc(currentOrderItem.name)+'</div>'
           : '')
         +'<div style="font-size:15px;font-weight:800;color:'+(isBest?'var(--gr)':'var(--ac)')+';margin-bottom:6px;">'
           +'₽'+_fmtPrice(currentOrderItem ? currentOrderItem.price : cell.price)
@@ -7475,7 +7490,8 @@ function _orderSetDraftEntry(query, sup, item){
     name: item.name,
     price: item.price,
     unit: item.unit || 'кг',
-    _type: item._type || 'main'
+    _type: item._type || 'main',
+    replacedFrom: item.replacedFrom || ''
   };
 }
 
@@ -7496,7 +7512,8 @@ function _orderDisplayEntry(query, sup, fallback){
       name: fallback.item.name,
       price: fallback.price,
       unit: fallback.item.unit,
-      _type: fallback.item._type || 'main'
+      _type: fallback.item._type || 'main',
+      replacedFrom: ''
     };
 }
 
@@ -7634,12 +7651,14 @@ function ossFilter(val){
 function ossSelect(itemName, price, unit, itemType){
   var sup   = _ossSup;
   var itype = itemType || 'main';
+  var current = _orderDraftEntryByQuery(_ossRowQuery, sup) || _orderCartEntryByQuery(_ossRowQuery, sup);
 
   _orderSetDraftEntry(_ossRowQuery, sup, {
     name: itemName,
     price: price,
     unit: unit || 'кг',
-    _type: itype
+    _type: itype,
+    replacedFrom: current && current.name !== itemName ? current.name : ''
   });
   var rowNode = document.querySelector('[data-order-row="'+_cssAttrVal(_ossRowQuery)+'"][data-order-sup="'+_cssAttrVal(sup)+'"]');
   if(rowNode){
@@ -7705,9 +7724,11 @@ function renderPriceEditTable(rows, layout, supName, append, priceName, allowedU
     var name  = layout.nameCol  >= 0 ? (parts[layout.nameCol] ||'').toString().trim() : '';
     var unit  = layout.unitCol  >= 0 ? (parts[layout.unitCol] ||'').toString().trim() : 'кг';
     var priceRaw = layout.priceCol >= 0 ? (parts[layout.priceCol]||'').toString() : '';
+    var priceRaw2 = layout.priceCol2 >= 0 ? (parts[layout.priceCol2]||'').toString() : '';
     var price = _parseInputPrice(priceRaw);
+    if((!price || price<=0) && priceRaw2) price = _parseInputPrice(priceRaw2);
     if(!name) return;
-    _priceEditRows.push({name:name, unit:normalizeUnit(unit,name)||'кг', price:price});
+    _priceEditRows.push({name:name, unit:normalizeUnit(unit,name)||'кг', price:price, price2:0});
   });
 
   _renderEditTable();
@@ -7726,7 +7747,8 @@ function _renderEditTable(){
     +'<thead><tr style="background:var(--bg3);position:sticky;top:0;z-index:1;">'
     +'<th style="padding:8px 10px;text-align:left;border:1px solid var(--br);min-width:220px;">Наименование</th>'
     +'<th style="padding:8px 10px;text-align:center;border:1px solid var(--br);min-width:80px;">Единица</th>'
-    +'<th style="padding:8px 10px;text-align:right;border:1px solid var(--br);min-width:110px;">Цена, ₽</th>'
+    +'<th style="padding:8px 10px;text-align:right;border:1px solid var(--br);min-width:110px;">Цена 1, ₽</th>'
+    +'<th style="padding:8px 10px;text-align:right;border:1px solid var(--br);min-width:110px;">Цена 2, ₽</th>'
     +'<th style="padding:8px 10px;border:1px solid var(--br);width:36px;"></th>'
     +'</tr></thead><tbody>';
 
@@ -7752,8 +7774,16 @@ function _renderEditTable(){
           +' style="width:100%;background:transparent;border:none;outline:none;font-size:13px;'
             +'color:var(--ac);font-weight:700;text-align:right;padding:4px;">'
       +'</td>'
+      +'<td style="padding:4px 6px;border:1px solid var(--br);">'
+        +'<input type="text" value="'+_fmtPrice(row.price2||0)+'"'
+          +' oninput="_priceEditRows['+i+'].price2=_parseInputPrice(this.value)"'
+          +' onblur="this.value=_fmtPrice(_priceEditRows['+i+'].price2||0)"'
+          +' pattern="[0-9.,]*"'
+          +' style="width:100%;background:transparent;border:none;outline:none;font-size:13px;'
+            +'color:var(--ac);font-weight:700;text-align:right;padding:4px;">'
+      +'</td>'
       +'<td style="padding:4px 6px;border:1px solid var(--br);text-align:center;">'
-        +'<button onclick="priceDeleteRow('+i+')"'
+        +'<button onclick="priceDeleteRow('+i+')"' 
           +' style="background:var(--rdD);color:var(--rd);border:1px solid var(--rd);'
             +'border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer;" title="Удалить строку">✕</button>'
       +'</td>'
@@ -7773,7 +7803,7 @@ function priceDeleteRow(i){
 }
 
 function priceAddRow(){
-  _priceEditRows.push({name:'', unit:'кг', price:0});
+  _priceEditRows.push({name:'', unit:'кг', price:0, price2:0});
   _renderEditTable();
   // Скроллим к последней строке
   setTimeout(function(){
@@ -7789,15 +7819,15 @@ function priceSaveEdited(){
   var layout = _priceEditLayout;
 
   // Проверка
-  var invalid = _priceEditRows.filter(function(r){ return !r.name || r.price<=0; });
+  var invalid = _priceEditRows.filter(function(r){ return !r.name || (r.price<=0 && (!r.price2 || r.price2<=0)); });
   if(invalid.length){
     toast('Заполните название и цену для всех строк ('+invalid.length+' незаполнено)','err');
     return;
   }
 
   // Конвертировать в rows-формат для processSupPriceRows
-  var fakeRows = _priceEditRows.map(function(r){ return [r.name, r.unit, r.price.toString()]; });
-  var fakeLayout = {nameCol:0, unitCol:1, priceCol:2, headerRow:-1, method:'manual_edit', confidence:100};
+  var fakeRows = _priceEditRows.map(function(r){ return [r.name, r.unit, r.price.toString(), (r.price2||'').toString()]; });
+  var fakeLayout = {nameCol:0, unitCol:1, priceCol:2, priceCol2:3, headerRow:-1, method:'manual_edit', confidence:100};
 
   var previewSec = document.getElementById('pricePreviewSection');
   if(previewSec) previewSec.style.display = 'none';
