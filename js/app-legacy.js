@@ -6421,6 +6421,7 @@ function _detectFreshMillLayout(rows) {
           if(_looksLikeProductName(val)) nameScore++;
           if(extractPrice(val) > 0) priceScore++;
           if(normalizeUnit(val).match(/^(кг|г|шт|л|мл|уп|пачка|бут)$/i)) unitScore++;
+          if(_looksLikeOriginText(val)) nameScore -= 2;
         });
         if(nameScore > bestName.score) bestName = {ci:ci2, score:nameScore};
         if(priceScore > bestPrice.score) bestPrice = {ci:ci2, score:priceScore};
@@ -6527,7 +6528,7 @@ function _heuristicAnalysis(rows) {
     if(!row) return;
     row.forEach(function(cell, ci) {
       var v = (cell||'').toString().trim();
-      if(!colStats[ci]) colStats[ci]={text:0,num:0,short:0,empty:0,unitMatch:0};
+      if(!colStats[ci]) colStats[ci]={text:0,num:0,short:0,empty:0,unitMatch:0,origin:0};
       if(!v) { colStats[ci].empty++; return; }
       
       var asNum = parseFloat(v.replace(/[₽руб$,\s]/g,'').replace(',','.'));
@@ -6538,6 +6539,8 @@ function _heuristicAnalysis(rows) {
       } else if(v.length <= 5 && _isUnitValue(v)) {
         colStats[ci].unitMatch++;
         colStats[ci].short++;
+      } else if(_looksLikeOriginText(v)) {
+        colStats[ci].origin++;
       } else if(v.length > 3) {
         colStats[ci].text++;
       } else {
@@ -6557,9 +6560,10 @@ function _heuristicAnalysis(rows) {
     var textRatio  = s.text  / (totalRows || 1);
     var numRatio   = s.num   / (totalRows || 1);
     var unitRatio  = s.unitMatch / (totalRows || 1);
+    var originRatio = s.origin / (totalRows || 1);
     
     // Лучшая "текстовая" колонка → название
-    if(textRatio > 0.5 && textRatio > nameScore) {
+    if(textRatio > 0.5 && originRatio < 0.25 && textRatio > nameScore) {
       nameScore = textRatio; result.nameCol = ci;
     }
     // Лучшая "числовая" колонка → цена
@@ -6618,7 +6622,25 @@ function _looksLikeMetaText(text) {
   if(JUNK_PATTERNS.some(function(p){ return p.test(s); })) return true;
   if(/(^|[\s:])\+?\d[\d\s().-]{5,}/.test(s)) return true; // телефоны
   if(/(\bг\.?\s*[а-яё-]+|\bул\.?\s*[а-яё-]+|\bпроспект|\bшоссе|\bдом\b|\booo\b|\bооо\b|\bип\b)/i.test(s)) return true;
-  if(/(адрес|телефон|email|e-mail|почт|офис|склад|режим работы|график|прайс|поставщик|город|юр\.?\s*лицо|инн|огрн|кпп)/i.test(s)) return true;
+  if(/(адрес|телефон|email|e-mail|почт|офис|склад|режим работы|график|прайс|поставщик|город|юр\.?\s*лицо|инн|огрн|кпп|страна|происхожд)/i.test(s)) return true;
+  return false;
+}
+
+function _looksLikeOriginText(text) {
+  var raw = (text || '').toString().trim();
+  var s = raw.toLowerCase();
+  if(!s) return false;
+  if(/^\d+$/.test(s)) return false;
+  if(/^[A-ZА-ЯЁ]{2,20}$/.test(raw)) return true;
+  var origins = [
+    'перу','египет','турция','израиль','испания','китай','кения','чили','италия','греция',
+    'марокко','франция','нидерланды','бельгия','польша','индия','мексика','эквадор','бразилия',
+    'юар','казахстан','таджикистан','узбекистан','азербайджан','беларусь','россия','абхазия',
+    'сербия','аргентина','тайланд','вьетнам','пакистан','корея','сша','с.ша','usa','china','peru',
+    'egypt','turkey','israel','spain','italy','greece'
+  ];
+  if(origins.indexOf(s) >= 0) return true;
+  if(/страна\s+происхождения|страна\s+производства|country of origin|origin/i.test(s)) return true;
   return false;
 }
 
@@ -6626,9 +6648,11 @@ function _looksLikeProductName(text) {
   var s = (text || '').toString().trim();
   if(!s) return false;
   if(_looksLikeMetaText(s)) return false;
+  if(_looksLikeOriginText(s)) return false;
   if(/^\d+$/.test(s)) return false;
   if(s.length < 2) return false;
   if(/^[\d\s.,/-]+$/.test(s)) return false;
+  if(/^[A-ZА-ЯЁ]{2,20}$/.test(s)) return false;
   return true;
 }
 
