@@ -6706,20 +6706,33 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
   _mcmPriceName = priceName;
 
   if(!rows.length) return;
-  var headers = rows.find(function(r){ return r && r.some(function(c){ return String(c||'').trim(); }); }) || rows[0] || [];
+  var sampleRows = rows.slice(0, Math.min(rows.length, 6));
+  var maxCols = sampleRows.reduce(function(max, row){
+    return Math.max(max, row ? row.length : 0);
+  }, 0);
+  if(maxCols < 1) maxCols = 1;
+  var headers = [];
+  for(var hi=0; hi<maxCols; hi++){
+    headers.push('Колонка '+(hi+1));
+  }
 
   // Превью первых строк
   var prev = document.getElementById('mcm-preview');
   if(prev){
-    var tbl = '<div style="overflow-x:auto;font-size:11px;max-height:160px;overflow-y:auto;">'
-      +'<table style="border-collapse:collapse;width:100%;">';
+    var tbl = '<div style="overflow-x:auto;font-size:11px;max-height:190px;overflow-y:auto;">'
+      +'<table style="border-collapse:collapse;width:100%;min-width:'+(maxCols*120)+'px;">';
     tbl += '<tr>'+headers.map(function(h,i){
-      return '<th style="border:1px solid var(--br);padding:4px 8px;background:var(--bg4);">'+i+': '+(h||'—').toString().substring(0,20)+'</th>';
+      return '<th style="border:1px solid var(--br);padding:4px 8px;background:var(--bg4);text-align:center;">'+h+'</th>';
     }).join('')+'</tr>';
-    rows.slice(1,4).forEach(function(r){
-      tbl += '<tr>'+r.map(function(c){
-        return '<td style="border:1px solid var(--br);padding:3px 6px;">'+(c||'').toString().substring(0,20)+'</td>';
-      }).join('')+'</tr>';
+    sampleRows.forEach(function(r){
+      tbl += '<tr>';
+      for(var ci=0; ci<maxCols; ci++){
+        var cell = r && r[ci] !== undefined ? r[ci] : '';
+        tbl += '<td style="border:1px solid var(--br);padding:3px 6px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+          +(cell||'').toString().substring(0,40)
+          +'</td>';
+      }
+      tbl += '</tr>';
     });
     tbl += '</table></div>';
     prev.innerHTML = tbl;
@@ -6732,7 +6745,7 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
 
   var opts = '<option value="-1">— не указана —</option>'
     + headers.map(function(h,i){
-      return '<option value="'+i+'">'+i+': '+(h||'—').toString().substring(0,30)+'</option>';
+      return '<option value="'+i+'">'+h+'</option>';
     }).join('');
 
   // Заполнить и предвыбрать обнаруженные колонки
@@ -6765,6 +6778,12 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
   // Сразу показать редактируемый предпросмотр по текущим колонкам
   if(detectedLayout) {
     renderPriceEditTable(rows, detectedLayout, supName, append, priceName, [], 'mcm-edit-preview');
+  }
+
+  // Если первый прогноз не дал колонки, показать базовый шаблон
+  if(!detectedLayout || (detectedLayout.nameCol<0 && detectedLayout.priceCol<0 && detectedLayout.unitCol<0)) {
+    var base = {headerRow:-1,nameCol:0,unitCol:1,priceCol:2,priceCol2:3,method:'manual',confidence:0};
+    renderPriceEditTable(rows, base, supName, append, priceName, [], 'mcm-edit-preview');
   }
   
   openModal('manualColumnMap');
