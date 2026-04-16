@@ -4897,10 +4897,10 @@ function _renderPriceRawPreview(rows){
     if(hint) hint.textContent = 'Выбранный лист пустой или не содержит данных.';
     return;
   }
-  var maxRows = Math.min(24, rows.length);
-  var maxCols = rows.slice(0, Math.min(120, rows.length)).reduce(function(m, r){ return Math.max(m, (r||[]).length); }, 0);
+  var maxRows = rows.length;
+  var maxCols = rows.reduce(function(m, r){ return Math.max(m, (r||[]).length); }, 0);
   if(maxCols < 1) maxCols = 1;
-  if(hint) hint.textContent = 'Строк в листе: '+rows.length+' · колонок: '+maxCols+'.';
+  if(hint) hint.textContent = 'Показаны все строки листа: '+rows.length+' · колонок: '+maxCols+'.';
   var html = '<div style="overflow:auto;max-height:220px;">'
     +'<table style="border-collapse:collapse;width:100%;min-width:'+(maxCols*130)+'px;font-size:11px;">'
     +'<tr style="background:var(--bg4);position:sticky;top:0;z-index:2;">'
@@ -7088,8 +7088,8 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
 
   if(!rows.length) return;
   var dataStartRow = _detectDataStartRow(rows);
-  var sampleRows = rows.slice(Math.max(0, dataStartRow), Math.min(rows.length, dataStartRow + 8));
-  if(!sampleRows.length) sampleRows = rows.slice(0, Math.min(rows.length, 8));
+  var sampleRows = rows.slice(Math.max(0, dataStartRow), Math.min(rows.length, dataStartRow + 20));
+  if(!sampleRows.length) sampleRows = rows.slice(0, Math.min(rows.length, 20));
   var maxCols = rows.slice(0, Math.min(rows.length, 120)).reduce(function(max, row){
     return Math.max(max, row ? row.length : 0);
   }, 0);
@@ -7104,7 +7104,7 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
   // Превью первых строк
   var prev = document.getElementById('mcm-preview');
   if(prev){
-    var tbl = '<div style="overflow-x:auto;font-size:11px;max-height:220px;overflow-y:auto;">'
+    var tbl = '<div style="overflow-x:auto;font-size:11px;max-height:260px;overflow-y:auto;">'
       +'<table style="border-collapse:collapse;width:100%;min-width:'+(Math.max(8,maxCols)*140)+'px;">';
     tbl += '<tr>'+headers.map(function(h,i){
       var guessed = 'ignore';
