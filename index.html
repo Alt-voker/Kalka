@@ -281,12 +281,12 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
 .push-body{font-size:11px;color:var(--t2);line-height:1.6;}.push-time{font-size:10px;color:var(--t3);margin-top:5px;}
 .toast{position:fixed;bottom:19px;right:19px;z-index:1000;background:var(--bg2);border:1px solid var(--br2);border-radius:var(--r2);padding:10px 13px;font-size:13px;display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(0,0,0,.5);animation:sIn .3s ease;transition:opacity .3s;max-width:320px;}
 .toast.ok{border-color:rgba(76,175,130,.3);}.toast.err{border-color:rgba(239,83,80,.3);}
-.cart-flash{animation:cartPulse 1.2s ease;}
-.cart-flash-box{animation:cartPulseBox 1.2s ease;}
-.order-replaced{animation:replacePulse 1.5s ease;}
-@keyframes cartPulse{0%{transform:scale(1)}20%{transform:scale(1.04)}50%{transform:scale(.98)}100%{transform:scale(1)}}
-@keyframes cartPulseBox{0%{box-shadow:0 0 0 0 rgba(91,163,245,.0)}20%{box-shadow:0 0 0 3px rgba(91,163,245,.28)}100%{box-shadow:0 0 0 0 rgba(91,163,245,0)}}
-@keyframes replacePulse{0%{box-shadow:0 0 0 0 rgba(255,152,0,.0)}20%{box-shadow:0 0 0 3px rgba(255,152,0,.25)}100%{box-shadow:0 0 0 0 rgba(255,152,0,0)}}
+.cart-flash{animation:cartPulse .95s ease;box-shadow:0 0 0 3px rgba(91,163,245,.22),0 0 22px rgba(91,163,245,.22)!important;border-color:var(--ac)!important;}
+.cart-flash-box{animation:cartPulseBox .95s ease;box-shadow:0 0 0 3px rgba(91,163,245,.28),0 0 24px rgba(91,163,245,.18)!important;border-color:var(--ac)!important;}
+.order-replaced{animation:replacePulse 1.2s ease;box-shadow:0 0 0 3px rgba(255,152,0,.26),0 0 20px rgba(255,152,0,.18)!important;border-color:var(--or)!important;}
+@keyframes cartPulse{0%{transform:scale(1)}20%{transform:scale(1.06)}45%{transform:scale(.97)}70%{transform:scale(1.03)}100%{transform:scale(1)}}
+@keyframes cartPulseBox{0%{box-shadow:0 0 0 0 rgba(91,163,245,.0)}25%{box-shadow:0 0 0 5px rgba(91,163,245,.33),0 0 26px rgba(91,163,245,.16)}100%{box-shadow:0 0 0 0 rgba(91,163,245,0)}}
+@keyframes replacePulse{0%{box-shadow:0 0 0 0 rgba(255,152,0,.0)}25%{box-shadow:0 0 0 5px rgba(255,152,0,.3),0 0 22px rgba(255,152,0,.14)}100%{box-shadow:0 0 0 0 rgba(255,152,0,0)}}
 .empty{text-align:center;padding:48px 20px;color:var(--t3);}.empty-ico{font-size:36px;margin-bottom:10px;}.empty-txt{font-size:14px;margin-bottom:12px;}
 .empty-btn{background:var(--ac);color:#000;border:none;border-radius:var(--r);padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;}
 .pi{background:var(--bg3);border:1px solid var(--br2);border-radius:6px;padding:4px 7px;color:var(--tx);font-size:12px;outline:none;width:76px;text-align:right;}.pi:focus{border-color:var(--ac);}
@@ -1242,12 +1242,12 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
     <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg3);border-bottom:1px solid var(--br);">
       <div>
         <div style="font-size:12px;font-weight:700;">Предварительный просмотр</div>
-        <div style="font-size:11px;color:var(--t3);">Подтвердите автоматически определённые колонки</div>
+        <div style="font-size:11px;color:var(--t3);">Определите колонки вручную и подтвердите загрузку</div>
       </div>
       <span id="priceMethodBadge" style="font-size:10px;background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:4px;padding:2px 8px;"></span>
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px;border-bottom:1px solid var(--br);background:var(--bg2);font-size:11px;">
-      <button type="button" onclick="openSupPriceManualMap()" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:999px;padding:4px 10px;font-weight:700;cursor:pointer;">Колонки</button>
+      <button type="button" onclick="openSupPriceManualMap()" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:999px;padding:4px 10px;font-weight:700;cursor:pointer;">Определить колонки</button>
       <span id="previewColName" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;">Наименование</span>
       <span id="previewColUnit" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;">Ед. изм.</span>
       <span id="previewColPrice1" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;">Цена 1</span>
@@ -1338,6 +1338,9 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
   <div style="background:var(--aD);border:1px solid var(--ac);border-radius:var(--r);padding:8px 12px;margin-bottom:12px;font-size:12px;color:var(--t2);">
     Укажите вручную какая колонка содержит название, цену и единицу измерения.
     <div id="mcm-method" style="margin-top:4px;font-size:11px;color:var(--t3);"></div>
+  </div>
+  <div id="mcm-manual-hint" style="font-size:12px;color:var(--t2);margin-bottom:10px;">
+    Выберите колонки вручную. Это гарантирует точный импорт даже для сложных прайсов.
   </div>
   <!-- Превью таблицы -->
   <div id="mcm-preview" style="overflow-x:auto;margin-bottom:12px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;max-height:160px;overflow-y:auto;"></div>

@@ -6594,28 +6594,22 @@ function doSupPriceUpload(){
     // Проверить запомненную структуру
     var remembered = recallPriceLayout(supName);
     if(remembered) {
-      // Показать превью с запомненной структурой
+      // Сразу показать ручное сопоставление, но с подсказкой из памяти
       layout = Object.assign({method:'memory ('+supName+')'}, remembered);
-      _showPreviewAndConfirm(rows, layout, supName, append, priceName, allowedUserIds, fi, resetBtn);
+      resetBtn();
+      showManualColumnMap(rows, supName, append, priceName, layout);
       return;
     }
     
     // Автоматическое распознавание
     layout = detectStructure(rows);
-    
-    if(layout.nameCol>=0 && layout.priceCol>=0 && layout.confidence>3) {
-      // Высокая уверенность — показать превью для подтверждения
-      _showPreviewAndConfirm(rows, layout, supName, append, priceName, allowedUserIds, fi, resetBtn);
-    } else {
-      // Низкая уверенность — сразу открыть ручное сопоставление
-      resetBtn();
-      var missing = [];
-      if(layout.nameCol  < 0) missing.push('название');
-      if(layout.priceCol < 0) missing.push('цена');
-      logSystemEvent('price_import','Структура прайса не распознана',supName+': нужен ручной выбор колонок ('+(missing.join(', ')||'низкая уверенность')+')','warn','price-import');
-      toast('Структура не распознана ('+(missing.join(', '))||'низкая уверенность'+'). Укажите колонки вручную.','err');
-      showManualColumnMap(rows, supName, append, priceName, layout);
+
+    // Для профессионального импорта всегда даём человеку выбрать колонки
+    resetBtn();
+    if(layout && layout.method){
+      logSystemEvent('price_import','Требуется ручная проверка колонок',supName+': предварительно найдено '+(layout.nameCol>=0?'название':'')+(layout.priceCol>=0?' цена':'')+(layout.priceCol2>=0?' цена2':''),'info','price-import');
     }
+    showManualColumnMap(rows, supName, append, priceName, layout);
   }
 
   if(ext==='xlsx'||ext==='xls'){
@@ -6729,6 +6723,11 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
     });
     tbl += '</table></div>';
     prev.innerHTML = tbl;
+  }
+
+  var hint = document.getElementById('mcm-manual-hint');
+  if(hint){
+    hint.textContent = 'Выберите нужные колонки вручную. Автоподсказка уже учла вероятные значения, но финальный выбор остаётся за вами.';
   }
 
   var opts = '<option value="-1">— не указана —</option>'
@@ -7399,10 +7398,15 @@ function _renderOrderTable(filter){
           +'font-size:9px;font-weight:700;padding:2px 6px;border-radius:0 0 0 4px;">лучшая</div>':'')
         // Карточка товара
         +'<div style="font-size:11px;color:var(--t3);margin-bottom:2px;padding-right:'+(isBest?'36':'0')+'px;">'
+          +(replacedFrom
+            ? '<span style="display:inline-block;padding:2px 6px;margin-right:6px;border-radius:999px;background:var(--orD);color:var(--or);font-size:9px;font-weight:800;">замена</span>'
+            : '')
           +(currentOrderItem ? currentOrderItem.name : cell.item.name)
         +'</div>'
         +(replacedFrom
-          ? '<div style="font-size:10px;color:var(--or);font-weight:700;margin-bottom:3px;">замена: '+_esc(replacedFrom)+' → '+_esc(currentOrderItem.name)+'</div>'
+          ? '<div style="font-size:10px;color:var(--or);font-weight:800;margin-bottom:3px;line-height:1.35;">'
+            +'было: '+_esc(replacedFrom)+'<br>стало: '+_esc(currentOrderItem.name)
+            +'</div>'
           : '')
         +'<div style="font-size:15px;font-weight:800;color:'+(isBest?'var(--gr)':'var(--ac)')+';margin-bottom:6px;">'
           +'₽'+_fmtPrice(currentOrderItem ? currentOrderItem.price : cell.price)
@@ -7679,6 +7683,11 @@ function ossSelect(itemName, price, unit, itemType){
   if(rowNode){
     rowNode.classList.add('order-replaced');
     setTimeout(function(){ rowNode.classList.remove('order-replaced'); }, 1500);
+  }
+  var cartBtn = document.getElementById('cartBtn');
+  if(cartBtn){
+    cartBtn.classList.add('cart-flash');
+    setTimeout(function(){ cartBtn.classList.remove('cart-flash'); }, 1200);
   }
   closeModal('orderSupSearch');
   if(_orderSups.length > 0 && _orderSups.indexOf(sup) >= 0){
