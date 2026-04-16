@@ -107,6 +107,47 @@ create table if not exists public.tech_cards (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.supplier_import_templates (
+  id uuid primary key default gen_random_uuid(),
+  supplier_name text not null,
+  supplier_legacy_key text,
+  sheet_name text not null default '',
+  header_row integer not null default 0,
+  data_start_row integer not null default 1,
+  column_mapping jsonb not null default '{}'::jsonb,
+  skip_rules jsonb not null default '{}'::jsonb,
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.price_import_batches (
+  id uuid primary key default gen_random_uuid(),
+  supplier_name text not null,
+  supplier_legacy_key text,
+  template_id uuid references public.supplier_import_templates(id) on delete set null,
+  source_file_name text not null default '',
+  sheet_name text not null default '',
+  total_rows integer not null default 0,
+  imported_rows integer not null default 0,
+  skipped_rows integer not null default 0,
+  status text not null default 'draft',
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.price_import_items (
+  id uuid primary key default gen_random_uuid(),
+  batch_id uuid not null references public.price_import_batches(id) on delete cascade,
+  supplier_name text not null,
+  source_row_number integer not null default 0,
+  name text not null default '',
+  unit text not null default 'кг',
+  price numeric(12,2) not null default 0,
+  raw_data jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
 create or replace function public.replace_commerce_snapshot(snapshot jsonb)
 returns void
 language plpgsql
@@ -332,3 +373,28 @@ create policy "orders_rw_authenticated" on public.orders for all to authenticate
 
 drop policy if exists "tech_cards_rw_authenticated" on public.tech_cards;
 create policy "tech_cards_rw_authenticated" on public.tech_cards for all to authenticated using (true) with check (true);
+
+alter table public.supplier_import_templates enable row level security;
+alter table public.price_import_batches enable row level security;
+alter table public.price_import_items enable row level security;
+
+drop policy if exists "supplier_import_templates_rw_authenticated" on public.supplier_import_templates;
+create policy "supplier_import_templates_rw_authenticated"
+on public.supplier_import_templates
+for all to authenticated
+using (true)
+with check (true);
+
+drop policy if exists "price_import_batches_rw_authenticated" on public.price_import_batches;
+create policy "price_import_batches_rw_authenticated"
+on public.price_import_batches
+for all to authenticated
+using (true)
+with check (true);
+
+drop policy if exists "price_import_items_rw_authenticated" on public.price_import_items;
+create policy "price_import_items_rw_authenticated"
+on public.price_import_items
+for all to authenticated
+using (true)
+with check (true);

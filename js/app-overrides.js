@@ -40,6 +40,7 @@
     if (!Array.isArray(base.products)) base.products = [];
     if (!Array.isArray(base.orders)) base.orders = [];
     if (!Array.isArray(base.techCards)) base.techCards = [];
+    if (!Array.isArray(base.supplierImportTemplates)) base.supplierImportTemplates = [];
     return base;
   }
 
@@ -53,7 +54,8 @@
       normalized.supsData.length ||
       normalized.products.length ||
       normalized.orders.length ||
-      normalized.techCards.length
+      normalized.techCards.length ||
+      normalized.supplierImportTemplates.length
     );
   }
 

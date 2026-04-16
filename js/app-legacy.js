@@ -280,6 +280,7 @@ function dbSet(d){
   d.products = PRODUCTS;
   d.orders   = ORDERS;
   d.techCards = TECH_CARDS;
+  if(!Array.isArray(d.supplierImportTemplates)) d.supplierImportTemplates = [];
   _dbCache = d;
   try{ localStorage.setItem('pv_cache', JSON.stringify(d)); }catch(e){}
   _writeToFirebase(d, null);
@@ -308,6 +309,7 @@ function _getDefaults(){
     systemLog:[{ts:new Date().toLocaleString('ru'),type:'system',severity:'info',title:'Инициализация',details:'Платформа создана',source:'core'}],
     platformSettings:{},
     companySettings:{},
+    supplierImportTemplates:[],
     supplierRatings:{},
     userFavorites:{}
   };
@@ -4636,6 +4638,12 @@ function _exportSupCartCSV(supName, items, total, restName, date, comment){
 
 var _currentSupName = '';
 var _supPriceAppend = false; // false=заменить, true=дополнить
+var _supPriceImportBook = null;
+var _supPriceImportSheetName = '';
+var _supPriceImportRows = [];
+var _supPriceImportFileName = '';
+var _supPriceImportSheets = [];
+var _supPriceImportTemplateKey = '';
 
 
 function doUploadSupPrice(){doUploadPrice();}
@@ -4797,6 +4805,241 @@ function downloadTenderTemplate(){ downloadPriceTemplate(); }
 function downloadCatalogTemplate(){ downloadPriceTemplate(); }
 function downloadSupTemplate(){ downloadPriceTemplate(); }
 
+function _supPriceTemplateStorageKey(supName){
+  return 'pv_sup_price_templates_' + String(supName || '').toLowerCase().trim();
+}
+
+function _saveSupPriceTemplate(supName, template){
+  if(!supName || !template) return;
+  var key = _supPriceTemplateStorageKey(supName);
+  try{
+    var current = JSON.parse(localStorage.getItem(key) || 'null') || {};
+    var merged = Object.assign({}, current, template, {
+      supplierName: supName,
+      updatedAt: new Date().toISOString()
+    });
+    localStorage.setItem(key, JSON.stringify(merged));
+  }catch(e){}
+
+  try{
+    var db = dbGet();
+    if(!db.supplierImportTemplates || !Array.isArray(db.supplierImportTemplates)) db.supplierImportTemplates = [];
+    var next = Object.assign({}, template, {
+      id: key,
+      supplierName: supName,
+      updatedAt: new Date().toISOString()
+    });
+    var idx = db.supplierImportTemplates.findIndex(function(item){ return item && item.id === key; });
+    if(idx >= 0) db.supplierImportTemplates[idx] = next;
+    else db.supplierImportTemplates.push(next);
+    dbSet(db);
+  }catch(e){}
+}
+
+function _loadSupPriceTemplate(supName){
+  if(!supName) return null;
+  try{
+    var db = dbGet();
+    if(db && Array.isArray(db.supplierImportTemplates)){
+      var key = _supPriceTemplateStorageKey(supName);
+      var found = db.supplierImportTemplates.find(function(item){ return item && item.id === key; });
+      if(found) return found;
+    }
+  }catch(e){}
+  try{
+    var raw = localStorage.getItem(_supPriceTemplateStorageKey(supName));
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){
+    return null;
+  }
+}
+
+function _buildSheetRows(rows){
+  return Array.isArray(rows) ? rows.map(function(row){
+    return Array.isArray(row) ? row.slice() : [];
+  }) : [];
+}
+
+function _sheetToRows(book, sheetName){
+  if(!book || !book.Sheets || !book.Sheets[sheetName]) return [];
+  return XLSX.utils.sheet_to_json(book.Sheets[sheetName], {header:1, defval:'', raw:false, blankrows:false});
+}
+
+function _firstNonEmptySheetName(book){
+  if(!book || !Array.isArray(book.SheetNames) || !book.SheetNames.length) return '';
+  for(var i=0;i<book.SheetNames.length;i++){
+    var name = book.SheetNames[i];
+    if(name && book.Sheets && book.Sheets[name]) return name;
+  }
+  return book.SheetNames[0] || '';
+}
+
+function _renderPriceSheetSelect(sheetNames, selectedName){
+  var sel = document.getElementById('supPriceSheetSelect');
+  if(!sel) return;
+  if(!Array.isArray(sheetNames) || !sheetNames.length){
+    sel.innerHTML = '<option value="">Листы не найдены</option>';
+    sel.value = '';
+    return;
+  }
+  sel.innerHTML = sheetNames.map(function(name){
+    return '<option value="'+_esc(name)+'"'+(name===selectedName?' selected':'')+'>'+name+'</option>';
+  }).join('');
+  sel.value = selectedName || sheetNames[0] || '';
+}
+
+function _renderPriceRawPreview(rows){
+  var el = document.getElementById('priceRawPreview');
+  var hint = document.getElementById('pricePreviewHint');
+  if(!el) return;
+  if(!rows || !rows.length){
+    el.innerHTML = '<div style="padding:14px;color:var(--t3);font-size:12px;">Нет данных для предпросмотра.</div>';
+    if(hint) hint.textContent = 'Выбранный лист пустой или не содержит данных.';
+    return;
+  }
+  var maxRows = Math.min(24, rows.length);
+  var maxCols = rows.slice(0, Math.min(120, rows.length)).reduce(function(m, r){ return Math.max(m, (r||[]).length); }, 0);
+  if(maxCols < 1) maxCols = 1;
+  if(hint) hint.textContent = 'Строк в листе: '+rows.length+' · колонок: '+maxCols+'.';
+  var html = '<div style="overflow:auto;max-height:220px;">'
+    +'<table style="border-collapse:collapse;width:100%;min-width:'+(maxCols*130)+'px;font-size:11px;">'
+    +'<tr style="background:var(--bg4);position:sticky;top:0;z-index:2;">'
+    +'<th style="position:sticky;left:0;z-index:3;background:var(--bg4);padding:6px 8px;border:1px solid var(--br);width:52px;">#</th>';
+  for(var ci=0; ci<maxCols; ci++){
+    html += '<th style="padding:6px 8px;border:1px solid var(--br);text-align:center;background:var(--bg4);">Колонка '+String.fromCharCode(65+ci)+'</th>';
+  }
+  html += '</tr>';
+  for(var ri=0; ri<maxRows; ri++){
+    var row = rows[ri] || [];
+    html += '<tr>';
+    html += '<td style="position:sticky;left:0;background:var(--bg3);padding:6px 8px;border:1px solid var(--br);color:var(--t3);">'+(ri+1)+'</td>';
+    for(var cj=0; cj<maxCols; cj++){
+      var val = row[cj] !== undefined && row[cj] !== null ? String(row[cj]) : '';
+      html += '<td style="padding:6px 8px;border:1px solid var(--br);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;">'+_esc(val)+'</td>';
+    }
+    html += '</tr>';
+  }
+  html += '</table></div>';
+  el.innerHTML = html;
+}
+
+function _updatePricePreviewSectionFromRows(rows, sheetName, fileName){
+  _supPriceImportRows = _buildSheetRows(rows);
+  _supPriceImportSheetName = sheetName || '';
+  _supPriceImportFileName = fileName || '';
+  var sec = document.getElementById('pricePreviewSection');
+  if(sec) sec.style.display = 'block';
+  _renderPriceRawPreview(_supPriceImportRows);
+}
+
+function saveCurrentSupPriceTemplate(){
+  syncMcmRolesFromPreview();
+  if(!_mcmLayout || _mcmLayout.nameCol < 0 || _mcmLayout.priceCol < 0){
+    var err = document.getElementById('mcm-err');
+    if(err) err.textContent = 'Сначала назначьте обязательные колонки: наименование и цена.';
+    return;
+  }
+  _saveSupPriceTemplate(_currentSupName, {
+    sheetName: _supPriceImportSheetName || '',
+    headerRow: Math.max(0, (_mcmLayout.headerRow >= 0 ? _mcmLayout.headerRow : 0)),
+    dataStartRow: Math.max(1, (parseInt((document.getElementById('mcm-start-row')||{value:'1'}).value, 10) || 1)),
+    nameCol: _mcmLayout.nameCol,
+    unitCol: _mcmLayout.unitCol,
+    priceCol: _mcmLayout.priceCol,
+    priceCol2: _mcmLayout.priceCol2,
+    skipRules: {
+      dropEmpty: true,
+      dropMeta: true,
+      requirePrice: true
+    }
+  });
+  toast('Шаблон импорта сохранён','ok');
+}
+
+function prepareSupPriceImportPreview(){
+  var errEl = document.getElementById('supPriceErr');
+  if(errEl) errEl.textContent = '';
+  var fi = document.getElementById('supPriceFile');
+  if(!fi || !fi.files || !fi.files[0]) return;
+  var file = fi.files[0];
+  _supPriceImportFileName = file.name || '';
+  var ext = file.name.split('.').pop().toLowerCase();
+  var isExcel = ext==='xlsx' || ext==='xls';
+  var isCsv = ext==='csv' || ext==='txt';
+  if(!isExcel && !isCsv){
+    if(errEl) errEl.textContent = 'Файл не поддерживается';
+    return;
+  }
+
+  function openWithRows(book, sheetNames, rows, selectedName){
+    _supPriceImportBook = book || null;
+    _supPriceImportSheets = sheetNames || [];
+    _supPriceImportSheetName = selectedName || '';
+    _renderPriceSheetSelect(_supPriceImportSheets, _supPriceImportSheetName);
+    _updatePricePreviewSectionFromRows(rows, _supPriceImportSheetName, file.name);
+    var template = _loadSupPriceTemplate(_currentSupName);
+    var layout = template && template.sheetName === _supPriceImportSheetName ? {
+      headerRow: parseInt(template.headerRow, 10) || 0,
+      nameCol: parseInt(template.nameCol, 10),
+      unitCol: parseInt(template.unitCol, 10),
+      priceCol: parseInt(template.priceCol, 10),
+      priceCol2: parseInt(template.priceCol2, 10),
+      method: 'шаблон поставщика',
+      confidence: 100
+    } : detectStructure(rows);
+    if(!layout) layout = {headerRow:0,nameCol:-1,unitCol:-1,priceCol:-1,priceCol2:-1,method:'manual',confidence:0};
+    showManualColumnMap(rows, _currentSupName, _supPriceAppend, (document.getElementById('supPriceName')||{value:''}).value.trim() || (_supPriceAppend?'Дополнительный прайс':'Основной прайс'), layout);
+  }
+
+  if(isExcel){
+    if(typeof XLSX === 'undefined'){
+      if(errEl) errEl.textContent = 'SheetJS не загружен';
+      return;
+    }
+    var r = new FileReader();
+    r.onload = function(ev){
+      try{
+        var wb = XLSX.read(new Uint8Array(ev.target.result), {type:'array'});
+        var firstSheet = _firstNonEmptySheetName(wb);
+        var rows = firstSheet ? _sheetToRows(wb, firstSheet) : [];
+        openWithRows(wb, wb.SheetNames.slice(), rows, firstSheet);
+      } catch(e){
+        if(errEl) errEl.textContent = 'Ошибка Excel: '+e.message;
+      }
+    };
+    r.readAsArrayBuffer(file);
+    return;
+  }
+
+  var r2 = new FileReader();
+  r2.onload = function(ev){
+    var rows = String(ev.target.result || '').split(/\r?\n/).filter(function(l){ return l.trim(); }).map(function(line){
+      return line.split(/[,;\t]/);
+    });
+    openWithRows({SheetNames:['Лист1'], Sheets:{'Лист1':{}}}, ['Лист1'], rows, 'Лист1');
+  };
+  r2.readAsText(file, 'utf-8');
+}
+
+function selectSupPriceSheet(sheetName){
+  if(!sheetName || !_supPriceImportBook) return;
+  _supPriceImportSheetName = sheetName;
+  var rows = _sheetToRows(_supPriceImportBook, sheetName);
+  _updatePricePreviewSectionFromRows(rows, sheetName, _supPriceImportFileName);
+  var template = _loadSupPriceTemplate(_currentSupName);
+  var layout = template && template.sheetName === sheetName ? {
+    headerRow: parseInt(template.headerRow, 10) || 0,
+    nameCol: parseInt(template.nameCol, 10),
+    unitCol: parseInt(template.unitCol, 10),
+    priceCol: parseInt(template.priceCol, 10),
+    priceCol2: parseInt(template.priceCol2, 10),
+    method: 'шаблон поставщика',
+    confidence: 100
+  } : detectStructure(rows);
+  if(!layout) layout = {headerRow:0,nameCol:-1,unitCol:-1,priceCol:-1,priceCol2:-1,method:'manual',confidence:0};
+  showManualColumnMap(rows, _currentSupName, _supPriceAppend, (document.getElementById('supPriceName')||{value:''}).value.trim() || (_supPriceAppend?'Дополнительный прайс':'Основной прайс'), layout);
+}
+
 // ═══ ЗАГРУЗКА ПРАЙСА ПОСТАВЩИКА ══════════════════════════
 function openSupPriceUpload(supName, append){
   _currentSupName = supName;
@@ -4824,6 +5067,16 @@ function openSupPriceUpload(supName, append){
   }
   var fi=document.getElementById('supPriceFile'); if(fi)fi.value='';
   var err=document.getElementById('supPriceErr'); if(err)err.textContent='';
+  _supPriceImportBook = null;
+  _supPriceImportSheetName = '';
+  _supPriceImportRows = [];
+  _supPriceImportFileName = '';
+  _supPriceImportSheets = [];
+  _supPriceImportTemplateKey = '';
+  _renderPriceSheetSelect([], '');
+  _renderPriceRawPreview([]);
+  var sec = document.getElementById('pricePreviewSection');
+  if(sec) sec.style.display = 'none';
   openModal('supPriceUpload');
 }
 
@@ -6760,71 +7013,7 @@ function _showNeedsReview(items, supName) {
 // ── ОСНОВНАЯ ФУНКЦИЯ ЗАГРУЗКИ ─────────────────────────────────
 
 function doSupPriceUpload(){
-  var errEl = document.getElementById('supPriceErr');
-  if(errEl) errEl.textContent = '';
-  
-  var secReview = document.getElementById('priceReviewSection');
-  if(secReview) secReview.style.display = 'none';
-
-  var supName = _currentSupName;
-  if(!supName){ if(errEl) errEl.textContent='Поставщик не определён'; return; }
-  
-  var append    = _supPriceAppend;
-  var priceName = (document.getElementById('supPriceName')||{value:''}).value.trim()
-                  || (append?'Дополнительный прайс':'Основной прайс');
-
-  var allowedUserIds = [];
-  document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
-    allowedUserIds.push(cb.value);
-  });
-
-  var fi = document.getElementById('supPriceFile');
-  if(!fi||!fi.files||!fi.files[0]){ if(errEl) errEl.textContent='Выберите файл'; return; }
-  
-  var file = fi.files[0];
-  var ext  = file.name.split('.').pop().toLowerCase();
-  var btn  = document.getElementById('supPriceUploadBtn');
-  
-  if(btn){ btn.textContent='Анализирую...'; btn.disabled=true; }
-  function resetBtn(){ if(btn){ btn.textContent='Загрузить прайс'; btn.disabled=false; } }
-
-  function handleRows(rows){
-    if(!rows.length){ if(errEl)errEl.textContent='Файл пустой'; resetBtn(); return; }
-    
-    var layout = detectStructure(rows);
-    var remembered = recallPriceLayout(supName);
-    if(remembered && _layoutLooksCompatible(rows, remembered)) {
-      layout = Object.assign({method:'memory ('+supName+')'}, remembered);
-    }
-
-    resetBtn();
-    if(layout && layout.method){
-      logSystemEvent('price_import','Требуется ручная проверка колонок',supName+': предварительно найдено '+(layout.nameCol>=0?'название':'')+(layout.priceCol>=0?' цена':'')+(layout.priceCol2>=0?' цена2':''),'info','price-import');
-    }
-    showManualColumnMap(rows, supName, append, priceName, layout);
-  }
-
-  if(ext==='xlsx'||ext==='xls'){
-    if(typeof XLSX==='undefined'){ if(errEl)errEl.textContent='SheetJS не загружен'; logSystemEvent('price_import','Не удалось открыть Excel','SheetJS не загружен в браузере при импорте прайса '+supName,'error','price-import'); resetBtn(); return; }
-    var r = new FileReader();
-    r.onload = function(ev){
-      try{
-        var wb = XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
-        var ws = wb.Sheets[wb.SheetNames[0]];
-        handleRows(XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false}));
-      } catch(e){ if(errEl)errEl.textContent='Ошибка Excel: '+e.message; logSystemEvent('price_import','Ошибка чтения Excel',supName+': '+e.message,'error','price-import'); resetBtn(); }
-    };
-    r.readAsArrayBuffer(file);
-  } else {
-    var r = new FileReader();
-    r.onload = function(ev){
-      handleRows(ev.target.result.split(/\r?\n/)
-        .filter(function(l){return l.trim();})
-        .map(function(l){return l.split(/[,;\t]/);})
-      );
-    };
-    r.readAsText(file,'utf-8');
-  }
+  return prepareSupPriceImportPreview();
 }
 
 function openSupPriceManualMap(){
@@ -8126,6 +8315,21 @@ function priceSaveEdited(){
   if(previewSec) previewSec.style.display = 'none';
   closeModal('manualColumnMap');
   closeModal('supPriceUpload');
+
+  _saveSupPriceTemplate(ctx.supName, {
+    sheetName: _supPriceImportSheetName || '',
+    headerRow: Math.max(0, (layout.headerRow >= 0 ? layout.headerRow : 0)),
+    dataStartRow: Math.max(1, (parseInt((document.getElementById('mcm-start-row')||{value:'1'}).value, 10) || 1)),
+    nameCol: layout.nameCol,
+    unitCol: layout.unitCol,
+    priceCol: layout.priceCol,
+    priceCol2: layout.priceCol2,
+    skipRules: {
+      dropEmpty: true,
+      dropMeta: true,
+      requirePrice: true
+    }
+  });
 
   processSupPriceRows(fakeRows, fakeLayout, ctx.supName, ctx.append, ctx.priceName, ctx.allowedUserIds);
 }

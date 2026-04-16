@@ -1220,6 +1220,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
 
   <label class="fL">Файл (.xlsx, .xls, .csv)</label>
   <input type="file" id="supPriceFile" accept=".xlsx,.xls,.csv,.txt"
+    onchange="prepareSupPriceImportPreview()"
     style="width:100%;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);
            padding:8px;color:var(--tx);font-size:12px;box-sizing:border-box;margin-bottom:12px;">
 
@@ -1239,16 +1240,26 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
     <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg3);border-bottom:1px solid var(--br);">
       <div>
         <div style="font-size:12px;font-weight:700;">Предварительный просмотр</div>
-        <div style="font-size:11px;color:var(--t3);">Определите колонки вручную и подтвердите загрузку</div>
+        <div style="font-size:11px;color:var(--t3);">Выберите лист, проверьте данные и назначьте роли колонкам</div>
       </div>
       <span id="priceMethodBadge" style="font-size:10px;background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:4px;padding:2px 8px;"></span>
     </div>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px;border-bottom:1px solid var(--br);background:var(--bg2);font-size:11px;">
-      <button type="button" onclick="openSupPriceManualMap()" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:999px;padding:4px 10px;font-weight:700;cursor:pointer;">Определить колонки</button>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;padding:10px 12px;border-bottom:1px solid var(--br);background:var(--bg2);font-size:11px;align-items:center;">
+      <div style="min-width:180px;flex:1;">
+        <div style="font-size:10px;color:var(--t3);margin-bottom:4px;">Выбор листа</div>
+        <select id="supPriceSheetSelect" class="fS" onchange="selectSupPriceSheet(this.value)" style="margin:0;">
+          <option value="">Сначала загрузите файл</option>
+        </select>
+      </div>
+      <button type="button" onclick="openSupPriceManualMap()" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:999px;padding:4px 10px;font-weight:700;cursor:pointer;">Назначить роли</button>
       <span id="previewColName" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;">Наименование</span>
-      <span id="previewColUnit" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;">Ед. изм.</span>
+      <span id="previewColUnit" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;">Единица</span>
       <span id="previewColPrice1" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;">Цена 1</span>
       <span id="previewColPrice2" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;">Цена 2</span>
+    </div>
+    <div style="padding:0 12px 10px;">
+      <div id="pricePreviewHint" style="font-size:11px;color:var(--t3);margin:8px 0 6px;">Файл еще не открыт.</div>
+      <div id="priceRawPreview" style="border:1px solid var(--br);border-radius:var(--r);max-height:220px;overflow:auto;"></div>
     </div>
     <div style="padding:10px 12px;">
       <div id="pricePreviewTable"></div>
@@ -1280,7 +1291,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
   <div id="supPriceErr" style="color:var(--rd);font-size:12px;min-height:14px;margin-bottom:4px;"></div>
   <div class="m-acts">
     <button class="m-cancel" onclick="closeModal('supPriceUpload')">Закрыть</button>
-    <button class="m-ok" id="supPriceUploadBtn" onclick="doSupPriceUpload()">Загрузить прайс</button>
+    <button class="m-ok" id="supPriceUploadBtn" onclick="prepareSupPriceImportPreview()">📤 Открыть предпросмотр</button>
   </div>
 </div></div>
 
@@ -1354,6 +1365,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
   <div id="mcm-err" style="color:var(--rd);font-size:12px;min-height:14px;"></div>
   <div class="m-acts">
     <button class="m-cancel" onclick="closeModal('manualColumnMap')">Отмена</button>
+    <button class="m-cancel" onclick="saveCurrentSupPriceTemplate()" style="border-color:var(--ac);color:var(--ac);">Сохранить шаблон</button>
     <button class="m-ok" onclick="applyManualColumnMapAndSave()">Применить и загрузить</button>
   </div>
 </div></div>
