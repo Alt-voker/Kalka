@@ -4812,9 +4812,16 @@ function _supPriceTemplateStorageKey(supName){
 function _saveSupPriceTemplate(supName, template){
   if(!supName || !template) return;
   var key = _supPriceTemplateStorageKey(supName);
+  var next = Object.assign({}, template, {
+    nameCols: Array.isArray(template.nameCols) ? template.nameCols.slice() : (template.nameCol >= 0 ? [template.nameCol] : []),
+    unitCols: Array.isArray(template.unitCols) ? template.unitCols.slice() : (template.unitCol >= 0 ? [template.unitCol] : []),
+    priceCols: Array.isArray(template.priceCols) ? template.priceCols.slice() : (template.priceCol >= 0 ? [template.priceCol] : []),
+    price2Cols: Array.isArray(template.price2Cols) ? template.price2Cols.slice() : (template.priceCol2 >= 0 ? [template.priceCol2] : []),
+    headerRow: typeof template.headerRow === 'number' ? template.headerRow : parseInt(template.headerRow, 10) || 0
+  });
   try{
     var current = JSON.parse(localStorage.getItem(key) || 'null') || {};
-    var merged = Object.assign({}, current, template, {
+    var merged = Object.assign({}, current, next, {
       supplierName: supName,
       updatedAt: new Date().toISOString()
     });
@@ -4824,14 +4831,14 @@ function _saveSupPriceTemplate(supName, template){
   try{
     var db = dbGet();
     if(!db.supplierImportTemplates || !Array.isArray(db.supplierImportTemplates)) db.supplierImportTemplates = [];
-    var next = Object.assign({}, template, {
+    var dbNext = Object.assign({}, next, {
       id: key,
       supplierName: supName,
       updatedAt: new Date().toISOString()
     });
     var idx = db.supplierImportTemplates.findIndex(function(item){ return item && item.id === key; });
-    if(idx >= 0) db.supplierImportTemplates[idx] = next;
-    else db.supplierImportTemplates.push(next);
+    if(idx >= 0) db.supplierImportTemplates[idx] = dbNext;
+    else db.supplierImportTemplates.push(dbNext);
     dbSet(db);
   }catch(e){}
 }
@@ -4843,12 +4850,34 @@ function _loadSupPriceTemplate(supName){
     if(db && Array.isArray(db.supplierImportTemplates)){
       var key = _supPriceTemplateStorageKey(supName);
       var found = db.supplierImportTemplates.find(function(item){ return item && item.id === key; });
-      if(found) return found;
+      if(found) return {
+        sheetName: found.sheetName || '',
+        headerRow: parseInt(found.headerRow, 10) || 0,
+        dataStartRow: parseInt(found.dataStartRow, 10) || 1,
+        nameCols: Array.isArray(found.nameCols) ? found.nameCols.slice() : (found.nameCol >= 0 ? [found.nameCol] : []),
+        unitCols: Array.isArray(found.unitCols) ? found.unitCols.slice() : (found.unitCol >= 0 ? [found.unitCol] : []),
+        priceCols: Array.isArray(found.priceCols) ? found.priceCols.slice() : (found.priceCol >= 0 ? [found.priceCol] : []),
+        price2Cols: Array.isArray(found.price2Cols) ? found.price2Cols.slice() : (found.priceCol2 >= 0 ? [found.priceCol2] : []),
+        skipRules: found.skipRules || {},
+        supplierName: found.supplierName || supName
+      };
     }
   }catch(e){}
   try{
     var raw = localStorage.getItem(_supPriceTemplateStorageKey(supName));
-    return raw ? JSON.parse(raw) : null;
+    if(!raw) return null;
+    var parsed = JSON.parse(raw);
+    return {
+      sheetName: parsed.sheetName || '',
+      headerRow: parseInt(parsed.headerRow, 10) || 0,
+      dataStartRow: parseInt(parsed.dataStartRow, 10) || 1,
+      nameCols: Array.isArray(parsed.nameCols) ? parsed.nameCols.slice() : (parsed.nameCol >= 0 ? [parsed.nameCol] : []),
+      unitCols: Array.isArray(parsed.unitCols) ? parsed.unitCols.slice() : (parsed.unitCol >= 0 ? [parsed.unitCol] : []),
+      priceCols: Array.isArray(parsed.priceCols) ? parsed.priceCols.slice() : (parsed.priceCol >= 0 ? [parsed.priceCol] : []),
+      price2Cols: Array.isArray(parsed.price2Cols) ? parsed.price2Cols.slice() : (parsed.priceCol2 >= 0 ? [parsed.priceCol2] : []),
+      skipRules: parsed.skipRules || {},
+      supplierName: parsed.supplierName || supName
+    };
   }catch(e){
     return null;
   }
@@ -4890,10 +4919,10 @@ function _renderPriceSheetSelect(sheetNames, selectedName){
 
 function _setImportPreviewBadges(layout){
   var map = [
-    ['previewColName',   layout && layout.nameCol >= 0 ? 'Наименование · '+(layout.nameCol+1) : 'Наименование'],
-    ['previewColUnit',   layout && layout.unitCol >= 0 ? 'Единица · '+(layout.unitCol+1) : 'Единица'],
-    ['previewColPrice1', layout && layout.priceCol >= 0 ? 'Цена 1 · '+(layout.priceCol+1) : 'Цена 1'],
-    ['previewColPrice2', layout && layout.priceCol2>= 0 ? 'Цена 2 · '+(layout.priceCol2+1) : 'Цена 2']
+    ['previewColName',   layout && layout.nameCols && layout.nameCols.length ? 'Наименование · '+layout.nameCols.map(function(i){return i+1;}).join(', ') : 'Наименование'],
+    ['previewColUnit',   layout && layout.unitCols && layout.unitCols.length ? 'Единица · '+layout.unitCols.map(function(i){return i+1;}).join(', ') : 'Единица'],
+    ['previewColPrice1', layout && layout.priceCols && layout.priceCols.length ? 'Цена 1 · '+layout.priceCols.map(function(i){return i+1;}).join(', ') : 'Цена 1'],
+    ['previewColPrice2', layout && layout.price2Cols && layout.price2Cols.length ? 'Цена 2 · '+layout.price2Cols.map(function(i){return i+1;}).join(', ') : 'Цена 2']
   ];
   map.forEach(function(item){
     var el = document.getElementById(item[0]);
@@ -4962,7 +4991,7 @@ function _updatePricePreviewSectionFromRows(rows, sheetName, fileName){
 
 function saveCurrentSupPriceTemplate(){
   syncMcmRolesFromPreview();
-  if(!_mcmLayout || _mcmLayout.nameCol < 0 || _mcmLayout.priceCol < 0){
+  if(!_mcmLayout || !_mcmLayout.nameCols || !_mcmLayout.nameCols.length || !_mcmLayout.priceCols || !_mcmLayout.priceCols.length){
     var err = document.getElementById('mcm-err');
     if(err) err.textContent = 'Сначала назначьте обязательные колонки: наименование и цена.';
     return;
@@ -4971,10 +5000,10 @@ function saveCurrentSupPriceTemplate(){
     sheetName: _supPriceImportSheetName || '',
     headerRow: Math.max(0, (_mcmLayout.headerRow >= 0 ? _mcmLayout.headerRow : 0)),
     dataStartRow: Math.max(1, (parseInt((document.getElementById('mcm-start-row')||{value:'1'}).value, 10) || 1)),
-    nameCol: _mcmLayout.nameCol,
-    unitCol: _mcmLayout.unitCol,
-    priceCol: _mcmLayout.priceCol,
-    priceCol2: _mcmLayout.priceCol2,
+    nameCols: (_mcmLayout.nameCols||[]).slice(),
+    unitCols: (_mcmLayout.unitCols||[]).slice(),
+    priceCols: (_mcmLayout.priceCols||[]).slice(),
+    price2Cols: (_mcmLayout.price2Cols||[]).slice(),
     skipRules: {
       dropEmpty: true,
       dropMeta: true,
@@ -6775,9 +6804,10 @@ function getCanonicalName(name) {
 
 function rememberPriceLayout(supName, layout) {
   _priceLayoutMemory[supName] = {
-    nameCol:   layout.nameCol,
-    unitCol:   layout.unitCol,
-    priceCol:  layout.priceCol,
+    nameCols:  Array.isArray(layout.nameCols) ? layout.nameCols.slice() : (layout.nameCol >= 0 ? [layout.nameCol] : []),
+    unitCols:  Array.isArray(layout.unitCols) ? layout.unitCols.slice() : (layout.unitCol >= 0 ? [layout.unitCol] : []),
+    priceCols: Array.isArray(layout.priceCols) ? layout.priceCols.slice() : (layout.priceCol >= 0 ? [layout.priceCol] : []),
+    price2Cols:Array.isArray(layout.price2Cols) ? layout.price2Cols.slice() : (layout.priceCol2 >= 0 ? [layout.priceCol2] : []),
     headerRow: layout.headerRow,
     savedAt:   new Date().toISOString()
   };
@@ -6810,9 +6840,9 @@ function _layoutLooksCompatible(rows, layout) {
   var nameOk=0, priceOk=0, total=0;
   cleaned.forEach(function(parts){
     total++;
-    var name = layout.nameCol >= 0 ? String(parts[layout.nameCol] || '').trim() : '';
-    var p1   = layout.priceCol >= 0 ? extractPrice(parts[layout.priceCol]) : 0;
-    var p2   = layout.priceCol2 >= 0 ? extractPrice(parts[layout.priceCol2]) : 0;
+    var name = _collectJoinedText(parts, layout.nameCols || (layout.nameCol >= 0 ? [layout.nameCol] : []));
+    var p1   = _collectFirstPrice(parts, layout.priceCols || (layout.priceCol >= 0 ? [layout.priceCol] : []));
+    var p2   = _collectFirstPrice(parts, layout.price2Cols || (layout.priceCol2 >= 0 ? [layout.priceCol2] : []));
     if(_looksLikeProductName(name)) nameOk++;
     if((p1>0) || (p2>0)) priceOk++;
   });
@@ -6839,9 +6869,10 @@ function renderPricePreview(rows, layout) {
   var headerRow = layout.headerRow >= 0 ? layout.headerRow : -1;
   
   var colColors = {};
-  if(layout.nameCol  >= 0) colColors[layout.nameCol]  = {bg:'rgba(91,163,245,.15)',label:'Наименование'};
-  if(layout.priceCol >= 0) colColors[layout.priceCol] = {bg:'rgba(76,175,130,.15)',label:'Цена'};
-  if(layout.unitCol  >= 0) colColors[layout.unitCol]  = {bg:'rgba(255,193,7,.15)', label:'Единица'};
+  (layout.nameCols || (layout.nameCol >= 0 ? [layout.nameCol] : [])).forEach(function(ci){ colColors[ci] = {bg:'rgba(91,163,245,.15)',label:'Наименование'}; });
+  (layout.priceCols || (layout.priceCol >= 0 ? [layout.priceCol] : [])).forEach(function(ci){ colColors[ci] = {bg:'rgba(76,175,130,.15)',label:'Цена'}; });
+  (layout.price2Cols || (layout.priceCol2 >= 0 ? [layout.priceCol2] : [])).forEach(function(ci){ colColors[ci] = {bg:'rgba(171,125,248,.15)',label:'Цена 2'}; });
+  (layout.unitCols || (layout.unitCol >= 0 ? [layout.unitCol] : [])).forEach(function(ci){ colColors[ci] = {bg:'rgba(255,193,7,.15)', label:'Единица'}; });
   
   var html = '<div style="overflow-x:auto;max-height:260px;overflow-y:auto;">'
     +'<table style="border-collapse:collapse;font-size:12px;width:100%;min-width:400px;">';
@@ -6877,10 +6908,10 @@ function renderPricePreview(rows, layout) {
   
   // Легенда
   html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:11px;">';
-  if(layout.nameCol  >= 0) html += '<span style="color:var(--ac);">🔵 Колонка '+(layout.nameCol+1)+' = Наименование</span>';
-  if(layout.priceCol >= 0) html += '<span style="color:var(--gr);">🟢 Колонка '+(layout.priceCol+1)+' = Цена</span>';
-  if(layout.priceCol2>= 0) html += '<span style="color:#ab7df8;">🟣 Колонка '+(layout.priceCol2+1)+' = Цена 2</span>';
-  if(layout.unitCol  >= 0) html += '<span style="color:#ff9800;">🟡 Колонка '+(layout.unitCol+1)+' = Единица</span>';
+  if((layout.nameCols || (layout.nameCol >= 0 ? [layout.nameCol] : [])).length) html += '<span style="color:var(--ac);">🔵 Наименование · '+(layout.nameCols || [layout.nameCol]).map(function(i){return i+1;}).join(', ')+'</span>';
+  if((layout.priceCols || (layout.priceCol >= 0 ? [layout.priceCol] : [])).length) html += '<span style="color:var(--gr);">🟢 Цена · '+(layout.priceCols || [layout.priceCol]).map(function(i){return i+1;}).join(', ')+'</span>';
+  if((layout.price2Cols || (layout.priceCol2>= 0 ? [layout.priceCol2] : [])).length) html += '<span style="color:#ab7df8;">🟣 Цена 2 · '+(layout.price2Cols || [layout.priceCol2]).map(function(i){return i+1;}).join(', ')+'</span>';
+  if((layout.unitCols || (layout.unitCol >= 0 ? [layout.unitCol] : [])).length) html += '<span style="color:#ff9800;">🟡 Единица · '+(layout.unitCols || [layout.unitCol]).map(function(i){return i+1;}).join(', ')+'</span>';
   html += '<span style="color:var(--t3);">Метод: '+(layout.method||'auto')+'</span>';
   html += '</div>';
   
@@ -6917,15 +6948,11 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
   var cleanedRows = cleanRows(rows, headerRow);
 
   cleanedRows.forEach(function(parts, idx){
-    var rawName  = cols.nameCol  >= 0 ? (parts[cols.nameCol] ||'') : '';
-    var rawUnit  = cols.unitCol  >= 0 ? (parts[cols.unitCol] ||'') : '';
-    var rawPrice = cols.priceCol >= 0 ? (parts[cols.priceCol]||'') : '';
-    var rawPrice2 = cols.priceCol2 >= 0 ? (parts[cols.priceCol2]||'') : '';
-
-    var name  = rawName.toString().trim();
-    var price = extractPrice(rawPrice);
-    if((!price || price<=0) && rawPrice2) price = extractPrice(rawPrice2);
-    var unit  = normalizeUnit(rawUnit.toString(), name);
+    var name  = _collectJoinedText(parts, cols.nameCols);
+    var unit  = _collectJoinedText(parts, cols.unitCols);
+    var price = _collectFirstPrice(parts, cols.priceCols);
+    var price2 = _collectFirstPrice(parts, cols.price2Cols);
+    if((!price || price<=0) && price2 > 0) price = price2;
 
     if(!name) {
       skipped++;
@@ -7097,10 +7124,10 @@ function openSupPriceManualMap(){
 
 function updatePricePreviewHeader(layout){
   var map = [
-    ['previewColName',   layout && layout.nameCol >= 0 ? 'Наименование: '+(layout.nameCol+1) : 'Наименование'],
-    ['previewColUnit',   layout && layout.unitCol >= 0 ? 'Ед. изм.: '+(layout.unitCol+1) : 'Ед. изм.'],
-    ['previewColPrice1', layout && layout.priceCol >= 0 ? 'Цена 1: '+(layout.priceCol+1) : 'Цена 1'],
-    ['previewColPrice2', layout && layout.priceCol2>= 0 ? 'Цена 2: '+(layout.priceCol2+1) : 'Цена 2']
+    ['previewColName',   layout && layout.nameCols && layout.nameCols.length ? 'Наименование: '+layout.nameCols.map(function(i){return i+1;}).join(', ') : 'Наименование'],
+    ['previewColUnit',   layout && layout.unitCols && layout.unitCols.length ? 'Ед. изм.: '+layout.unitCols.map(function(i){return i+1;}).join(', ') : 'Ед. изм.'],
+    ['previewColPrice1', layout && layout.priceCols && layout.priceCols.length ? 'Цена 1: '+layout.priceCols.map(function(i){return i+1;}).join(', ') : 'Цена 1'],
+    ['previewColPrice2', layout && layout.price2Cols && layout.price2Cols.length ? 'Цена 2: '+layout.price2Cols.map(function(i){return i+1;}).join(', ') : 'Цена 2']
   ];
   map.forEach(function(item){
     var el=document.getElementById(item[0]);
@@ -7169,7 +7196,7 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
 
   var hint = document.getElementById('mcm-manual-hint');
   if(hint){
-    hint.textContent = 'Назначьте роли прямо над колонками. Автоматическое распознавание отключено: все роли выбираются вручную. Одна колонка может иметь только одну роль.';
+    hint.textContent = 'Назначьте роли прямо над колонками. Автоматическое распознавание отключено: все роли выбираются вручную. Роль может быть назначена двум колонкам, если прайс разбит на несколько столбцов.';
   }
 
   var startRowEl = document.getElementById('mcm-start-row');
@@ -7196,19 +7223,19 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
   var err = document.getElementById('mcm-err');
   if(err) err.textContent = '';
   
-  // Показать метод обнаружения
+  // Показать режим работы
   var methodEl = document.getElementById('mcm-method');
-  if(methodEl && detectedLayout) {
+  if(methodEl) {
     methodEl.textContent = 'Режим: ручное сопоставление колонок';
   }
 
   // Сразу показать редактируемый предпросмотр по текущим колонкам
   _mcmLayout = {
     headerRow: Math.max(0, Math.min(detectedLayout && detectedLayout.headerRow >= 0 ? detectedLayout.headerRow : 0, dataStartRow - 1)),
-    nameCol: -1,
-    unitCol: -1,
-    priceCol: -1,
-    priceCol2: -1,
+    nameCols: [],
+    unitCols: [],
+    priceCols: [],
+    price2Cols: [],
     method: 'manual',
     confidence: 0
   };
@@ -7223,14 +7250,6 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
 
 function _setMcmRole(col, role){
   _mcmSelectedRoleByCol[col] = role || 'ignore';
-  for(var ci=0; ci<_mcmMaxCols; ci++){
-    if(ci === col) continue;
-    if((_mcmSelectedRoleByCol[ci] || 'ignore') === role && role !== 'ignore'){
-      _mcmSelectedRoleByCol[ci] = 'ignore';
-      var other = document.getElementById('mcm-role-'+ci);
-      if(other) other.value = 'ignore';
-    }
-  }
   var current = document.getElementById('mcm-role-'+col);
   if(current) current.value = role || 'ignore';
   syncMcmRolesFromPreview();
@@ -7242,10 +7261,8 @@ function applyManualColumnMap(){
   var startRow = parseInt((document.getElementById('mcm-start-row')||{value:'1'}).value)||1;
   var err  = document.getElementById('mcm-err');
   syncMcmRolesFromPreview();
-  if(!_mcmLayout || _mcmLayout.nameCol < 0){ if(err) err.textContent='Выберите колонку с названием'; return; }
-  if(_mcmLayout.priceCol < 0){ if(err) err.textContent='Выберите колонку с ценой'; return; }
-  if(_mcmLayout.nameCol===_mcmLayout.priceCol){ if(err) err.textContent='Название и цена — разные колонки'; return; }
-  if(_mcmLayout.priceCol2>=0 && _mcmLayout.priceCol2===_mcmLayout.priceCol){ if(err) err.textContent='Цена 2 должна быть другой колонкой'; return; }
+  if(!_mcmLayout || !_mcmLayout.nameCols || !_mcmLayout.nameCols.length){ if(err) err.textContent='Выберите хотя бы одну колонку с названием'; return; }
+  if(!_mcmLayout.priceCols || !_mcmLayout.priceCols.length){ if(err) err.textContent='Выберите хотя бы одну колонку с ценой'; return; }
 
   _mcmLayout.headerRow = startRow - 1;
   _setImportPreviewBadges(_mcmLayout);
@@ -7257,19 +7274,19 @@ function applyManualColumnMapAndSave(){
   var err  = document.getElementById('mcm-err');
   applyManualColumnMap();
   if(err && /Выберите|разные колонки/.test(err.textContent || '')) return;
-  if(!_mcmLayout || _mcmLayout.nameCol < 0 || _mcmLayout.priceCol < 0) return;
+  if(!_mcmLayout || !_mcmLayout.nameCols || !_mcmLayout.nameCols.length || !_mcmLayout.priceCols || !_mcmLayout.priceCols.length) return;
   if(err) err.textContent = 'Загружаю прайс...';
   priceSaveEdited();
 }
 
 function syncMcmRolesFromPreview(){
-  var layout = {headerRow:-1,nameCol:-1,unitCol:-1,priceCol:-1,priceCol2:-1,method:'manual',confidence:0};
+  var layout = {headerRow:-1,nameCols:[],unitCols:[],priceCols:[],price2Cols:[],method:'manual',confidence:0};
   for(var ci=0; ci<_mcmMaxCols; ci++){
     var role = _mcmSelectedRoleByCol[ci] || 'ignore';
-    if(role === 'name') layout.nameCol = ci;
-    else if(role === 'unit') layout.unitCol = ci;
-    else if(role === 'price') layout.priceCol = ci;
-    else if(role === 'price2') layout.priceCol2 = ci;
+    if(role === 'name') layout.nameCols.push(ci);
+    else if(role === 'unit') layout.unitCols.push(ci);
+    else if(role === 'price') layout.priceCols.push(ci);
+    else if(role === 'price2') layout.price2Cols.push(ci);
   }
   _mcmLayout = layout;
   return layout;
@@ -8206,6 +8223,33 @@ function _parseInputPrice(val){
   return isNaN(n)||n<0 ? 0 : Math.round(n*100)/100;
 }
 
+function _collectMappedParts(parts, cols){
+  if(!Array.isArray(cols) || !cols.length) return [];
+  var out = [];
+  cols.forEach(function(col){
+    if(col < 0 || !parts || col >= parts.length) return;
+    var val = parts[col];
+    val = val === null || val === undefined ? '' : String(val).trim();
+    if(val) out.push(val);
+  });
+  return out;
+}
+
+function _collectJoinedText(parts, cols){
+  return _collectMappedParts(parts, cols).join(' ').replace(/\s+/g,' ').trim();
+}
+
+function _collectFirstPrice(parts, cols){
+  if(!Array.isArray(cols) || !cols.length) return 0;
+  for(var i=0; i<cols.length; i++){
+    var col = cols[i];
+    if(col < 0 || !parts || col >= parts.length) continue;
+    var price = _parseInputPrice(parts[col]);
+    if(price > 0) return price;
+  }
+  return 0;
+}
+
 // ─────────────────────────────────────────────────────────────
 // 6. РЕДАКТИРУЕМАЯ ТАБЛИЦА ПРАЙСА
 // ─────────────────────────────────────────────────────────────
@@ -8230,14 +8274,13 @@ function renderPriceEditTable(rows, layout, supName, append, priceName, allowedU
 
   var cleaned = cleanRows(rows, headerRow);
   cleaned.forEach(function(parts){
-    var name  = layout.nameCol  >= 0 ? (parts[layout.nameCol] ||'').toString().trim() : '';
-    var unit  = layout.unitCol  >= 0 ? (parts[layout.unitCol] ||'').toString().trim() : '';
-    var priceRaw = layout.priceCol >= 0 ? (parts[layout.priceCol]||'').toString() : '';
-    var priceRaw2 = layout.priceCol2 >= 0 ? (parts[layout.priceCol2]||'').toString() : '';
-    var price = _parseInputPrice(priceRaw);
-    if((!price || price<=0) && priceRaw2) price = _parseInputPrice(priceRaw2);
+    var name  = _collectJoinedText(parts, layout.nameCols);
+    var unit  = _collectJoinedText(parts, layout.unitCols);
+    var price = _collectFirstPrice(parts, layout.priceCols);
+    var price2 = _collectFirstPrice(parts, layout.price2Cols);
+    if((!price || price<=0) && price2 > 0) price = price2;
     if(!name) return;
-    _priceEditRows.push({name:name, unit:unit, price:price, price2:0});
+    _priceEditRows.push({name:name, unit:unit, price:price, price2:price2});
   });
 
   _renderEditTable();
@@ -8349,10 +8392,10 @@ function priceSaveEdited(){
     sheetName: _supPriceImportSheetName || '',
     headerRow: Math.max(0, (layout.headerRow >= 0 ? layout.headerRow : 0)),
     dataStartRow: Math.max(1, (parseInt((document.getElementById('mcm-start-row')||{value:'1'}).value, 10) || 1)),
-    nameCol: layout.nameCol,
-    unitCol: layout.unitCol,
-    priceCol: layout.priceCol,
-    priceCol2: layout.priceCol2,
+    nameCols: (layout.nameCols||[]).slice(),
+    unitCols: (layout.unitCols||[]).slice(),
+    priceCols: (layout.priceCols||[]).slice(),
+    price2Cols: (layout.price2Cols||[]).slice(),
     skipRules: {
       dropEmpty: true,
       dropMeta: true,
@@ -8372,7 +8415,7 @@ function _showPreviewAndConfirm(rows, layout, supName, append, priceName, allowe
   var changeBtn  = document.getElementById('priceChangeColsBtn');
   var methodBadge= document.getElementById('priceMethodBadge');
 
-  if(methodBadge) methodBadge.textContent = layout.method||'auto';
+  if(methodBadge) methodBadge.textContent = (layout && layout.method === 'manual') ? 'ручной режим' : (layout.method||'auto');
   updatePricePreviewHeader(layout);
 
   // Рендерить редактируемую таблицу
