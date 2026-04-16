@@ -7161,7 +7161,7 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
       +'<table style="border-collapse:collapse;width:100%;min-width:'+(Math.max(8,maxCols)*150)+'px;">';
     tbl += '<tr>'+headers.map(function(h,i){
       var guessed = 'ignore';
-      if(detectedLayout){
+      if(detectedLayout && detectedLayout.method === 'шаблон поставщика'){
         if(detectedLayout.nameCol===i) guessed='name';
         else if(detectedLayout.unitCol===i) guessed='unit';
         else if(detectedLayout.priceCol===i) guessed='price';
@@ -7247,10 +7247,10 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
   if(detectedLayout) {
     _mcmLayout = {
       headerRow: Math.max(0, Math.min(detectedLayout.headerRow >= 0 ? detectedLayout.headerRow : 0, dataStartRow - 1)),
-      nameCol: detectedLayout.nameCol,
-      unitCol: detectedLayout.unitCol,
-      priceCol: detectedLayout.priceCol,
-      priceCol2: detectedLayout.priceCol2,
+      nameCol: detectedLayout.method === 'шаблон поставщика' ? detectedLayout.nameCol : -1,
+      unitCol: detectedLayout.method === 'шаблон поставщика' ? detectedLayout.unitCol : -1,
+      priceCol: detectedLayout.method === 'шаблон поставщика' ? detectedLayout.priceCol : -1,
+      priceCol2: detectedLayout.method === 'шаблон поставщика' ? detectedLayout.priceCol2 : -1,
       method: detectedLayout.method,
       confidence: detectedLayout.confidence
     };
@@ -7261,6 +7261,9 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
   if(!detectedLayout || (detectedLayout.nameCol<0 && detectedLayout.priceCol<0 && detectedLayout.unitCol<0)) {
     var base = {headerRow:Math.max(0, dataStartRow - 1),nameCol:0,unitCol:1,priceCol:2,priceCol2:3,method:'manual',confidence:0};
     _mcmLayout = base;
+  }
+  if(detectedLayout && detectedLayout.method !== 'шаблон поставщика'){
+    _mcmLayout = {headerRow:Math.max(0, dataStartRow - 1),nameCol:-1,unitCol:-1,priceCol:-1,priceCol2:-1,method:'manual',confidence:0};
   }
   _setImportPreviewBadges(_mcmLayout);
   syncMcmRolesFromPreview();
