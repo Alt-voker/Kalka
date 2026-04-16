@@ -1346,6 +1346,11 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
   <div id="mcm-preview" style="overflow-x:auto;margin-bottom:12px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;max-height:160px;overflow-y:auto;"></div>
   <div style="font-size:12px;font-weight:700;color:var(--t2);margin:2px 0 8px;">Редактируемый предпросмотр</div>
   <div id="mcm-edit-preview" style="margin-bottom:12px;"></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+    <button type="button" onclick="applyManualColumnMap()" style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);padding:8px 12px;font-size:12px;cursor:pointer;color:var(--t2);">Применить колонки</button>
+    <button type="button" onclick="priceAddRow()" style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);padding:8px 12px;font-size:12px;cursor:pointer;color:var(--t2);">+ Строка</button>
+    <button type="button" onclick="priceSaveEdited()" style="background:var(--gr);color:#fff;border:none;border-radius:var(--r);padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;">Сохранить и загрузить</button>
+  </div>
   <!-- Выбор колонок -->
   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
     <div>
@@ -1387,7 +1392,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
   <div id="mcm-err" style="color:var(--rd);font-size:12px;min-height:14px;"></div>
   <div class="m-acts">
     <button class="m-cancel" onclick="closeModal('manualColumnMap')">Отмена</button>
-    <button class="m-ok" onclick="applyManualColumnMap()">Применить и загрузить</button>
+    <button class="m-ok" onclick="applyManualColumnMap()">Применить колонки</button>
   </div>
 </div></div>
 

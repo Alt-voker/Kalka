@@ -6777,12 +6777,22 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
 
   // Сразу показать редактируемый предпросмотр по текущим колонкам
   if(detectedLayout) {
+    _mcmLayout = {
+      headerRow: detectedLayout.headerRow,
+      nameCol: detectedLayout.nameCol,
+      unitCol: detectedLayout.unitCol,
+      priceCol: detectedLayout.priceCol,
+      priceCol2: detectedLayout.priceCol2,
+      method: detectedLayout.method,
+      confidence: detectedLayout.confidence
+    };
     renderPriceEditTable(rows, detectedLayout, supName, append, priceName, [], 'mcm-edit-preview');
   }
 
   // Если первый прогноз не дал колонки, показать базовый шаблон
   if(!detectedLayout || (detectedLayout.nameCol<0 && detectedLayout.priceCol<0 && detectedLayout.unitCol<0)) {
     var base = {headerRow:-1,nameCol:0,unitCol:1,priceCol:2,priceCol2:3,method:'manual',confidence:0};
+    _mcmLayout = base;
     renderPriceEditTable(rows, base, supName, append, priceName, [], 'mcm-edit-preview');
   }
   
@@ -6802,8 +6812,6 @@ function applyManualColumnMap(){
   if(nIdx===pIdx){ if(err)err.textContent='Название и цена — разные колонки'; return; }
   if(p2Idx>=0 && p2Idx===pIdx){ if(err)err.textContent='Цена 2 должна быть другой колонкой'; return; }
 
-  closeModal('manualColumnMap');
-
   var layout = {
     nameCol:   nIdx,
     unitCol:   uIdx,
@@ -6814,10 +6822,11 @@ function applyManualColumnMap(){
     confidence:100
   };
 
+  _mcmLayout = layout;
   updatePricePreviewHeader(layout);
-
-  // Вместо прямой загрузки показываем редактируемый предпросмотр и только потом сохраняем
-  _showPreviewAndConfirm(_mcmRows, layout, _mcmSupName, _mcmAppend, _mcmPriceName, [], null, function(){});
+  renderPriceEditTable(_mcmRows, layout, _mcmSupName, _mcmAppend, _mcmPriceName, [], 'mcm-edit-preview');
+  var err = document.getElementById('mcm-err');
+  if(err) err.textContent = 'Колонки применены. Проверьте предпросмотр и нажмите "Сохранить и загрузить".';
 }
 function detectColumns(headers) {
   var layout = _findHeaderRow([headers]);
@@ -7760,6 +7769,7 @@ var _priceEditRows = []; // [{name, unit, price}]
 var _priceEditLayout = null;
 var _priceEditContext = null; // {rows, supName, append, priceName, allowedUserIds}
 var _priceEditContainerId = 'pricePreviewTable';
+var _mcmLayout = null;
 
 function renderPriceEditTable(rows, layout, supName, append, priceName, allowedUserIds, containerId){
   _priceEditLayout  = layout;
@@ -7882,6 +7892,7 @@ function priceSaveEdited(){
 
   var previewSec = document.getElementById('pricePreviewSection');
   if(previewSec) previewSec.style.display = 'none';
+  closeModal('manualColumnMap');
   closeModal('supPriceUpload');
 
   processSupPriceRows(fakeRows, fakeLayout, ctx.supName, ctx.append, ctx.priceName, ctx.allowedUserIds);
