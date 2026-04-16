@@ -8646,46 +8646,59 @@ function _supplierImportRenderRawPreview(){
   var rows = _supPriceImportState.rows || [];
   var maxCols = _supPriceImportState.maxCols || 0;
   var startRow = Math.max(1, parseInt((document.getElementById('mcm-start-row') || { value: '1' }).value, 10) || 1);
-  var html = '<div style="overflow:auto;max-height:300px;border:1px solid var(--br);border-radius:12px;background:var(--bg);">'
+  function buildPreviewTable(interactive){
+    var html = '<div style="overflow:auto;max-height:300px;border:1px solid var(--br);border-radius:12px;background:var(--bg);">'
     + '<table style="border-collapse:collapse;width:100%;min-width:' + Math.max(8, maxCols) * 160 + 'px;">';
-  html += '<thead style="position:sticky;top:0;z-index:3;background:var(--bg3);">';
-  html += '<tr>';
-  html += '<th style="position:sticky;left:0;z-index:4;background:var(--bg3);padding:8px 10px;border:1px solid var(--br);min-width:64px;">#</th>';
-  for(var ci=0; ci<maxCols; ci++){
-    html += '<th style="padding:6px 8px;border:1px solid var(--br);min-width:160px;vertical-align:top;">'
+    html += '<thead style="position:sticky;top:0;z-index:3;background:var(--bg3);">';
+    html += '<tr>';
+    html += '<th style="position:sticky;left:0;z-index:4;background:var(--bg3);padding:8px 10px;border:1px solid var(--br);min-width:64px;">#</th>';
+    for(var ci=0; ci<maxCols; ci++){
+      var role = _mcmSelectedRoleByCol[ci] || 'ignore';
+      var roleLabel = role === 'name' ? 'Наименование'
+        : role === 'unit' ? 'Единица измерения'
+        : role === 'price' ? 'Цена 1'
+        : role === 'price2' ? 'Цена 2'
+        : 'Игнорировать';
+      html += '<th style="padding:6px 8px;border:1px solid var(--br);min-width:160px;vertical-align:top;">'
       + '<div style="display:flex;flex-direction:column;gap:6px;">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
       + '<span style="font-size:10px;color:var(--t4);font-weight:700;">' + _excelColLabel(ci) + '</span>'
       + '<span style="font-size:10px;color:var(--t3);background:var(--bg2);border:1px solid var(--br);border-radius:999px;padding:2px 6px;">Колонка ' + (ci + 1) + '</span>'
-      + '</div>'
-      + '<select id="mcm-role-' + ci + '" onchange="_setMcmRole(' + ci + ', this.value)" style="width:100%;background:var(--bg2);border:1px solid var(--br);border-radius:8px;padding:7px 8px;font-size:11px;color:var(--tx);outline:none;">'
-      + '<option value="ignore">Игнорировать</option>'
-      + '<option value="name">Наименование</option>'
-      + '<option value="unit">Единица измерения</option>'
-      + '<option value="price">Цена 1</option>'
-      + '<option value="price2">Цена 2</option>'
-      + '</select>'
-      + '</div>'
-      + '</th>';
-  }
-  html += '</tr></thead><tbody>';
-  rows.forEach(function(row, ri){
-    var bg = ri + 1 === startRow ? 'background:rgba(91,163,245,.08);' : (ri % 2 ? 'background:var(--bg2);' : '');
-    html += '<tr style="' + bg + '">';
-    html += '<td style="position:sticky;left:0;z-index:2;background:inherit;padding:6px 10px;border:1px solid var(--br);font-size:11px;color:var(--t3);text-align:center;">' + (ri + 1) + '</td>';
-    for(var cj=0; cj<maxCols; cj++){
-      var val = row && row[cj] !== undefined && row[cj] !== null ? String(row[cj]) : '';
-      html += '<td style="padding:6px 10px;border:1px solid var(--br);max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _esc(val) + '</td>';
+      + '</div>';
+      if(interactive){
+        html += '<select id="mcm-role-' + ci + '" onchange="_setMcmRole(' + ci + ', this.value)" style="width:100%;background:var(--bg2);border:1px solid var(--br);border-radius:8px;padding:7px 8px;font-size:11px;color:var(--tx);outline:none;">'
+        + '<option value="ignore">Игнорировать</option>'
+        + '<option value="name">Наименование</option>'
+        + '<option value="unit">Единица измерения</option>'
+        + '<option value="price">Цена 1</option>'
+        + '<option value="price2">Цена 2</option>'
+        + '</select>';
+      } else {
+        html += '<div style="font-size:11px;color:var(--t2);background:var(--bg2);border:1px solid var(--br);border-radius:8px;padding:7px 8px;">' + roleLabel + '</div>';
+      }
+      html += '</div>'
+        + '</th>';
     }
-    html += '</tr>';
-  });
-  html += '</tbody></table></div>';
+    html += '</tr></thead><tbody>';
+    rows.forEach(function(row, ri){
+      var bg = ri + 1 === startRow ? 'background:rgba(91,163,245,.08);' : (ri % 2 ? 'background:var(--bg2);' : '');
+      html += '<tr style="' + bg + '">';
+      html += '<td style="position:sticky;left:0;z-index:2;background:inherit;padding:6px 10px;border:1px solid var(--br);font-size:11px;color:var(--t3);text-align:center;">' + (ri + 1) + '</td>';
+      for(var cj=0; cj<maxCols; cj++){
+        var val = row && row[cj] !== undefined && row[cj] !== null ? String(row[cj]) : '';
+        html += '<td style="padding:6px 10px;border:1px solid var(--br);max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + _esc(val) + '</td>';
+      }
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    return html;
+  }
   if(el){
     el.style.display = 'block';
-    el.innerHTML = html;
+    el.innerHTML = buildPreviewTable(true);
   }
   if(rawEl){
-    rawEl.innerHTML = html;
+    rawEl.innerHTML = buildPreviewTable(false);
   }
 }
 
