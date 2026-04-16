@@ -6949,9 +6949,8 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
     if((!price || price<=0) && rawPrice2) price = extractPrice(rawPrice2);
     var unit  = normalizeUnit(rawUnit.toString(), name);
 
-    if(!name || !_looksLikeProductName(name)) {
+    if(!name) {
       skipped++;
-      if(name) needsReview.push({row:idx+headerRow+2, name:name, reason:'Похоже на мусор/служебную строку'});
       return;
     }
 
@@ -8263,13 +8262,13 @@ function renderPriceEditTable(rows, layout, supName, append, priceName, allowedU
   var cleaned = cleanRows(rows, headerRow);
   cleaned.forEach(function(parts){
     var name  = layout.nameCol  >= 0 ? (parts[layout.nameCol] ||'').toString().trim() : '';
-    var unit  = layout.unitCol  >= 0 ? (parts[layout.unitCol] ||'').toString().trim() : 'кг';
+    var unit  = layout.unitCol  >= 0 ? (parts[layout.unitCol] ||'').toString().trim() : '';
     var priceRaw = layout.priceCol >= 0 ? (parts[layout.priceCol]||'').toString() : '';
     var priceRaw2 = layout.priceCol2 >= 0 ? (parts[layout.priceCol2]||'').toString() : '';
     var price = _parseInputPrice(priceRaw);
     if((!price || price<=0) && priceRaw2) price = _parseInputPrice(priceRaw2);
-    if(!name || !_looksLikeProductName(name)) return;
-    _priceEditRows.push({name:name, unit:normalizeUnit(unit,name)||'кг', price:price, price2:0});
+    if(!name) return;
+    _priceEditRows.push({name:name, unit:unit, price:price, price2:0});
   });
 
   _renderEditTable();
