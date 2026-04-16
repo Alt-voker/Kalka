@@ -281,6 +281,12 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
 .push-body{font-size:11px;color:var(--t2);line-height:1.6;}.push-time{font-size:10px;color:var(--t3);margin-top:5px;}
 .toast{position:fixed;bottom:19px;right:19px;z-index:1000;background:var(--bg2);border:1px solid var(--br2);border-radius:var(--r2);padding:10px 13px;font-size:13px;display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(0,0,0,.5);animation:sIn .3s ease;transition:opacity .3s;max-width:320px;}
 .toast.ok{border-color:rgba(76,175,130,.3);}.toast.err{border-color:rgba(239,83,80,.3);}
+.cart-flash{animation:cartPulse 1.2s ease;}
+.cart-flash-box{animation:cartPulseBox 1.2s ease;}
+.order-replaced{animation:replacePulse 1.5s ease;}
+@keyframes cartPulse{0%{transform:scale(1)}20%{transform:scale(1.04)}50%{transform:scale(.98)}100%{transform:scale(1)}}
+@keyframes cartPulseBox{0%{box-shadow:0 0 0 0 rgba(91,163,245,.0)}20%{box-shadow:0 0 0 3px rgba(91,163,245,.28)}100%{box-shadow:0 0 0 0 rgba(91,163,245,0)}}
+@keyframes replacePulse{0%{box-shadow:0 0 0 0 rgba(255,152,0,.0)}20%{box-shadow:0 0 0 3px rgba(255,152,0,.25)}100%{box-shadow:0 0 0 0 rgba(255,152,0,0)}}
 .empty{text-align:center;padding:48px 20px;color:var(--t3);}.empty-ico{font-size:36px;margin-bottom:10px;}.empty-txt{font-size:14px;margin-bottom:12px;}
 .empty-btn{background:var(--ac);color:#000;border:none;border-radius:var(--r);padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;}
 .pi{background:var(--bg3);border:1px solid var(--br2);border-radius:6px;padding:4px 7px;color:var(--tx);font-size:12px;outline:none;width:76px;text-align:right;}.pi:focus{border-color:var(--ac);}
@@ -1126,6 +1132,10 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
   <label class="fL">Файл (CSV или Excel→CSV)</label>
   <div style="display:flex;gap:8px;">
     <input type="file" id="priceFileInput" accept=".csv,.txt,.xlsx,.xls" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;color:var(--tx);font-size:12px;">
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+    <button type="button" onclick="openSupPriceManualMap()" style="background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:var(--r);padding:7px 12px;font-size:12px;cursor:pointer;">Ручное сопоставление колонок</button>
+    <div style="font-size:11px;color:var(--t3);display:flex;align-items:center;">Если в файле сложная шапка или две колонки с ценой, выберите колонки вручную.</div>
   </div>
   <div id="priceUploadErr" style="color:var(--rd);font-size:12px;min-height:16px;margin-top:8px;"></div>
   <div class="m-acts">

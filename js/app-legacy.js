@@ -1164,6 +1164,20 @@ function addToCartFrom(pid, supName){
   updBdg();
   toast('✓ '+p.name+' ('+supName+') → корзина','ok');
   renderCart();
+  flashCartUI();
+}
+
+function flashCartUI(){
+  var cartBtn=document.getElementById('cartBtn');
+  var sec=document.getElementById('orderCartSection');
+  if(cartBtn){
+    cartBtn.classList.add('cart-flash');
+    setTimeout(function(){cartBtn.classList.remove('cart-flash');},1200);
+  }
+  if(sec){
+    sec.classList.add('cart-flash-box');
+    setTimeout(function(){sec.classList.remove('cart-flash-box');},1200);
+  }
 }
 function renderCatColList(){const el=document.getElementById('catColList');if(!el)return;el.innerHTML=ALL_SUPS.map(s=>`<label style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg3);border-radius:var(--r);cursor:pointer;font-size:13px;"><input type="checkbox" id="cc-${s.replace(/\s/g,'_')}" ${selSups.includes(s)?'checked':''} style="width:15px;height:15px;"> ${s}</label>`).join('');}
 function applyCatCols(){selSups=ALL_SUPS.filter(s=>document.getElementById('cc-'+s.replace(/\s/g,'_'))?.checked);if(!selSups.length)selSups=[...ALL_SUPS];renderSupSel();renderCatalog();}
@@ -6624,6 +6638,55 @@ function doSupPriceUpload(){
   }
 }
 
+function openSupPriceManualMap(){
+  var errEl = document.getElementById('supPriceErr');
+  if(errEl) errEl.textContent = '';
+
+  var supName = _currentSupName;
+  if(!supName){ if(errEl) errEl.textContent='Поставщик не определён'; return; }
+
+  var append    = _supPriceAppend;
+  var priceName = (document.getElementById('supPriceName')||{value:''}).value.trim()
+                  || (append?'Дополнительный прайс':'Основной прайс');
+
+  var fi = document.getElementById('supPriceFile');
+  if(!fi||!fi.files||!fi.files[0]){
+    if(errEl) errEl.textContent='Сначала выберите файл прайса';
+    return;
+  }
+
+  var file = fi.files[0];
+  var ext  = file.name.split('.').pop().toLowerCase();
+
+  function finish(rows){
+    if(!rows || !rows.length){
+      if(errEl) errEl.textContent='Файл пустой';
+      return;
+    }
+    var layout = detectStructure(rows) || {headerRow:-1,nameCol:0,unitCol:1,priceCol:2,method:'manual',confidence:0};
+    showManualColumnMap(rows, supName, append, priceName, layout);
+  }
+
+  if(ext==='xlsx'||ext==='xls'){
+    if(typeof XLSX==='undefined'){ if(errEl) errEl.textContent='SheetJS не загружен'; return; }
+    var r = new FileReader();
+    r.onload = function(ev){
+      try{
+        var wb = XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+        var ws = wb.Sheets[wb.SheetNames[0]];
+        finish(XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false}));
+      } catch(e){ if(errEl) errEl.textContent='Ошибка Excel: '+e.message; }
+    };
+    r.readAsArrayBuffer(file);
+  } else {
+    var r = new FileReader();
+    r.onload = function(ev){
+      finish(ev.target.result.split(/\r?\n/).filter(function(l){return l.trim();}).map(function(l){return l.split(/[,;\t]/);}));
+    };
+    r.readAsText(file,'utf-8');
+  }
+}
+
 // Показать превью + кнопки подтвердить / изменить
 
 function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
@@ -7299,7 +7362,7 @@ function _renderOrderTable(filter){
       var currentCartItem = _orderCartEntryByQuery(row.query, sup);
       var inCart = !!currentCartItem;
 
-      return '<td style="padding:6px 8px;border:1px solid '+(isBest?'var(--gr)':'var(--br)')+';'
+      return '<td data-order-row="'+_cssAttrVal(row.query)+'" data-order-sup="'+_cssAttrVal(sup)+'" style="padding:6px 8px;border:1px solid '+(isBest?'var(--gr)':'var(--br)')+';'
         +'background:'+cellBg+';vertical-align:top;position:relative;">'
         // Метка лучшей цены
         +(isBest?'<div style="position:absolute;top:0;right:0;background:var(--gr);color:#fff;'
@@ -7308,6 +7371,9 @@ function _renderOrderTable(filter){
         +'<div style="font-size:11px;color:var(--t3);margin-bottom:2px;padding-right:'+(isBest?'36':'0')+'px;">'
           +(currentOrderItem ? currentOrderItem.name : cell.item.name)
         +'</div>'
+        +(currentOrderItem && currentOrderItem.name!==cell.item.name
+          ? '<div style="font-size:10px;color:var(--or);font-weight:700;margin-bottom:3px;">замена: '+_esc(cell.item.name)+'</div>'
+          : '')
         +'<div style="font-size:15px;font-weight:800;color:'+(isBest?'var(--gr)':'var(--ac)')+';margin-bottom:6px;">'
           +'₽'+_fmtPrice(currentOrderItem ? currentOrderItem.price : cell.price)
           +'<span style="font-size:11px;font-weight:400;color:var(--t3);"> / '+(currentOrderItem ? currentOrderItem.unit : cell.item.unit)+'</span>'
@@ -7485,6 +7551,7 @@ function orderAddFromTable(query, name, sup, price, unit, qtyInputId){
   updBdg();
   renderCart();
   _renderOrderTable((document.getElementById('orderTableSearch')||{value:''}).value);
+  flashCartUI();
   toast(mode==='replaced'
     ? '«'+finalName+'» → '+sup+' обновлён в корзине'
     : '«'+finalName+'» → '+sup+' добавлен в корзину','ok');
@@ -7574,6 +7641,11 @@ function ossSelect(itemName, price, unit, itemType){
     unit: unit || 'кг',
     _type: itype
   });
+  var rowNode = document.querySelector('[data-order-row="'+_cssAttrVal(_ossRowQuery)+'"][data-order-sup="'+_cssAttrVal(sup)+'"]');
+  if(rowNode){
+    rowNode.classList.add('order-replaced');
+    setTimeout(function(){ rowNode.classList.remove('order-replaced'); }, 1500);
+  }
   closeModal('orderSupSearch');
   if(_orderSups.length > 0 && _orderSups.indexOf(sup) >= 0){
     _renderOrderTable((document.getElementById('orderTableSearch')||{value:''}).value);
@@ -7595,6 +7667,10 @@ function _fmtPrice(n){
   return num % 1 === 0
     ? Math.round(num).toLocaleString('ru')
     : num.toLocaleString('ru',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+function _cssAttrVal(v){
+  return String(v||'').replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/]/g,'\\]');
 }
 
 // Приведение цены из поля ввода к числу
