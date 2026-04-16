@@ -1268,15 +1268,15 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
       <div id="pricePreviewTable"></div>
     </div>
     <div style="display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--br);background:var(--bg3);flex-wrap:wrap;">
-      <button id="priceConfirmBtn"
+      <button type="button" id="priceConfirmBtn"
         style="flex:2;min-width:170px;background:var(--gr);color:#fff;border:none;border-radius:var(--r);padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;">
         Сохранить и загрузить
       </button>
-      <button onclick="priceAddRow()"
+      <button type="button" onclick="priceAddRow()"
         style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);padding:9px 12px;font-size:12px;cursor:pointer;color:var(--t2);">
         + Строка
       </button>
-      <button id="priceChangeColsBtn"
+      <button type="button" id="priceChangeColsBtn"
         style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);padding:9px 12px;font-size:12px;cursor:pointer;color:var(--t2);">
         Переназначить роли
       </button>
@@ -1367,9 +1367,9 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
   </div>
   <div id="mcm-err" style="color:var(--rd);font-size:12px;min-height:14px;"></div>
   <div class="m-acts">
-    <button class="m-cancel" onclick="closeModal('manualColumnMap')">Отмена</button>
-    <button class="m-cancel" onclick="saveCurrentSupPriceTemplate()" style="border-color:var(--ac);color:var(--ac);">Сохранить шаблон</button>
-    <button class="m-ok" onclick="applyManualColumnMapAndSave()">Применить и загрузить</button>
+    <button type="button" class="m-cancel" onclick="closeModal('manualColumnMap')">Отмена</button>
+    <button type="button" class="m-cancel" id="mcmSaveTplBtn" onclick="saveCurrentSupPriceTemplate()" style="border-color:var(--ac);color:var(--ac);">Сохранить шаблон</button>
+    <button type="button" class="m-ok" id="mcmApplyBtn" onclick="applyManualColumnMapAndSave()">Применить и загрузить</button>
   </div>
 </div></div>
 

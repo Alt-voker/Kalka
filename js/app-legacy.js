@@ -9179,9 +9179,33 @@ function _bindPricePreviewActions(){
   var changeBtn = document.getElementById('priceChangeColsBtn');
   if(confirmBtn){
     confirmBtn.onclick = function(){ applyManualColumnMapAndSave(); };
+    confirmBtn.addEventListener('click', function(ev){
+      ev.preventDefault();
+      applyManualColumnMapAndSave();
+    }, { once: true });
   }
   if(changeBtn){
     changeBtn.onclick = function(){ openSupPriceManualMap(); };
+    changeBtn.addEventListener('click', function(ev){
+      ev.preventDefault();
+      openSupPriceManualMap();
+    }, { once: true });
+  }
+  var saveTplBtn = document.getElementById('mcmSaveTplBtn');
+  var applyBtn = document.getElementById('mcmApplyBtn');
+  if(saveTplBtn){
+    saveTplBtn.onclick = function(){ saveCurrentSupPriceTemplate(); };
+    saveTplBtn.addEventListener('click', function(ev){
+      ev.preventDefault();
+      saveCurrentSupPriceTemplate();
+    }, { once: true });
+  }
+  if(applyBtn){
+    applyBtn.onclick = function(){ applyManualColumnMapAndSave(); };
+    applyBtn.addEventListener('click', function(ev){
+      ev.preventDefault();
+      applyManualColumnMapAndSave();
+    }, { once: true });
   }
 }
 
