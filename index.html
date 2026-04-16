@@ -1235,54 +1235,6 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
     <button onclick="selectAllSupPriceComps(false)" style="font-size:11px;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:5px;padding:4px 10px;cursor:pointer;">Снять</button>
   </div>
 
-  <!-- Предпросмотр файла -->
-  <div id="pricePreviewSection" style="display:none;border:1px solid var(--br);border-radius:var(--r);margin-bottom:12px;overflow:hidden;">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:12px 14px;background:var(--bg3);border-bottom:1px solid var(--br);gap:12px;">
-      <div style="min-width:0;flex:1;">
-        <div style="font-size:13px;font-weight:800;">Предпросмотр файла</div>
-        <div style="font-size:11px;color:var(--t3);margin-top:2px;">Выберите лист, назначьте роли прямо в таблице и проверьте результат перед загрузкой.</div>
-      </div>
-      <span id="priceMethodBadge" style="font-size:10px;background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:999px;padding:4px 10px;white-space:nowrap;"></span>
-    </div>
-    <div style="display:flex;flex-wrap:wrap;gap:10px;padding:12px 14px;border-bottom:1px solid var(--br);background:var(--bg2);font-size:11px;align-items:end;">
-      <div style="min-width:220px;flex:1;">
-        <div style="font-size:10px;color:var(--t3);margin-bottom:4px;">Лист файла</div>
-        <select id="supPriceSheetSelect" class="fS" onchange="selectSupPriceSheet(this.value)" style="margin:0;">
-          <option value="">Сначала загрузите файл</option>
-        </select>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
-        <span style="font-size:10px;color:var(--t3);">Колонки:</span>
-        <span id="previewColName" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;white-space:nowrap;">Наименование</span>
-        <span id="previewColUnit" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;white-space:nowrap;">Единица</span>
-        <span id="previewColPrice1" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;white-space:nowrap;">Цена 1</span>
-        <span id="previewColPrice2" style="background:var(--bg3);border:1px solid var(--br);border-radius:999px;padding:4px 10px;white-space:nowrap;">Цена 2</span>
-      </div>
-    </div>
-    <div style="padding:12px 14px 8px;">
-      <div id="pricePreviewHint" style="font-size:11px;color:var(--t3);margin:0 0 8px;">Файл еще не открыт.</div>
-      <div id="priceRawPreview" style="border:1px solid var(--br);border-radius:var(--r);max-height:260px;overflow:auto;background:var(--bg);"></div>
-    </div>
-    <div style="padding:0 14px 12px;">
-      <div style="font-size:11px;color:var(--t3);margin:2px 0 8px;">Проверка и правка строк перед импортом</div>
-      <div id="pricePreviewTable"></div>
-    </div>
-    <div style="display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--br);background:var(--bg3);flex-wrap:wrap;">
-      <button type="button" id="priceConfirmBtn"
-        style="flex:2;min-width:170px;background:var(--gr);color:#fff;border:none;border-radius:var(--r);padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;">
-        Сохранить и загрузить
-      </button>
-      <button type="button" onclick="priceAddRow()"
-        style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);padding:9px 12px;font-size:12px;cursor:pointer;color:var(--t2);">
-        + Строка
-      </button>
-      <button type="button" id="priceChangeColsBtn"
-        style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);padding:9px 12px;font-size:12px;cursor:pointer;color:var(--t2);">
-        Переназначить роли
-      </button>
-    </div>
-  </div>
-
   <!-- Строки требующие проверки -->
   <div id="priceReviewSection" style="display:none;border:1px solid var(--rd);border-radius:var(--r);margin-bottom:12px;overflow:hidden;">
     <div style="padding:8px 12px;background:var(--rdD);border-bottom:1px solid var(--rd);font-size:12px;font-weight:700;color:var(--rd);">

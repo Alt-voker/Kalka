@@ -8990,7 +8990,7 @@ function priceAddRow(){
   _priceEditRows.push({sourceRow: _priceEditRows.length + 1, name: '', unit: '', price1: 0, price2: 0});
   _renderEditTable();
   setTimeout(function(){
-    var el = document.getElementById('pricePreviewTable');
+    var el = document.getElementById(_priceEditContainerId || 'mcm-edit-preview');
     if(el) el.scrollTop = el.scrollHeight;
   }, 50);
 }
