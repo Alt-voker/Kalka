@@ -6606,18 +6606,16 @@ function cleanRows(rows, headerRow) {
   rows.forEach(function(row, ri) {
     if(ri <= headerRow) return; // пропустить заголовок и выше
     if(!row || !row.length) return;
-    
-    // Проверить на мусор по первой непустой ячейке
-    var firstVal = '';
-    for(var ci=0;ci<row.length;ci++) {
-      firstVal = (row[ci]||'').toString().trim();
-      if(firstVal) break;
+
+    // Оставляем строку, если в ней есть хотя бы одно непустое значение.
+    // Никакие служебные/географические/страночные тексты здесь не вырезаем,
+    // чтобы импорт шёл строго по выбранным колонкам.
+    var hasValue = false;
+    for(var ci=0; ci<row.length; ci++){
+      if((row[ci] || '').toString().trim()){ hasValue = true; break; }
     }
-    if(!firstVal) return;
-    
-    var isJunk = JUNK_PATTERNS.some(function(p){ return p.test(firstVal); });
-    if(isJunk) return;
-    
+    if(!hasValue) return;
+
     result.push(row);
   });
   return result;
