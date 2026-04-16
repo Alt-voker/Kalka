@@ -6939,11 +6939,7 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
 
   var added=0, updated=0, skipped=0, needsReview=[];
   var headerRow = cols.headerRow >= 0 ? cols.headerRow : 0;
-  var dataStartRow = _detectDataStartRow(rows);
-  if(dataStartRow > headerRow) headerRow = dataStartRow - 1;
-  
-  // Очистить строки от мусора
-  var cleanedRows = cleanRows(rows, headerRow);
+  var cleanedRows = Array.isArray(rows) ? rows.slice(headerRow + 1) : [];
 
   cleanedRows.forEach(function(parts, idx){
     var name  = _collectJoinedText(parts, cols.nameCols);
@@ -7142,9 +7138,8 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
   _mcmPriceName = priceName;
 
   if(!rows.length) return;
-  var dataStartRow = _detectDataStartRow(rows);
-  var sampleRows = rows.slice(Math.max(0, dataStartRow), Math.min(rows.length, dataStartRow + 20));
-  if(!sampleRows.length) sampleRows = rows.slice(0, Math.min(rows.length, 20));
+  var dataStartRow = 1;
+  var sampleRows = rows.slice(0, Math.min(rows.length, 30));
   var maxCols = rows.slice(0, Math.min(rows.length, 120)).reduce(function(max, row){
     return Math.max(max, row ? row.length : 0);
   }, 0);
@@ -7199,7 +7194,7 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
 
   var startRowEl = document.getElementById('mcm-start-row');
   if(startRowEl){
-    startRowEl.value = String(Math.max(1, dataStartRow + 1));
+    startRowEl.value = '1';
   }
 
   // Подсказка, если файл очень широкий
@@ -7229,7 +7224,7 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
 
   // Сразу показать редактируемый предпросмотр по текущим колонкам
   _mcmLayout = {
-    headerRow: Math.max(0, Math.min(detectedLayout && detectedLayout.headerRow >= 0 ? detectedLayout.headerRow : 0, dataStartRow - 1)),
+    headerRow: 0,
     nameCols: [],
     unitCols: [],
     priceCols: [],
