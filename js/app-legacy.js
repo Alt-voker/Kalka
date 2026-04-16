@@ -8723,7 +8723,6 @@ function _supplierImportRenderParsedPreview(){
 }
 
 function _supplierImportApplyStateToUI(){
-  _updatePricePreviewSectionFromRows(_supPriceImportState.rows, _supPriceImportState.sheetName, _supPriceImportState.fileName);
   _supplierImportRenderSheetSelect();
   _supplierImportRenderRawPreview();
   _supplierImportSyncSelectsToMapping();
@@ -8764,8 +8763,8 @@ function prepareSupPriceImportPreview(){
       _supPriceImportState.sheetName = _supplierImportFirstPopulatedSheet(wb) || _supPriceImportState.sheetNames[0] || '';
       _supplierImportSetSheet(_supPriceImportState.sheetName);
       _supplierImportApplyStateToUI();
+      closeModal('supPriceUpload');
       showManualColumnMap(_supPriceImportState.rows, _currentSupName, _supPriceAppend, (document.getElementById('supPriceName')||{value:''}).value.trim() || (_supPriceAppend?'Дополнительный прайс':'Основной прайс'), {method:'manual'});
-      openModal('manualColumnMap');
       _bindPricePreviewActions();
     } catch(e){
       if(errEl) errEl.textContent = 'Ошибка Excel: ' + e.message;
