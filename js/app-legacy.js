@@ -6690,6 +6690,19 @@ function openSupPriceManualMap(){
   }
 }
 
+function updatePricePreviewHeader(layout){
+  var map = [
+    ['previewColName',   layout && layout.nameCol >= 0 ? 'Наименование: '+(layout.nameCol+1) : 'Наименование'],
+    ['previewColUnit',   layout && layout.unitCol >= 0 ? 'Ед. изм.: '+(layout.unitCol+1) : 'Ед. изм.'],
+    ['previewColPrice1', layout && layout.priceCol >= 0 ? 'Цена 1: '+(layout.priceCol+1) : 'Цена 1'],
+    ['previewColPrice2', layout && layout.priceCol2>= 0 ? 'Цена 2: '+(layout.priceCol2+1) : 'Цена 2']
+  ];
+  map.forEach(function(item){
+    var el=document.getElementById(item[0]);
+    if(el) el.textContent=item[1];
+  });
+}
+
 // Показать превью + кнопки подтвердить / изменить
 
 function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
@@ -6777,6 +6790,8 @@ function applyManualColumnMap(){
     method:    'manual',
     confidence:100
   };
+
+  updatePricePreviewHeader(layout);
 
   processSupPriceRows(_mcmRows, layout, _mcmSupName, _mcmAppend, _mcmPriceName, []);
 }
@@ -7846,6 +7861,7 @@ function _showPreviewAndConfirm(rows, layout, supName, append, priceName, allowe
   var methodBadge= document.getElementById('priceMethodBadge');
 
   if(methodBadge) methodBadge.textContent = layout.method||'auto';
+  updatePricePreviewHeader(layout);
 
   // Рендерить редактируемую таблицу
   renderPriceEditTable(rows, layout, supName, append, priceName, allowedUserIds);
