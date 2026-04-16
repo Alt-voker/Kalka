@@ -4888,6 +4888,19 @@ function _renderPriceSheetSelect(sheetNames, selectedName){
   sel.value = selectedName || sheetNames[0] || '';
 }
 
+function _setImportPreviewBadges(layout){
+  var map = [
+    ['previewColName',   layout && layout.nameCol >= 0 ? 'Наименование · '+(layout.nameCol+1) : 'Наименование'],
+    ['previewColUnit',   layout && layout.unitCol >= 0 ? 'Единица · '+(layout.unitCol+1) : 'Единица'],
+    ['previewColPrice1', layout && layout.priceCol >= 0 ? 'Цена 1 · '+(layout.priceCol+1) : 'Цена 1'],
+    ['previewColPrice2', layout && layout.priceCol2>= 0 ? 'Цена 2 · '+(layout.priceCol2+1) : 'Цена 2']
+  ];
+  map.forEach(function(item){
+    var el = document.getElementById(item[0]);
+    if(el) el.textContent = item[1];
+  });
+}
+
 function _renderPriceRawPreview(rows){
   var el = document.getElementById('priceRawPreview');
   var hint = document.getElementById('pricePreviewHint');
@@ -4901,12 +4914,12 @@ function _renderPriceRawPreview(rows){
   var maxCols = rows.reduce(function(m, r){ return Math.max(m, (r||[]).length); }, 0);
   if(maxCols < 1) maxCols = 1;
   if(hint) hint.textContent = 'Показаны все строки листа: '+rows.length+' · колонок: '+maxCols+'.';
-  var html = '<div style="overflow:auto;max-height:220px;">'
-    +'<table style="border-collapse:collapse;width:100%;min-width:'+(maxCols*130)+'px;font-size:11px;">'
+  var html = '<div style="overflow:auto;max-height:260px;">'
+    +'<table style="border-collapse:collapse;width:100%;min-width:'+(maxCols*140)+'px;font-size:11px;">'
     +'<tr style="background:var(--bg4);position:sticky;top:0;z-index:2;">'
     +'<th style="position:sticky;left:0;z-index:3;background:var(--bg4);padding:6px 8px;border:1px solid var(--br);width:52px;">#</th>';
   for(var ci=0; ci<maxCols; ci++){
-    html += '<th style="padding:6px 8px;border:1px solid var(--br);text-align:center;background:var(--bg4);">Колонка '+String.fromCharCode(65+ci)+'</th>';
+    html += '<th style="padding:6px 8px;border:1px solid var(--br);text-align:center;background:var(--bg4);min-width:120px;">Колонка '+String.fromCharCode(65+ci)+'</th>';
   }
   html += '</tr>';
   for(var ri=0; ri<maxRows; ri++){
@@ -4921,6 +4934,21 @@ function _renderPriceRawPreview(rows){
   }
   html += '</table></div>';
   el.innerHTML = html;
+}
+
+function _bindPricePreviewActions(){
+  var confirmBtn = document.getElementById('priceConfirmBtn');
+  var changeBtn  = document.getElementById('priceChangeColsBtn');
+  var methodBadge= document.getElementById('priceMethodBadge');
+  if(confirmBtn){
+    confirmBtn.onclick = function(){ applyManualColumnMapAndSave(); };
+  }
+  if(changeBtn){
+    changeBtn.onclick = function(){ openSupPriceManualMap(); };
+  }
+  if(methodBadge && _mcmLayout && _mcmLayout.method){
+    methodBadge.textContent = _mcmLayout.method;
+  }
 }
 
 function _updatePricePreviewSectionFromRows(rows, sheetName, fileName){
@@ -4989,6 +5017,7 @@ function prepareSupPriceImportPreview(){
     } : detectStructure(rows);
     if(!layout) layout = {headerRow:0,nameCol:-1,unitCol:-1,priceCol:-1,priceCol2:-1,method:'manual',confidence:0};
     showManualColumnMap(rows, _currentSupName, _supPriceAppend, (document.getElementById('supPriceName')||{value:''}).value.trim() || (_supPriceAppend?'Дополнительный прайс':'Основной прайс'), layout);
+    _bindPricePreviewActions();
   }
 
   if(isExcel){
@@ -5038,6 +5067,7 @@ function selectSupPriceSheet(sheetName){
   } : detectStructure(rows);
   if(!layout) layout = {headerRow:0,nameCol:-1,unitCol:-1,priceCol:-1,priceCol2:-1,method:'manual',confidence:0};
   showManualColumnMap(rows, _currentSupName, _supPriceAppend, (document.getElementById('supPriceName')||{value:''}).value.trim() || (_supPriceAppend?'Дополнительный прайс':'Основной прайс'), layout);
+  _bindPricePreviewActions();
 }
 
 // ═══ ЗАГРУЗКА ПРАЙСА ПОСТАВЩИКА ══════════════════════════
@@ -7104,8 +7134,8 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
   // Превью первых строк
   var prev = document.getElementById('mcm-preview');
   if(prev){
-    var tbl = '<div style="overflow-x:auto;font-size:11px;max-height:260px;overflow-y:auto;">'
-      +'<table style="border-collapse:collapse;width:100%;min-width:'+(Math.max(8,maxCols)*140)+'px;">';
+    var tbl = '<div style="overflow-x:auto;font-size:11px;max-height:280px;overflow-y:auto;">'
+      +'<table style="border-collapse:collapse;width:100%;min-width:'+(Math.max(8,maxCols)*150)+'px;">';
     tbl += '<tr>'+headers.map(function(h,i){
       var guessed = 'ignore';
       if(detectedLayout){
@@ -7115,23 +7145,25 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
         else if(detectedLayout.priceCol2===i) guessed='price2';
       }
       _mcmSelectedRoleByCol[i] = guessed;
-      return '<th style="border:1px solid var(--br);padding:4px 6px;background:var(--bg4);text-align:center;min-width:140px;vertical-align:top;">'
-        +'<select id="mcm-role-'+i+'" onchange="_mcmSelectedRoleByCol['+i+']=this.value;syncMcmRolesFromPreview()" style="width:100%;background:var(--bg2);border:1px solid var(--br);border-radius:6px;padding:5px 6px;font-size:11px;color:var(--tx);outline:none;">'
-        +'<option value="-1"'+(guessed==='ignore'?' selected':'')+'>—</option>'
+      return '<th style="border:1px solid var(--br);padding:6px 6px;background:var(--bg4);text-align:center;min-width:150px;vertical-align:top;">'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;">'
+          +'<span style="font-size:10px;color:var(--t3);font-weight:700;letter-spacing:.02em;">'+('Колонка '+(i+1))+'</span>'
+          +'<span style="font-size:10px;color:var(--t4);background:rgba(255,255,255,.35);border:1px solid var(--br);border-radius:999px;padding:2px 6px;">'+h+'</span>'
+        +'</div>'
+        +'<select id="mcm-role-'+i+'" onchange="_mcmSelectedRoleByCol['+i+']=this.value;syncMcmRolesFromPreview()" style="width:100%;background:var(--bg2);border:1px solid var(--br);border-radius:8px;padding:7px 8px;font-size:11px;color:var(--tx);outline:none;">'
+        +'<option value="ignore"'+(guessed==='ignore'?' selected':'')+'>Игнорировать</option>'
         +'<option value="name"'+(guessed==='name'?' selected':'')+'>Наименование</option>'
         +'<option value="unit"'+(guessed==='unit'?' selected':'')+'>Единица</option>'
         +'<option value="price"'+(guessed==='price'?' selected':'')+'>Цена 1</option>'
         +'<option value="price2"'+(guessed==='price2'?' selected':'')+'>Цена 2</option>'
-        +'<option value="ignore"'+(guessed==='ignore'?' selected':'')+'>Игнорировать</option>'
         +'</select>'
-        +'<div style="margin-top:4px;font-size:10px;color:var(--t3);word-break:break-word;">'+h+'</div>'
       +'</th>';
     }).join('')+'</tr>';
     sampleRows.forEach(function(r){
       tbl += '<tr>';
       for(var ci=0; ci<maxCols; ci++){
         var cell = r && r[ci] !== undefined ? r[ci] : '';
-        tbl += '<td style="border:1px solid var(--br);padding:3px 6px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+        tbl += '<td style="border:1px solid var(--br);padding:4px 6px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
           +(cell||'').toString().substring(0,40)
           +'</td>';
       }
@@ -7143,7 +7175,7 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
 
   var hint = document.getElementById('mcm-manual-hint');
   if(hint){
-    hint.textContent = 'Выберите нужные колонки вручную. Автоподсказка уже учла вероятные значения, но финальный выбор остаётся за вами.';
+    hint.textContent = 'Назначьте роли прямо над колонками. Автоподсказка уже заполнила вероятные варианты, но окончательное решение остаётся за вами.';
   }
 
   var startRowEl = document.getElementById('mcm-start-row');
@@ -7200,15 +7232,18 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
       confidence: detectedLayout.confidence
     };
   }
+  _setImportPreviewBadges(_mcmLayout);
 
   // Если первый прогноз не дал колонки, показать базовый шаблон
   if(!detectedLayout || (detectedLayout.nameCol<0 && detectedLayout.priceCol<0 && detectedLayout.unitCol<0)) {
     var base = {headerRow:Math.max(0, dataStartRow - 1),nameCol:0,unitCol:1,priceCol:2,priceCol2:3,method:'manual',confidence:0};
     _mcmLayout = base;
   }
+  _setImportPreviewBadges(_mcmLayout);
   syncMcmRolesFromPreview();
   renderPriceEditTable(rows, _mcmLayout, supName, append, priceName, [], 'mcm-edit-preview');
   openModal('manualColumnMap');
+  _bindPricePreviewActions();
 }
 
 function applyManualColumnMap(){
@@ -7221,7 +7256,7 @@ function applyManualColumnMap(){
   if(_mcmLayout.priceCol2>=0 && _mcmLayout.priceCol2===_mcmLayout.priceCol){ if(err) err.textContent='Цена 2 должна быть другой колонкой'; return; }
 
   _mcmLayout.headerRow = startRow - 1;
-  updatePricePreviewHeader(_mcmLayout);
+  _setImportPreviewBadges(_mcmLayout);
   renderPriceEditTable(_mcmRows, _mcmLayout, _mcmSupName, _mcmAppend, _mcmPriceName, [], 'mcm-edit-preview');
   if(err) err.textContent = 'Колонки применены. Проверьте предпросмотр и нажмите "Сохранить и загрузить".';
 }
@@ -8224,7 +8259,7 @@ function _renderEditTable(){
   var unitOpts = units.map(function(u){return '<option>'+u+'</option>';}).join('');
 
   var html = '<div style="overflow-x:auto;max-height:360px;overflow-y:auto;'
-    +'border:1px solid var(--br);border-radius:var(--r);">'
+    +'border:1px solid var(--br);border-radius:var(--r);box-shadow:0 1px 0 rgba(0,0,0,.02);">'
     +'<table style="border-collapse:collapse;width:100%;min-width:680px;font-size:13px;">'
     +'<thead><tr style="background:var(--bg3);position:sticky;top:0;z-index:1;">'
     +'<th style="padding:8px 10px;text-align:left;border:1px solid var(--br);min-width:220px;">Наименование</th>'
@@ -8273,8 +8308,10 @@ function _renderEditTable(){
   });
 
   html += '</tbody></table></div>'
-    +'<div style="font-size:11px;color:var(--t3);margin-top:6px;">'
-    +_priceEditRows.length+' строк · Кликните на ячейку для редактирования</div>';
+    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11px;color:var(--t3);margin-top:6px;">'
+    +'<span>'+_priceEditRows.length+' строк</span>'
+    +'<span>Кликните по строке, чтобы отредактировать</span>'
+    +'</div>';
 
   el.innerHTML = html;
 }
