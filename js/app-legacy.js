@@ -9146,27 +9146,24 @@ function _showPreviewAndConfirm(rows, layout, supName, append, priceName, allowe
 function _bindPricePreviewActions(){
   var confirmBtn = document.getElementById('priceConfirmBtn');
   if(confirmBtn){
-    confirmBtn.onclick = function(){ applyManualColumnMapAndSave(); };
-    confirmBtn.addEventListener('click', function(ev){
-      ev.preventDefault();
+    confirmBtn.onclick = function(ev){
+      if(ev) ev.preventDefault();
       applyManualColumnMapAndSave();
-    }, { once: true });
+    };
   }
   var saveTplBtn = document.getElementById('mcmSaveTplBtn');
   var applyBtn = document.getElementById('mcmApplyBtn');
   if(saveTplBtn){
-    saveTplBtn.onclick = function(){ saveCurrentSupPriceTemplate(); };
-    saveTplBtn.addEventListener('click', function(ev){
-      ev.preventDefault();
+    saveTplBtn.onclick = function(ev){
+      if(ev) ev.preventDefault();
       saveCurrentSupPriceTemplate();
-    }, { once: true });
+    };
   }
   if(applyBtn){
-    applyBtn.onclick = function(){ applyManualColumnMapAndSave(); };
-    applyBtn.addEventListener('click', function(ev){
-      ev.preventDefault();
+    applyBtn.onclick = function(ev){
+      if(ev) ev.preventDefault();
       applyManualColumnMapAndSave();
-    }, { once: true });
+    };
   }
 }
 
