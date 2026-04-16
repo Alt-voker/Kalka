@@ -6097,30 +6097,64 @@ function _detectFreshMillLayout(rows) {
     var hasName = text.some(function(v){ return v === 'наименование товара' || v.indexOf('наименование товара') >= 0; });
     var hasPrice = text.some(function(v){ return v.indexOf('цена товара') >= 0 || v.indexOf('цена') >= 0; });
     if(hasName && hasPrice) {
-      // Ищем вторую строку с "за кг." / "за шт." и реальную колонку цены
+      // Для этого формата реальные товарные строки идут ниже:
+      // B = название, H = цена, I = единица.
+      // Колонка F может содержать отдельную ценовую шапку, но в строках товаров там пусто,
+      // поэтому она не должна становиться основной ценой.
       var headerRow = ri;
       var nameCol = -1, unitCol = -1, priceCol = -1, priceCol2 = -1;
-      for(var ci=0; ci<row.length; ci++){
-        var v = text[ci];
-        if(v.indexOf('наименование товара') >= 0) nameCol = ci;
-        if(v.indexOf('цена товара') >= 0) {
-          if(ci===5) priceCol2 = ci;
-          else priceCol = ci;
-        }
-      }
-      // Доп. строка подзаголовка
+
+      // Ищем строку с "за кг." / "за шт." и используем её только как подсказку,
+      // но не как основную карту колонок.
       var next = rows[ri+1] || [];
       next.forEach(function(c, ci){
         var v = (c||'').toString().trim().toLowerCase();
-        if(v.indexOf('за кг') >= 0 || v.indexOf('кг') === v) unitCol = 8;
-        if(v.indexOf('за шт') >= 0 || v.indexOf('шт') === v) {
-          if(priceCol < 0) priceCol = 5;
-          if(priceCol2 < 0) priceCol2 = 7;
+        if(v.indexOf('за кг') >= 0 || v === 'кг' || v === 'кг.') {
+          unitCol = ci;
+        }
+        if(v.indexOf('за шт') >= 0 || v === 'шт' || v === 'шт.') {
+          priceCol2 = ci;
         }
       });
-      if(nameCol < 0) nameCol = 1;
-      if(priceCol < 0) priceCol = 7;
-      if(unitCol < 0) unitCol = 8;
+
+      // Товарный блок можно проверить по нескольким следующим строкам:
+      // выбираем колонку с наибольшей долей товарных названий и колонку с ценами.
+      var sample = rows.slice(ri + 2, ri + 12);
+      var maxCols = 0;
+      sample.forEach(function(r){ if(r && r.length > maxCols) maxCols = r.length; });
+      if(maxCols < row.length) maxCols = row.length;
+
+      var bestName = {ci:-1, score:0};
+      var bestPrice = {ci:-1, score:0};
+      var bestUnit = {ci:-1, score:0};
+
+      for(var ci2=0; ci2<maxCols; ci2++){
+        var nameScore = 0, priceScore = 0, unitScore = 0, seen = 0;
+        sample.forEach(function(r){
+          if(!r || ci2 >= r.length) return;
+          var val = (r[ci2] || '').toString().trim();
+          if(!val) return;
+          seen++;
+          if(_looksLikeProductName(val)) nameScore++;
+          if(extractPrice(val) > 0) priceScore++;
+          if(normalizeUnit(val).match(/^(кг|г|шт|л|мл|уп|пачка|бут)$/i)) unitScore++;
+        });
+        if(nameScore > bestName.score) bestName = {ci:ci2, score:nameScore};
+        if(priceScore > bestPrice.score) bestPrice = {ci:ci2, score:priceScore};
+        if(unitScore > bestUnit.score) bestUnit = {ci:ci2, score:unitScore};
+      }
+
+      if(bestName.ci >= 0) nameCol = bestName.ci;
+      if(bestPrice.ci >= 0) priceCol = bestPrice.ci;
+      if(bestUnit.ci >= 0) unitCol = bestUnit.ci;
+
+      // Жёсткий fallback для этого конкретного формата:
+      // если распознавание не сработало, используем проверенную структуру файла.
+      if(nameCol < 0) nameCol = 1; // B
+      if(priceCol < 0) priceCol = 7; // H
+      if(unitCol < 0) unitCol = 8; // I
+      if(priceCol2 < 0 && row.length > 5) priceCol2 = 5; // F как запасная ценовая колонка
+
       return {headerRow:headerRow, nameCol:nameCol, unitCol:unitCol, priceCol:priceCol, priceCol2:priceCol2, confidence:99};
     }
   }
