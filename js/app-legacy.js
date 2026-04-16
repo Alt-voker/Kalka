@@ -6111,7 +6111,7 @@ function renderCart(){
   var coBtn2 = document.getElementById('coAllBtn2');
   var total  = cart.reduce(function(s,x){return s+(x.price||0)*x.qty;},0);
   var txt    = document.getElementById('cartSummaryText');
-  if(txt) txt.textContent = cart.length ? cart.length+' позиций · ₽'+total.toLocaleString() : '';
+  if(txt) txt.textContent = '';
   if(coBtn)  coBtn.disabled  = !cart.length;
   if(coBtn2) coBtn2.disabled = !cart.length;
 
@@ -6269,6 +6269,9 @@ function renderCart(){
 
   // Итоги внизу
   html += '<div style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);padding:14px 16px;margin-top:4px;">'
+    +'<div style="font-size:18px;font-weight:900;color:var(--tx);margin-bottom:14px;">'
+      +'Итог по корзине: '+cart.length+' позиций · ₽'+grandTotal.toLocaleString()
+    +'</div>'
     +'<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;justify-content:space-between;">'
     +'<div style="display:flex;gap:24px;flex-wrap:wrap;">'
     +'<div><div style="font-size:11px;color:var(--t3);">Поставщиков</div><div style="font-size:20px;font-weight:800;">'+_supOrder.length+'</div></div>'
