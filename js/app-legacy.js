@@ -6374,19 +6374,58 @@ function _scoreDataRow(row) {
 
 function _detectDataStartRow(rows) {
   if(!rows || !rows.length) return 0;
+  var limit = Math.min(rows.length, 120);
+  var scores = [];
   var bestRow = 0;
   var bestScore = -1;
-  for(var ri=0; ri<Math.min(rows.length, 60); ri++){
+  for(var ri=0; ri<limit; ri++){
     var sc = _scoreDataRow(rows[ri]);
+    scores.push(sc);
     if(sc > bestScore){
       bestScore = sc;
       bestRow = ri;
     }
   }
-  // Обычно товарный блок идёт после шапки, поэтому ищем первую хорошую строку
-  for(var j=0; j<Math.min(rows.length, 60); j++){
-    if(_scoreDataRow(rows[j]) >= Math.max(4, bestScore * 0.55)) return j;
+
+  // Ищем устойчивый блок товарных строк подряд.
+  // Это лучше, чем выбирать один "самый жирный" ряд, потому что в шапке тоже бывают числа.
+  var threshold = Math.max(4, Math.round(bestScore * 0.6));
+  var runStart = -1, runLen = 0, bestRunStart = -1, bestRunLen = 0;
+  for(var i=0; i<scores.length; i++){
+    if(scores[i] >= threshold){
+      if(runStart < 0) runStart = i;
+      runLen++;
+    } else {
+      if(runLen > bestRunLen){
+        bestRunLen = runLen;
+        bestRunStart = runStart;
+      }
+      runStart = -1;
+      runLen = 0;
+    }
   }
+  if(runLen > bestRunLen){
+    bestRunLen = runLen;
+    bestRunStart = runStart;
+  }
+
+  if(bestRunStart >= 0) return bestRunStart;
+
+  // Если устойчивого блока нет, ищем первую строку, где есть и товар, и цена.
+  for(var j=0; j<limit; j++){
+    var row = rows[j] || [];
+    var hasProduct = false, hasPrice = false, hasUnit = false;
+    for(var c=0; c<row.length; c++){
+      var val = (row[c] || '').toString().trim();
+      if(!val) continue;
+      if(!hasProduct && _looksLikeProductName(val)) hasProduct = true;
+      if(!hasPrice && extractPrice(val) > 0) hasPrice = true;
+      if(!hasUnit && _isUnitValue(val)) hasUnit = true;
+    }
+    if(hasProduct && hasPrice) return j;
+    if(hasProduct && hasPrice && hasUnit) return j;
+  }
+
   return bestRow;
 }
 
