@@ -6901,7 +6901,7 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
   var dataStartRow = _detectDataStartRow(rows);
   var sampleRows = rows.slice(Math.max(0, dataStartRow), Math.min(rows.length, dataStartRow + 8));
   if(!sampleRows.length) sampleRows = rows.slice(0, Math.min(rows.length, 8));
-  var maxCols = sampleRows.reduce(function(max, row){
+  var maxCols = rows.slice(0, Math.min(rows.length, 120)).reduce(function(max, row){
     return Math.max(max, row ? row.length : 0);
   }, 0);
   if(maxCols < 1) maxCols = 1;
@@ -6915,8 +6915,8 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
   // Превью первых строк
   var prev = document.getElementById('mcm-preview');
   if(prev){
-    var tbl = '<div style="overflow-x:auto;font-size:11px;max-height:190px;overflow-y:auto;">'
-      +'<table style="border-collapse:collapse;width:100%;min-width:'+(maxCols*120)+'px;">';
+    var tbl = '<div style="overflow-x:auto;font-size:11px;max-height:220px;overflow-y:auto;">'
+      +'<table style="border-collapse:collapse;width:100%;min-width:'+(Math.max(8,maxCols)*140)+'px;">';
     tbl += '<tr>'+headers.map(function(h,i){
       var guessed = 'ignore';
       if(detectedLayout){
@@ -6926,7 +6926,7 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
         else if(detectedLayout.priceCol2===i) guessed='price2';
       }
       _mcmSelectedRoleByCol[i] = guessed;
-      return '<th style="border:1px solid var(--br);padding:4px 6px;background:var(--bg4);text-align:center;min-width:140px;">'
+      return '<th style="border:1px solid var(--br);padding:4px 6px;background:var(--bg4);text-align:center;min-width:140px;vertical-align:top;">'
         +'<select id="mcm-role-'+i+'" onchange="_mcmSelectedRoleByCol['+i+']=this.value;syncMcmRolesFromPreview()" style="width:100%;background:var(--bg2);border:1px solid var(--br);border-radius:6px;padding:5px 6px;font-size:11px;color:var(--tx);outline:none;">'
         +'<option value="-1"'+(guessed==='ignore'?' selected':'')+'>—</option>'
         +'<option value="name"'+(guessed==='name'?' selected':'')+'>Наименование</option>'
@@ -6935,14 +6935,14 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
         +'<option value="price2"'+(guessed==='price2'?' selected':'')+'>Цена 2</option>'
         +'<option value="ignore"'+(guessed==='ignore'?' selected':'')+'>Игнорировать</option>'
         +'</select>'
-        +'<div style="margin-top:4px;font-size:10px;color:var(--t3);">'+h+'</div>'
+        +'<div style="margin-top:4px;font-size:10px;color:var(--t3);word-break:break-word;">'+h+'</div>'
       +'</th>';
     }).join('')+'</tr>';
     sampleRows.forEach(function(r){
       tbl += '<tr>';
       for(var ci=0; ci<maxCols; ci++){
         var cell = r && r[ci] !== undefined ? r[ci] : '';
-        tbl += '<td style="border:1px solid var(--br);padding:3px 6px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
+        tbl += '<td style="border:1px solid var(--br);padding:3px 6px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
           +(cell||'').toString().substring(0,40)
           +'</td>';
       }
@@ -6960,6 +6960,11 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
   var startRowEl = document.getElementById('mcm-start-row');
   if(startRowEl){
     startRowEl.value = String(Math.max(1, dataStartRow + 1));
+  }
+
+  // Подсказка, если файл очень широкий
+  if(hint && maxCols > 10){
+    hint.innerHTML = 'Назначьте роли прямо в таблице. Колонок в файле: <b>'+maxCols+'</b>. Можно прокрутить горизонтально и выбрать роли для каждой.';
   }
 
   var opts = '<option value="-1">— не указана —</option>'
@@ -8020,9 +8025,9 @@ function _renderEditTable(){
   var units = ['кг','г','шт','л','мл','пачка','бут.','уп.'];
   var unitOpts = units.map(function(u){return '<option>'+u+'</option>';}).join('');
 
-  var html = '<div style="overflow-x:auto;max-height:340px;overflow-y:auto;'
+  var html = '<div style="overflow-x:auto;max-height:360px;overflow-y:auto;'
     +'border:1px solid var(--br);border-radius:var(--r);">'
-    +'<table style="border-collapse:collapse;width:100%;min-width:500px;font-size:13px;">'
+    +'<table style="border-collapse:collapse;width:100%;min-width:680px;font-size:13px;">'
     +'<thead><tr style="background:var(--bg3);position:sticky;top:0;z-index:1;">'
     +'<th style="padding:8px 10px;text-align:left;border:1px solid var(--br);min-width:220px;">Наименование</th>'
     +'<th style="padding:8px 10px;text-align:center;border:1px solid var(--br);min-width:80px;">Единица</th>'
