@@ -7740,10 +7740,12 @@ function _parseInputPrice(val){
 var _priceEditRows = []; // [{name, unit, price}]
 var _priceEditLayout = null;
 var _priceEditContext = null; // {rows, supName, append, priceName, allowedUserIds}
+var _priceEditContainerId = 'pricePreviewTable';
 
 function renderPriceEditTable(rows, layout, supName, append, priceName, allowedUserIds, containerId){
   _priceEditLayout  = layout;
   _priceEditContext = {rows:rows, supName:supName, append:append, priceName:priceName, allowedUserIds:allowedUserIds};
+  _priceEditContainerId = containerId || 'pricePreviewTable';
 
   // Извлечь данные строк после заголовка
   var headerRow = layout.headerRow >= 0 ? layout.headerRow : 0;
@@ -7765,7 +7767,7 @@ function renderPriceEditTable(rows, layout, supName, append, priceName, allowedU
 }
 
 function _renderEditTable(){
-  var el = document.getElementById(containerId || 'pricePreviewTable');
+  var el = document.getElementById(_priceEditContainerId || 'pricePreviewTable');
   if(!el) return;
 
   var units = ['кг','г','шт','л','мл','пачка','бут.','уп.'];
