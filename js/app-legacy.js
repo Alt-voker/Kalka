@@ -8893,8 +8893,11 @@ function _renderEditTable(){
     + '<th style="padding:8px 10px;text-align:center;border:1px solid var(--br);width:42px;"></th>'
     + '</tr></thead><tbody>';
   _priceEditRows.forEach(function(row, i){
+    var rowNo = row && row.sourceRow !== undefined && row.sourceRow !== null && row.sourceRow !== ''
+      ? row.sourceRow
+      : (i + 1);
     html += '<tr>'
-      + '<td style="padding:4px 8px;border:1px solid var(--br);text-align:center;color:var(--t3);font-size:11px;">' + row.sourceRow + '</td>'
+      + '<td style="padding:4px 8px;border:1px solid var(--br);text-align:center;color:var(--t3);font-size:11px;">' + rowNo + '</td>'
       + '<td style="padding:4px 8px;border:1px solid var(--br);">'
         + '<input value="' + _esc(row.name) + '" oninput="_priceEditRows[' + i + '].name=this.value" style="width:100%;background:transparent;border:none;outline:none;font-size:13px;color:var(--tx);padding:4px;">'
       + '</td>'
@@ -8928,7 +8931,7 @@ function priceDeleteRow(i){
 }
 
 function priceAddRow(){
-  _priceEditRows.push({sourceRow: '-', name: '', unit: '', price1: 0, price2: 0});
+  _priceEditRows.push({sourceRow: _priceEditRows.length + 1, name: '', unit: '', price1: 0, price2: 0});
   _renderEditTable();
   setTimeout(function(){
     var el = document.getElementById('pricePreviewTable');
