@@ -6706,7 +6706,7 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
   _mcmPriceName = priceName;
 
   if(!rows.length) return;
-  var headers = rows[0];
+  var headers = rows.find(function(r){ return r && r.some(function(c){ return String(c||'').trim(); }); }) || rows[0] || [];
 
   // Превью первых строк
   var prev = document.getElementById('mcm-preview');
@@ -6761,6 +6761,11 @@ function showManualColumnMap(rows, supName, append, priceName, detectedLayout) {
     methodEl.textContent = 'Метод определения: ' + (detectedLayout.method||'не определён')
       + (detectedLayout.confidence ? ' · уверенность: '+detectedLayout.confidence+'%' : '');
   }
+
+  // Сразу показать редактируемый предпросмотр по текущим колонкам
+  if(detectedLayout) {
+    renderPriceEditTable(rows, detectedLayout, supName, append, priceName, [], 'mcm-edit-preview');
+  }
   
   openModal('manualColumnMap');
 }
@@ -6792,7 +6797,8 @@ function applyManualColumnMap(){
 
   updatePricePreviewHeader(layout);
 
-  processSupPriceRows(_mcmRows, layout, _mcmSupName, _mcmAppend, _mcmPriceName, []);
+  // Вместо прямой загрузки показываем редактируемый предпросмотр и только потом сохраняем
+  _showPreviewAndConfirm(_mcmRows, layout, _mcmSupName, _mcmAppend, _mcmPriceName, [], null, function(){});
 }
 function detectColumns(headers) {
   var layout = _findHeaderRow([headers]);
@@ -7735,7 +7741,7 @@ var _priceEditRows = []; // [{name, unit, price}]
 var _priceEditLayout = null;
 var _priceEditContext = null; // {rows, supName, append, priceName, allowedUserIds}
 
-function renderPriceEditTable(rows, layout, supName, append, priceName, allowedUserIds){
+function renderPriceEditTable(rows, layout, supName, append, priceName, allowedUserIds, containerId){
   _priceEditLayout  = layout;
   _priceEditContext = {rows:rows, supName:supName, append:append, priceName:priceName, allowedUserIds:allowedUserIds};
 
@@ -7759,7 +7765,7 @@ function renderPriceEditTable(rows, layout, supName, append, priceName, allowedU
 }
 
 function _renderEditTable(){
-  var el = document.getElementById('pricePreviewTable');
+  var el = document.getElementById(containerId || 'pricePreviewTable');
   if(!el) return;
 
   var units = ['кг','г','шт','л','мл','пачка','бут.','уп.'];
