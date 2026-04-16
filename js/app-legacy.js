@@ -6251,6 +6251,26 @@ function cleanRows(rows, headerRow) {
   return result;
 }
 
+function _looksLikeMetaText(text) {
+  var s = (text || '').toString().trim().toLowerCase();
+  if(!s) return true;
+  if(JUNK_PATTERNS.some(function(p){ return p.test(s); })) return true;
+  if(/(^|[\s:])\+?\d[\d\s().-]{5,}/.test(s)) return true; // телефоны
+  if(/(\bг\.?\s*[а-яё-]+|\bул\.?\s*[а-яё-]+|\bпроспект|\bшоссе|\bдом\b|\booo\b|\bооо\b|\bип\b)/i.test(s)) return true;
+  if(/(адрес|телефон|email|e-mail|почт|офис|склад|режим работы|график|прайс|поставщик|город|юр\.?\s*лицо|инн|огрн|кпп)/i.test(s)) return true;
+  return false;
+}
+
+function _looksLikeProductName(text) {
+  var s = (text || '').toString().trim();
+  if(!s) return false;
+  if(_looksLikeMetaText(s)) return false;
+  if(/^\d+$/.test(s)) return false;
+  if(s.length < 2) return false;
+  if(/^[\d\s.,/-]+$/.test(s)) return false;
+  return true;
+}
+
 // ── ИЗВЛЕЧЕНИЕ ЦЕНЫ ──────────────────────────────────────────
 
 function extractPrice(raw) {
@@ -6445,7 +6465,11 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
     if((!price || price<=0) && rawPrice2) price = extractPrice(rawPrice2);
     var unit  = normalizeUnit(rawUnit.toString(), name);
 
-    if(!name) return;
+    if(!name || !_looksLikeProductName(name)) {
+      skipped++;
+      if(name) needsReview.push({row:idx+headerRow+2, name:name, reason:'Похоже на мусор/служебную строку'});
+      return;
+    }
 
     // Если нет цены — пометить на проверку
     if(!price || price <= 0) {
@@ -6507,6 +6531,7 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
       var spIdx = PRODUCTS[prodIdx].suppliers.findIndex(function(s){return s.name===supName;});
       if(spIdx>=0) PRODUCTS[prodIdx].suppliers[spIdx].price = price;
       else         PRODUCTS[prodIdx].suppliers.push({name:supName,price:price});
+      PRODUCTS[prodIdx].unit = PRODUCTS[prodIdx].unit || unit;
     } else {
       PRODUCTS.push({
         id:Date.now()+idx+10000, name:name, cat:'dry', unit:unit, emoji:'',
@@ -7807,7 +7832,7 @@ function renderPriceEditTable(rows, layout, supName, append, priceName, allowedU
     var priceRaw2 = layout.priceCol2 >= 0 ? (parts[layout.priceCol2]||'').toString() : '';
     var price = _parseInputPrice(priceRaw);
     if((!price || price<=0) && priceRaw2) price = _parseInputPrice(priceRaw2);
-    if(!name) return;
+    if(!name || !_looksLikeProductName(name)) return;
     _priceEditRows.push({name:name, unit:normalizeUnit(unit,name)||'кг', price:price, price2:0});
   });
 
