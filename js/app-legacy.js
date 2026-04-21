@@ -5795,10 +5795,16 @@ function renderTenderTable(){
           +'</td>';
       }
 
-      // Определить минимальную цену по строке
-      var allPrices = sups.map(function(s){return row.priceMap[s];}).filter(Boolean);
-      var minP = allPrices.length ? Math.min.apply(null,allPrices) : 0;
-      var isBest = allPrices.length > 1 && price === minP;
+      // Определить минимальную цену по строке с учётом текущей замены
+      var displayPrices = sups.map(function(s){
+        var displayItem = _orderDisplayEntry(row.name, s, {
+          item: {name: row.name, unit: unit},
+          price: row.priceMap[s] || 0
+        });
+        return displayItem ? parseFloat(displayItem.price) || 0 : 0;
+      }).filter(Boolean);
+      var minP = displayPrices.length ? Math.min.apply(null, displayPrices) : 0;
+      var isBest = displayPrices.length > 1 && parseFloat(price) === minP;
 
       var cardBg   = isBest ? 'var(--grD)' : 'var(--bg3)';
       var priceCl  = isBest ? 'var(--gr)'  : 'var(--ac)';
@@ -7881,7 +7887,11 @@ function _renderOrderTable(filter){
   }
 
   tbody.innerHTML = rows.map(function(row, ri){
-    var allPrices = sups.map(function(s){ return row.cells[s] ? row.cells[s].price : 0; }).filter(Boolean);
+    var displayItems = sups.map(function(sup){
+      var baseCell = row.cells[sup];
+      return baseCell ? _orderDisplayEntry(row.query, sup, baseCell) : null;
+    });
+    var allPrices = displayItems.map(function(item){ return item ? parseFloat(item.price) || 0 : 0; }).filter(Boolean);
     var minP = allPrices.length ? Math.min.apply(null, allPrices) : 0;
     var rowBg = ri%2===0 ? 'var(--bg2)' : 'var(--bg)';
 
@@ -7901,9 +7911,10 @@ function _renderOrderTable(filter){
           +'color:var(--t4);font-size:12px;background:'+rowBg+';">—</td>';
       }
 
-      var isBest = cell.price && cell.price===minP && allPrices.length>1;
-      var cellBg = isBest ? 'var(--grD)' : rowBg;
       var currentOrderItem = _orderDisplayEntry(row.query, sup, cell);
+      var currentPrice = parseFloat(currentOrderItem ? currentOrderItem.price : cell.price) || 0;
+      var isBest = currentPrice && currentPrice===minP && allPrices.length>1;
+      var cellBg = isBest ? 'var(--grD)' : rowBg;
       var currentCartItem = _orderCartEntryByQuery(row.query, sup);
       var inCart = !!currentCartItem;
       var replacedFrom = currentOrderItem && currentOrderItem.replacedFrom ? currentOrderItem.replacedFrom : '';
@@ -7926,7 +7937,7 @@ function _renderOrderTable(filter){
             +'</div>'
           : '')
         +'<div style="font-size:15px;font-weight:800;color:'+(isBest?'var(--gr)':'var(--ac)')+';margin-bottom:6px;">'
-          +'₽'+_fmtPrice(currentOrderItem ? currentOrderItem.price : cell.price)
+          +'₽'+_fmtPrice(currentPrice)
           +'<span style="font-size:11px;font-weight:400;color:var(--t3);"> / '+(currentOrderItem ? currentOrderItem.unit : cell.item.unit)+'</span>'
         +'</div>'
         // Кнопки
