@@ -7918,14 +7918,19 @@ function _renderOrderTable(filter){
       var currentCartItem = _orderCartEntryByQuery(row.query, sup);
       var inCart = !!currentCartItem;
       var replacedFrom = currentOrderItem && currentOrderItem.replacedFrom ? currentOrderItem.replacedFrom : '';
+      var activeBorder = inCart ? 'var(--ac)' : (isBest ? 'var(--gr)' : 'var(--br)');
+      var activeBg = inCart ? 'rgba(91,163,245,.11)' : cellBg;
 
-      return '<td data-order-row="'+_cssAttrVal(row.query)+'" data-order-sup="'+_cssAttrVal(sup)+'" style="padding:6px 8px;border:1px solid '+(isBest?'var(--gr)':'var(--br)')+';'
-        +'background:'+cellBg+';vertical-align:top;position:relative;">'
+      return '<td data-order-row="'+_cssAttrVal(row.query)+'" data-order-sup="'+_cssAttrVal(sup)+'" style="padding:6px 8px;border:1px solid '+activeBorder+';'
+        +'background:'+activeBg+';vertical-align:top;position:relative;">'
         // Метка лучшей цены
         +(isBest?'<div style="position:absolute;top:0;right:0;background:var(--gr);color:#fff;'
           +'font-size:9px;font-weight:700;padding:2px 6px;border-radius:0 0 0 4px;">лучшая</div>':'')
+        +(inCart?'<div style="position:absolute;top:0;left:0;background:var(--ac);color:#fff;'
+          +'font-size:9px;font-weight:700;padding:2px 6px;border-radius:0 0 4px 0;">в корзине</div>':'')
         // Карточка товара
-        +'<div style="font-size:11px;color:var(--t3);margin-bottom:2px;padding-right:'+(isBest?'36':'0')+'px;">'
+        +'<div style="font-size:11px;color:var(--t3);margin-bottom:2px;padding-right:'+(isBest?'36':'0')+'px;'
+          +(inCart?'font-weight:700;color:var(--ac);':'')+'">'
           +(replacedFrom
             ? '<span style="display:inline-block;padding:2px 6px;margin-right:6px;border-radius:999px;background:var(--orD);color:var(--or);font-size:9px;font-weight:800;">замена</span>'
             : '')
