@@ -6368,6 +6368,13 @@ function orderRemove(name, supplier, query){
     }
     return !(c.name===name && c.supplier===supplier);
   });
+  var rowNode = document.querySelector('[data-order-row="'+_cssAttrVal(query)+'"][data-order-sup="'+_cssAttrVal(supplier)+'"]');
+  if(rowNode){
+    rowNode.classList.remove('order-in-cart');
+    rowNode.classList.remove('order-in-cart-locked');
+    rowNode.style.background = '';
+    rowNode.style.borderColor = '';
+  }
   updBdg();
   renderCart();
   if(typeof _renderOrderTable === 'function'){
@@ -8121,6 +8128,13 @@ function orderAddFromTable(query, name, sup, price, unit, qtyInputId){
   var qtyEl = qtyInputId ? document.getElementById(qtyInputId) : null;
   var finalQty = qtyEl ? Math.max(0.001, parseFloat(qtyEl.value)||1) : 1;
   var mode = _orderUpsertItem(query, finalName, sup, finalPrice, finalUnit, finalType, finalQty);
+  var rowNode = document.querySelector('[data-order-row="'+_cssAttrVal(query)+'"][data-order-sup="'+_cssAttrVal(sup)+'"]');
+  if(rowNode){
+    rowNode.classList.add('order-in-cart');
+    rowNode.classList.add('order-in-cart-locked');
+    rowNode.style.background = 'rgba(91,163,245,.11)';
+    rowNode.style.borderColor = 'var(--ac)';
+  }
   updBdg();
   renderCart();
   _renderOrderTable((document.getElementById('orderTableSearch')||{value:''}).value);
