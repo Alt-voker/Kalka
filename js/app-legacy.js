@@ -4500,16 +4500,13 @@ function getCurrentOrderRestaurantMeta(){
 
 function getOrderHeaderRows(restName, date, supName, comment){
   var rest=getCurrentOrderRestaurantMeta();
+  var chosenLegal = _orderLegalEntityNames.length ? _orderLegalEntityNames[0] : '';
   var rows=[
     ['Ресторан / Заведение:', restName||'Не указано']
   ];
   if(rest){
     rows.push(['Бренд:', rest.brandName||rest.name||'Не указан']);
-    rows.push(['Основное юр. лицо:', rest.legalName||(_orderLegalEntityNames[0]||'Не указано')]);
-    rows.push(['Юр. лицо для заказа:', _orderLegalEntityNames.length?_orderLegalEntityNames.join(' · '):(rest.legalName||'Не указано')]);
-    if(rest.legalEntities&&rest.legalEntities.length){
-      rows.push(['Юр. лица сети:', rest.legalEntities.join(' · ')]);
-    }
+    rows.push(['Юр. лицо для заказа:', chosenLegal || rest.legalName || 'Не указано']);
     if(rest.city||rest.addr){
       rows.push(['Адрес / локация:', [rest.city||'',rest.addr||''].filter(Boolean).join(', ')]);
     }
@@ -4524,8 +4521,8 @@ function getOrderHeaderRows(restName, date, supName, comment){
     if(responsibles.buyer) rows.push(['Закупщик:', responsibles.buyer]);
     if(responsibles.accountant) rows.push(['Бухгалтер:', responsibles.accountant]);
     if(responsibles.manager) rows.push(['Управляющий:', responsibles.manager]);
-  } else if(_orderLegalEntityNames.length){
-    rows.push(['Юр. лицо для заказа:', _orderLegalEntityNames.join(' · ')]);
+  } else if(chosenLegal){
+    rows.push(['Юр. лицо для заказа:', chosenLegal]);
   }
   if(supName) rows.push(['Поставщик:', supName]);
   rows.push(['Дата заказа:', date]);
@@ -4555,14 +4552,21 @@ function _exportSupCartXLSX(supName, items, total, restName, date, comment){
   wsData.push(['№','Наименование','Ед. изм.','Зона','Накладная','Кол-во','Цена за ед. (₽)','Сумма (₽)']);
 
   // Строки товаров
+  var lastGroup='';
   items.forEach(function(item, i){
+    var groupLabel = item.invoiceGroup==='extra' ? 'Доп. накладная' : 'Основная';
+    if(groupLabel !== lastGroup){
+      if(lastGroup) wsData.push(['']);
+      wsData.push([groupLabel]);
+      lastGroup = groupLabel;
+    }
     var sum=Math.round(item.price*item.qty*100)/100;
     wsData.push([
       i+1,
       item.name,
       item.unit||'шт',
       item.zone||'',
-      item.invoiceGroup==='extra'?'Доп. накладная':'Основная',
+      groupLabel,
       item.qty,
       item.price,
       sum
@@ -4613,10 +4617,16 @@ function _exportSupCartCSV(supName, items, total, restName, date, comment){
   rows.push('');
   rows.push('№,Наименование,Ед.изм.,Зона,Накладная,Кол-во,Цена за ед.,Сумма');
 
+  var lastGroup='';
   items.forEach(function(item,i){
+    var groupLabel = item.invoiceGroup==='extra' ? 'Доп. накладная' : 'Основная';
+    if(groupLabel !== lastGroup){
+      rows.push(groupLabel);
+      lastGroup = groupLabel;
+    }
     var sum=Math.round(item.price*item.qty*100)/100;
     rows.push([i+1, '"'+item.name+'"', item.unit||'шт', '"'+(item.zone||'')+'"',
-               '"'+(item.invoiceGroup==='extra'?'Доп. накладная':'Основная')+'"',
+               '"'+groupLabel+'"',
                item.qty, item.price, sum].join(','));
   });
 
@@ -4775,11 +4785,17 @@ function addFoundToCart(pid, supName){
 function _exportFullCartCSV(restName, date){
   var rows=['\uFEFF№,Наименование,Поставщик,Зона,Накладная,Кол-во,Ед.изм.,Цена/ед.,Сумма,Комментарий'];
   var n=1; var total=0;
+  var lastGroup='';
   cart.forEach(function(item){
+    var groupLabel = item.invoiceGroup==='extra' ? 'Доп. накладная' : 'Основная';
+    if(groupLabel !== lastGroup){
+      rows.push(groupLabel);
+      lastGroup = groupLabel;
+    }
     var sum=Math.round((item.price||0)*item.qty*100)/100;
     total+=sum;
     rows.push([n++,'"'+item.name+'"','"'+item.supplier+'"','"'+(item.zone||'')+'"',
-               '"'+(item.invoiceGroup==='extra'?'Доп. накладная':'Основная')+'"',item.qty,item.unit||'шт',
+               '"'+groupLabel+'"',item.qty,item.unit||'шт',
                item.price||0,sum,'"'+(item.comment||'')+'"'].join(','));
   });
   rows.push(',,,,,,,ИТОГО:,'+Math.round(total*100)/100+',');
@@ -5404,24 +5420,31 @@ function _exportFullCartXLSX(){
   var summaryData=[['СВОДНЫЙ ЗАКАЗ']];
   getOrderHeaderRows(restName, date, '', '').forEach(function(row){ summaryData.push(row); });
   summaryData.push([]);
-	  summaryData.push(['Поставщик','Наименование','Зона','Накладная','Ед.','Кол-во','Цена','Сумма']);
+  summaryData.push(['Поставщик','Наименование','Зона','Накладная','Ед.','Кол-во','Цена','Сумма']);
   var grandTotal=0;
   _supOrder.forEach(function(supName){
     var items=cart.filter(function(x){return x.supplier===supName;});
     var supTotal=0;
+    var lastGroup='';
     items.forEach(function(it){
+      var groupLabel = it.invoiceGroup==='extra' ? 'Доп. накладная' : 'Основная';
+      if(groupLabel !== lastGroup){
+        if(lastGroup) summaryData.push([]);
+        summaryData.push([groupLabel]);
+        lastGroup = groupLabel;
+      }
       var sum=Math.round((it.price||0)*it.qty*100)/100;
-	      summaryData.push([supName,it.name,it.zone||'',it.invoiceGroup==='extra'?'Доп. накладная':'Основная',it.unit||'',it.qty,it.price||0,sum]);
-	      supTotal+=sum;
-	    });
-	    summaryData.push(['','','','','','ИТОГО '+supName+':',Math.round(supTotal*100)/100]);
-	    summaryData.push([]);
-	    grandTotal+=supTotal;
-	  });
-	  summaryData.push(['','','','','','ИТОГО ВСЕ:',Math.round(grandTotal*100)/100]);
+      summaryData.push([supName,it.name,it.zone||'',groupLabel,it.unit||'',it.qty,it.price||0,sum]);
+      supTotal+=sum;
+    });
+    summaryData.push(['','','','','','ИТОГО '+supName+':',Math.round(supTotal*100)/100]);
+    summaryData.push([]);
+    grandTotal+=supTotal;
+  });
+  summaryData.push(['','','','','','ИТОГО ВСЕ:',Math.round(grandTotal*100)/100]);
 
-	  var ws1=XLSX.utils.aoa_to_sheet(summaryData);
-	  ws1['!cols']=[{wch:22},{wch:30},{wch:16},{wch:18},{wch:8},{wch:10},{wch:14},{wch:14}];
+  var ws1=XLSX.utils.aoa_to_sheet(summaryData);
+  ws1['!cols']=[{wch:22},{wch:30},{wch:16},{wch:18},{wch:8},{wch:10},{wch:14},{wch:14}];
   XLSX.utils.book_append_sheet(wb,ws1,'Сводный заказ');
 
   // Листы по поставщикам
@@ -5432,11 +5455,18 @@ function _exportFullCartXLSX(){
     var data=[['ЗАКАЗ: '+supName]];
     getOrderHeaderRows(restName, date, supName, cartComments[supName]||'').forEach(function(row){ data.push(row); });
     data.push([]);
-	    data.push(['№','Наименование','Ед.','Зона','Накладная','Кол-во','Цена','Сумма','Комментарий']);
-	    items.forEach(function(it,i){
-	      data.push([i+1,it.name,it.unit||'',it.zone||'',it.invoiceGroup==='extra'?'Доп. накладная':'Основная',it.qty,it.price||0,
-	        Math.round((it.price||0)*it.qty*100)/100,it.comment||'']);
-	    });
+    data.push(['№','Наименование','Ед.','Зона','Накладная','Кол-во','Цена','Сумма','Комментарий']);
+    var lastGroup='';
+    items.forEach(function(it,i){
+      var groupLabel = it.invoiceGroup==='extra' ? 'Доп. накладная' : 'Основная';
+      if(groupLabel !== lastGroup){
+        if(lastGroup) data.push([]);
+        data.push([groupLabel]);
+        lastGroup = groupLabel;
+      }
+      data.push([i+1,it.name,it.unit||'',it.zone||'',groupLabel,it.qty,it.price||0,
+        Math.round((it.price||0)*it.qty*100)/100,it.comment||'']);
+    });
 	    data.push([]);
 	    data.push(['','','','','','ИТОГО:',Math.round(total*100)/100,'','']);
 	    var ws=XLSX.utils.aoa_to_sheet(data);
