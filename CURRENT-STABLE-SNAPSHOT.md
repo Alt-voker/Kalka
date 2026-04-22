@@ -2,9 +2,9 @@
 
 - Date: 2026-04-22
 - Branch: main
-- Commit: 36d71b3
+- Commit: 0c7a20d
 
-This snapshot marks the current working platform state after protecting owner access and keeping the order/cart flow stable.
+This snapshot marks the current working platform state after restoring owner access and keeping the order/cart/search flow stable with immediate refreshes.
 
 ## What is considered stable here
 
@@ -12,6 +12,7 @@ This snapshot marks the current working platform state after protecting owner ac
 - Replacement via loupe with immediate best-price refresh.
 - Order search screen behaving like the order flow.
 - Owner panel recovery and owner-role protection.
+- Immediate refresh helper for order/search/cart workspace updates.
 - Delivery window in order creation and Excel export.
 - Platform protection rules in `PLATFORM-PROTECTION.md`.
 
