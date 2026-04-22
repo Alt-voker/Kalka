@@ -8233,16 +8233,14 @@ function ossSelect(itemName, price, unit, itemType){
   var rowNode = document.querySelector('[data-order-row="'+_cssAttrVal(_ossRowQuery)+'"][data-order-sup="'+_cssAttrVal(sup)+'"]');
   if(rowNode){
     rowNode.classList.add('order-replaced');
-    setTimeout(function(){ rowNode.classList.remove('order-replaced'); }, 1500);
+    rowNode.style.background = 'rgba(224,123,42,.08)';
+    rowNode.style.borderColor = 'var(--or)';
   }
   flashCartUI();
   closeModal('orderSupSearch');
-  if(_orderSups.length > 0 && _orderSups.indexOf(sup) >= 0){
-    _renderOrderTable((document.getElementById('orderTableSearch')||{value:''}).value);
-  } else {
-    var inp = document.getElementById('orderSearchInput');
-    if(inp && inp.value) orderSearch(inp.value);
-  }
+  _renderOrderTable((document.getElementById('orderTableSearch')||{value:''}).value);
+  var inp = document.getElementById('orderSearchInput');
+  if(inp && inp.value) orderSearch(inp.value);
   toast('Вариант заменён: «'+itemName+'» → '+sup+(itype==='additional'?' (доп)':'')+'. Для добавления нажмите 🛒.','ok');
 }
 
