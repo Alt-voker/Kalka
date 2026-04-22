@@ -32,6 +32,17 @@ const PM={
   cart:           {sec:null,          ico:'', lbl:'Корзина (legacy)'},
 };
 const PT={order:'Заказ и Корзина',tender:'Тендер',owner:'Панель владельца',admin:'Управление пользователями',dashboard:'Дашборд',catalog:'Каталог товаров',cart:'Корзина',favorites:'Избранное',orders:'История заказов',suppliers:'Поставщики',analytics:'Аналитика','tender':'Тендер',techcards:'Технологические карты','chef-calc':'Калькулятор','sup-dashboard':'Панель поставщика','sup-products':'Мои товары','sup-orders':'Входящие заказы','sup-analytics':'Аналитика продаж'};
+const OWNER_EMAIL_HINTS=['owner@provision.ru','michaelkeepcalm@gmail.com','keepcalm3300@gmail.com','michaelkeepcalm3300gmail.com','keepcalm3300gmail.com','keepcalm3300gmail.com@MacBook-Air-Mihail.local'];
+function isOwnerUser(u){
+  if(!u) return false;
+  if(u.role==='owner') return true;
+  var email=String(u.email||'').toLowerCase();
+  if(!email) return false;
+  return OWNER_EMAIL_HINTS.some(function(h){
+    h=String(h||'').toLowerCase();
+    return email===h || email.indexOf(h)>=0 || h.indexOf(email)>=0;
+  });
+}
 
 // ── СЛОВАРИ ПАРСЕРА И ПОИСКА ─────────────────────────────────
 
@@ -598,6 +609,7 @@ function doLogout(){
 
 function toggleSB(){sbC=!sbC;document.getElementById('SB').classList.toggle('slim',sbC);document.getElementById('sbTog').textContent=sbC?'›':'‹';}
 function buildNav(u){
+  if(isOwnerUser(u)) u = Object.assign({}, u, { role:'owner', status:'active' });
   const basePages=((ROLES[u.role]||{}).pages||[]).slice();
   const rawPages=(u.role==='admin'&&ownerGetSettings().adminAdvanced&&basePages.indexOf('owner')<0)?['owner'].concat(basePages):basePages;
   const pages=rawPages.filter(function(pg){ return pg!=='dashboard' || userCanSeeDashboard(u); });
@@ -616,6 +628,7 @@ function buildNav(u){
 }
 function goPage(pg){
   if(!CU)return;
+  if(isOwnerUser(CU)) CU = Object.assign({}, CU, { role:'owner', status:'active' });
   if(!canAccessPage(CU, pg)){toast('🚫 Нет доступа к этому разделу','err');return;}
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.sb-item').forEach(i=>i.classList.remove('on'));
@@ -2438,6 +2451,7 @@ function declineOrgInvite(inviteId){
 
 function userCanSeeDashboard(user){
   if(!user) return false;
+  if(isOwnerUser(user)) return true;
   if(user.role==='owner') return true;
   var access=normalizeDashboardAccess(user);
   if(!access.enabled) return false;
@@ -2447,6 +2461,7 @@ function userCanSeeDashboard(user){
 
 function ensureDashboardRestSelection(){
   if(!CU) return;
+  if(isOwnerUser(CU)) return;
   if(normalizeDashboardAccess(CU).scope==='all_orgs' || CU.role==='owner') return;
   var db=dbGet();
   var allowedIds=getUserDashboardRestaurantIds(CU, db);
@@ -2462,6 +2477,7 @@ function ensureDashboardRestSelection(){
 
 function canAccessPage(u, pg){
   if(!u) return false;
+  if(isOwnerUser(u)) u = Object.assign({}, u, { role:'owner', status:'active' });
   if(pg==='dashboard') return userCanSeeDashboard(u);
   var pages=(ROLES[u.role]||{}).pages||[];
   if(pages.indexOf(pg)>=0) return true;
@@ -2565,6 +2581,7 @@ function ownerStatusRow(label,value,tone,sub){
 }
 
 function renderOwner(){
+  if(CU && isOwnerUser(CU)) CU = Object.assign({}, CU, { role:'owner', status:'active' });
   var db=dbGet();
   var companies=ownerDistinctCompanies(db);
   var systemLog=Array.isArray(db.systemLog)?db.systemLog:[];

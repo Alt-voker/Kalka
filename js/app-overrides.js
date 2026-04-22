@@ -22,6 +22,8 @@
   var restoreInFlight = false;
   var OWNER_EMAILS = [
     'owner@provision.ru',
+    'michaelkeepcalm@gmail.com',
+    'keepcalm3300@gmail.com',
     'keepcalm3300gmail.com',
     'michaelkeepcalm3300gmail.com',
     'keepcalm3300gmail.com@MacBook-Air-Mihail.local'
