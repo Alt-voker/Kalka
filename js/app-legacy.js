@@ -1173,10 +1173,14 @@ function flashCartUI(){
   var cartBtn=document.getElementById('cartBtn');
   var sec=document.getElementById('orderCartSection');
   if(cartBtn){
+    cartBtn.classList.remove('cart-flash');
+    void cartBtn.offsetWidth;
     cartBtn.classList.add('cart-flash');
     setTimeout(function(){cartBtn.classList.remove('cart-flash');},1200);
   }
   if(sec){
+    sec.classList.remove('cart-flash-box');
+    void sec.offsetWidth;
     sec.classList.add('cart-flash-box');
     setTimeout(function(){sec.classList.remove('cart-flash-box');},1200);
   }
