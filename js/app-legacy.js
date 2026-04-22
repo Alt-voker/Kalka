@@ -5462,6 +5462,8 @@ function selectSupPriceSheet(sheetName){
 function openSupPriceUpload(supName, append){
   _currentSupName = supName;
   _supPriceAppend = append;
+  _supplierImportResetState();
+  _supPriceImportState.organizationId = getCurrentOrganizationKey(CU);
   openModal('supPriceUpload');
   var titleEl = document.getElementById('supPriceUploadTitle');
   if(titleEl) titleEl.textContent = append ? 'Доп. прайс: '+supName : 'Новый прайс: '+supName;
@@ -5472,6 +5474,7 @@ function openSupPriceUpload(supName, append){
   var legalOptions = getPriceImportLegalOptions();
   var listEl = document.getElementById('supPriceCompList');
   if(listEl){
+    var selectedHint = '<div style="font-size:11px;color:var(--t3);margin-bottom:8px;">Выберите одно или несколько юр. лиц для этого прайса.</div>';
     listEl.innerHTML = legalOptions.length ? legalOptions.map(function(opt){
       return '<label style="display:flex;align-items:center;gap:10px;padding:6px 4px;cursor:pointer;">'
         +'<input type="checkbox" class="sup-price-legal-cb" value="'+opt.id+'" data-name="'+opt.name.replace(/"/g,'&quot;')+'" data-org="'+opt.orgKey+'" checked '
@@ -5479,6 +5482,7 @@ function openSupPriceUpload(supName, append){
         +'<div><div style="font-size:13px;font-weight:600;">'+opt.name+'</div>'
         +'<div style="font-size:11px;color:var(--t3);">'+(opt.orgName||'Организация')+' · '+opt.id+'</div></div></label>';
     }).join('') : '<div style="color:var(--t3);padding:8px;font-size:12px;">Нет доступных юр. лиц</div>';
+    listEl.insertAdjacentHTML('afterbegin', selectedHint);
     var tpl = _loadSupPriceTemplate(supName);
     if(tpl && Array.isArray(tpl.legalEntityIds) && tpl.legalEntityIds.length){
       listEl.querySelectorAll('.sup-price-legal-cb').forEach(function(cb){
