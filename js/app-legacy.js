@@ -1939,6 +1939,17 @@ function bindSupplierCardActions(root){
   window.supCardAction = supCardAction;
 }
 
+if(!window.__supplierCardDocBound){
+  window.__supplierCardDocBound = true;
+  document.addEventListener('click', function(ev){
+    var btn = ev && ev.target ? ev.target.closest('button[data-sup-action]') : null;
+    if(!btn) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    supCardAction(btn);
+  }, true);
+}
+
 function togglePersonalSup(supName){
   if(!CU)return;
   var hiddenKey='pv_hidden_'+CU.id;
@@ -5451,6 +5462,7 @@ function selectSupPriceSheet(sheetName){
 function openSupPriceUpload(supName, append){
   _currentSupName = supName;
   _supPriceAppend = append;
+  openModal('supPriceUpload');
   var titleEl = document.getElementById('supPriceUploadTitle');
   if(titleEl) titleEl.textContent = append ? 'Доп. прайс: '+supName : 'Новый прайс: '+supName;
   var nameEl = document.getElementById('supPriceSupName');
@@ -5487,7 +5499,6 @@ function openSupPriceUpload(supName, append){
   _renderPriceRawPreview([]);
   var sec = document.getElementById('pricePreviewSection');
   if(sec) sec.style.display = 'none';
-  openModal('supPriceUpload');
 }
 
 function selectAllSupPriceComps(val){
@@ -8298,6 +8309,7 @@ function selectAllSupPriceLegals(val){
 }
 
 function openSupPriceLists(supName){
+  openModal('supplierPriceLists');
   var scope = _getCurrentPriceScope();
   var orgKey = _normalizeOrgKey(scope.organizationId || getCurrentOrganizationKey(CU));
   var legalIds = _uniqList(scope.legalEntityIds || []);
@@ -8339,7 +8351,6 @@ function openSupPriceLists(supName){
         + '</tbody></table></div>';
     }
   }
-  openModal('supplierPriceLists');
 }
 
 // ─────────────────────────────────────────────────────────────
