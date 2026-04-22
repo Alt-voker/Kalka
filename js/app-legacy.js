@@ -7626,14 +7626,21 @@ function orderSearchMulti(val) {
       var currentOrderItem = _orderDisplayEntry(row.line, sup, cell);
       var currentCartItem = _orderCartEntryByQuery(row.line, sup);
       var inCart = !!currentCartItem;
+      var hasDraft = !!_orderDraftEntryByQuery(row.line, sup);
       var replacedFrom = currentOrderItem && currentOrderItem.replacedFrom ? currentOrderItem.replacedFrom : '';
+      var activeBorder = inCart ? 'var(--ac)' : (hasDraft ? 'var(--or)' : (isBest ? 'var(--gr)' : 'var(--br)'));
+      var activeBg = inCart ? 'rgba(91,163,245,.11)' : (hasDraft ? 'rgba(224,123,42,.07)' : cellBg);
 
-      html += '<td style="padding:6px 8px;border:1px solid '+(isBest?'var(--gr)':'var(--br)')+';'
-            + 'background:'+cellBg+';vertical-align:top;position:relative;">';
+      html += '<td style="padding:6px 8px;border:1px solid '+activeBorder+';'
+            + 'background:'+activeBg+';vertical-align:top;position:relative;">';
 
       if(isBest) {
         html += '<div style="position:absolute;top:0;right:0;background:var(--gr);color:#fff;'
               + 'font-size:9px;font-weight:700;padding:2px 6px;border-radius:0 0 0 4px;">лучшая</div>';
+      }
+      if(hasDraft && !inCart) {
+        html += '<div style="position:absolute;top:0;left:0;background:var(--or);color:#fff;'
+              + 'font-size:9px;font-weight:700;padding:2px 6px;border-radius:0 0 4px 0;">выбрано</div>';
       }
 
       // Название товара
