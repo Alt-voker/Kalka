@@ -8172,6 +8172,21 @@ function _orderDisplayEntry(query, sup, fallback){
     };
 }
 
+function refreshOrderWorkspaceImmediate(){
+  try{
+    updBdg();
+    renderCart();
+    _renderOrderTable((document.getElementById('orderTableSearch')||{value:''}).value);
+    var searchInp = document.getElementById('orderSearchInput');
+    if(searchInp && searchInp.value) orderSearch(searchInp.value);
+    var searchResults = document.getElementById('orderSearchResults');
+    if(searchResults && searchResults.style.display !== 'none'){
+      orderSearchMulti(searchInp ? searchInp.value : '');
+    }
+  }catch(err){}
+  flashCartUI();
+}
+
 function _orderUpsertItem(query, name, sup, price, unit, itemType, qty){
   var q = query || name;
   var prod = PRODUCTS.find(function(p){ return p.name===name; }) || {id:Date.now(), emoji:''};
@@ -8197,6 +8212,7 @@ function _orderUpsertItem(query, name, sup, price, unit, itemType, qty){
       _orderQuery: q,
       replacedFrom: replacementLabel || cart[existing].replacedFrom || ''
     });
+    refreshOrderWorkspaceImmediate();
     return 'replaced';
   }
 
@@ -8214,6 +8230,7 @@ function _orderUpsertItem(query, name, sup, price, unit, itemType, qty){
     _orderQuery: q,
     replacedFrom: replacementLabel
   });
+  refreshOrderWorkspaceImmediate();
   return 'added';
 }
 
@@ -8241,12 +8258,7 @@ function _orderToggleInvoiceGroup(query, sup){
     });
   }
 
-  updBdg();
-  renderCart();
-  _renderOrderTable((document.getElementById('orderTableSearch')||{value:''}).value);
-  var inp=document.getElementById('orderSearchInput');
-  if(inp && inp.value) orderSearch(inp.value);
-  flashCartUI();
+  refreshOrderWorkspaceImmediate();
 }
 
 // Добавить в корзину из таблицы заказа
@@ -8266,12 +8278,6 @@ function orderAddFromTable(query, name, sup, price, unit, qtyInputId){
     rowNode.style.background = 'rgba(91,163,245,.11)';
     rowNode.style.borderColor = 'var(--ac)';
   }
-  updBdg();
-  renderCart();
-  _renderOrderTable((document.getElementById('orderTableSearch')||{value:''}).value);
-  flashCartUI();
-  var searchInp = document.getElementById('orderSearchInput');
-  if(searchInp && searchInp.value) orderSearch(searchInp.value);
   toast(mode==='replaced'
     ? '«'+finalName+'» → '+sup+' обновлён в корзине'
     : '«'+finalName+'» → '+sup+' добавлен в корзину','ok');
@@ -8366,15 +8372,12 @@ function ossSelect(itemName, price, unit, itemType){
   });
   var rowNode = document.querySelector('[data-order-row="'+_cssAttrVal(_ossRowQuery)+'"][data-order-sup="'+_cssAttrVal(sup)+'"]');
   if(rowNode){
-    rowNode.classList.add('order-replaced');
-    rowNode.style.background = 'rgba(224,123,42,.08)';
-    rowNode.style.borderColor = 'var(--or)';
+  rowNode.classList.add('order-replaced');
+  rowNode.style.background = 'rgba(224,123,42,.08)';
+  rowNode.style.borderColor = 'var(--or)';
   }
-  flashCartUI();
+  refreshOrderWorkspaceImmediate();
   closeModal('orderSupSearch');
-  _renderOrderTable((document.getElementById('orderTableSearch')||{value:''}).value);
-  var inp = document.getElementById('orderSearchInput');
-  if(inp && inp.value) orderSearch(inp.value);
   toast('Вариант заменён: «'+itemName+'» → '+sup+(itype==='additional'?' (доп)':'')+'. Для добавления нажмите 🛒.','ok');
 }
 
