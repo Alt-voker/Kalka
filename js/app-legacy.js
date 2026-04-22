@@ -7597,10 +7597,10 @@ function orderSearchMulti(val) {
             + (inCart
               ? '<button onclick="orderRemove(\''+_esc(currentCartItem.name)+'\',\''+_esc(sup)+'\',\''+_esc(row.line)+'\')"'
                 + ' style="flex:1;background:var(--ac);color:#fff;border:none;border-radius:var(--r);'
-                  + 'padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">✓</button>'
+                  + 'padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">✓ В заказе</button>'
               : '<button onclick="orderAddFromTable(\''+_esc(row.line)+'\',\''+_esc(currentOrderItem.name)+'\',\''+_esc(sup)+'\','+currentOrderItem.price+',\''+_esc(currentOrderItem.unit)+'\',\''+qtyId+'\')"'
                 + ' style="flex:1;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:var(--r);'
-                  + 'padding:4px 8px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;">🛒</button>')
+                  + 'padding:4px 8px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;">🛒 В заказ</button>')
             + '</div>';
 
       html += '</td>';
@@ -8143,6 +8143,8 @@ function orderAddFromTable(query, name, sup, price, unit, qtyInputId){
   renderCart();
   _renderOrderTable((document.getElementById('orderTableSearch')||{value:''}).value);
   flashCartUI();
+  var searchInp = document.getElementById('orderSearchInput');
+  if(searchInp && searchInp.value) orderSearch(searchInp.value);
   toast(mode==='replaced'
     ? '«'+finalName+'» → '+sup+' обновлён в корзине'
     : '«'+finalName+'» → '+sup+' добавлен в корзину','ok');
