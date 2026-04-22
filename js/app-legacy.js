@@ -43,6 +43,178 @@ function isOwnerUser(u){
     return email===h || email.indexOf(h)>=0 || h.indexOf(email)>=0;
   });
 }
+function _uniqList(list){
+  return Array.from(new Set((Array.isArray(list)?list:[]).filter(Boolean).map(function(v){ return String(v).trim(); }).filter(Boolean)));
+}
+function _normalizeOrgKey(value){
+  return String(value||'').trim().toLowerCase();
+}
+function _legalEntityId(orgKey, name){
+  return _normalizeOrgKey(orgKey||'org')+'::'+String(name||'').trim().toLowerCase().replace(/[^a-zа-я0-9]+/gi,'-').replace(/^-+|-+$/g,'');
+}
+function getCurrentOrganizationKey(user){
+  var u = user || CU || null;
+  if(isOwnerUser(u) && u && u.company) return _normalizeOrgKey(u.company);
+  if(u && u.company) return _normalizeOrgKey(u.company);
+  var rest = getCurrentRestMeta && getCurrentRestMeta();
+  if(rest && rest.brandName) return _normalizeOrgKey(rest.brandName);
+  if(rest && rest.legalName) return _normalizeOrgKey(rest.legalName);
+  if(rest && rest.name) return _normalizeOrgKey(rest.name);
+  return 'default';
+}
+function getOrgLegalEntityNames(db, orgKey){
+  db = db || dbGet();
+  var allowedRestIds = CU && CU.role === 'owner'
+    ? (db.restaurants || []).filter(function(rest){ return rest.id !== 'r0'; }).map(function(rest){ return rest.id; })
+    : getUserScopedRestaurantIds(CU, db);
+  var names = [];
+  (db.restaurants || []).forEach(function(rest){
+    if(!rest || rest.id === 'r0') return;
+    if(allowedRestIds.indexOf(rest.id) < 0) return;
+    var legal = Array.isArray(rest.assignedLegalEntities) && rest.assignedLegalEntities.length
+      ? rest.assignedLegalEntities
+      : (rest.legalEntities && rest.legalEntities.length ? rest.legalEntities : (rest.legalName ? [rest.legalName] : []));
+    legal.forEach(function(name){
+      if(name && names.indexOf(name) < 0) names.push(name);
+    });
+  });
+  return _uniqList(names);
+}
+function getCurrentLegalEntityNames(){
+  var orderLegals = Array.isArray(_orderLegalEntityNames) && _orderLegalEntityNames.length ? _orderLegalEntityNames : [];
+  if(orderLegals.length) return _uniqList(orderLegals);
+  var tenderLegals = Array.isArray(_tenderLegalEntityNames) && _tenderLegalEntityNames.length ? _tenderLegalEntityNames : [];
+  if(tenderLegals.length) return _uniqList(tenderLegals);
+  var rest = getCurrentOrderRestaurantMeta ? getCurrentOrderRestaurantMeta() : null;
+  if(rest) return getRestLegalEntities(rest);
+  if(activeRest && activeRest.id && activeRest.id !== 'r0'){
+    var db = dbGet();
+    var rest2 = (db.restaurants || []).find(function(r){ return r.id === activeRest.id; });
+    if(rest2) return getRestLegalEntities(rest2);
+  }
+  return [];
+}
+function _getCurrentPriceScope(){
+  var legalNames = getCurrentLegalEntityNames();
+  var orgKey = getCurrentOrganizationKey(CU);
+  return {
+    organizationId: orgKey,
+    legalEntityNames: legalNames,
+    legalEntityIds: legalNames.map(function(name){ return _legalEntityId(orgKey, name); })
+  };
+}
+function _supplierImportLegalSelection(){
+  var ids = getSelectedSupPriceLegalIds ? getSelectedSupPriceLegalIds() : [];
+  var names = getSelectedSupPriceLegalNames ? getSelectedSupPriceLegalNames() : [];
+  if(!ids.length && _supPriceImportState && Array.isArray(_supPriceImportState.legalEntityIds) && _supPriceImportState.legalEntityIds.length){
+    ids = _supPriceImportState.legalEntityIds.slice();
+  }
+  if(!names.length && _supPriceImportState && Array.isArray(_supPriceImportState.legalEntityNames) && _supPriceImportState.legalEntityNames.length){
+    names = _supPriceImportState.legalEntityNames.slice();
+  }
+  return {
+    organizationId: getCurrentOrganizationKey(CU),
+    legalEntityIds: _uniqList(ids),
+    legalEntityNames: _uniqList(names)
+  };
+}
+function _supplierImportCaptureLegalState(){
+  var sel = _supplierImportLegalSelection();
+  _supPriceImportState.organizationId = sel.organizationId;
+  _supPriceImportState.legalEntityIds = sel.legalEntityIds.slice();
+  _supPriceImportState.legalEntityNames = sel.legalEntityNames.slice();
+  return sel;
+}
+function _supplierImportHasLegalSelection(){
+  var sel = _supplierImportLegalSelection();
+  return !!(sel.legalEntityIds.length || sel.legalEntityNames.length);
+}
+function _supplierImportPriceListId(supName, priceName, orgKey){
+  if(_supPriceImportState && _supPriceImportState.priceListId) return _supPriceImportState.priceListId;
+  var suffix = Math.random().toString(36).slice(2, 8);
+  var base = [
+    'plist',
+    _normalizeOrgKey(orgKey || getCurrentOrganizationKey(CU) || 'default'),
+    String(supName || '').trim().toLowerCase().replace(/[^a-zа-я0-9]+/gi,'-').replace(/^-+|-+$/g,''),
+    String(priceName || '').trim().toLowerCase().replace(/[^a-zа-я0-9]+/gi,'-').replace(/^-+|-+$/g,''),
+    String(Date.now()),
+    suffix
+  ].filter(Boolean).join('::');
+  _supPriceImportState.priceListId = base;
+  return base;
+}
+function _supplierImportCreateOrUpdateList(meta, extra){
+  extra = extra || {};
+  SUP_PRICE_LISTS = Array.isArray(SUP_PRICE_LISTS) ? SUP_PRICE_LISTS.slice() : [];
+  var now = new Date().toISOString();
+  var existingIdx = SUP_PRICE_LISTS.findIndex(function(list){ return list && list.id === meta.id; });
+  var rec = Object.assign({}, existingIdx >= 0 ? SUP_PRICE_LISTS[existingIdx] : {}, {
+    id: meta.id,
+    organizationId: meta.organizationId || '',
+    supplierName: meta.supplierName || '',
+    priceName: meta.priceName || '',
+    legalEntityIds: _uniqList(meta.legalEntityIds || []),
+    legalEntityNames: _uniqList(meta.legalEntityNames || []),
+    sourceFile: extra.sourceFile || '',
+    comment: extra.comment || '',
+    active: extra.active !== false,
+    uploadedAt: extra.uploadedAt || now,
+    updatedAt: now
+  });
+  if(existingIdx >= 0) SUP_PRICE_LISTS[existingIdx] = rec; else SUP_PRICE_LISTS.push(rec);
+  var selected = _uniqList(rec.legalEntityIds || []);
+  if(selected.length){
+    SUP_PRICE_LISTS = SUP_PRICE_LISTS.map(function(list){
+      if(!list || list.id === rec.id) return list;
+      if(_normalizeOrgKey(list.organizationId) !== _normalizeOrgKey(rec.organizationId)) return list;
+      if(String(list.supplierName || '').toLowerCase() !== String(rec.supplierName || '').toLowerCase()) return list;
+      var listIds = _uniqList(list.legalEntityIds || []);
+      var overlap = listIds.some(function(id){ return selected.indexOf(id) >= 0; });
+      if(!overlap) return list;
+      return Object.assign({}, list, { active: false, updatedAt: now });
+    });
+  }
+  return rec;
+}
+function _supplierImportSyncPriceListLegals(priceListId, organizationId, legalEntityIds, legalEntityNames){
+  var rows = [];
+  var ids = _uniqList(legalEntityIds);
+  var names = _uniqList(legalEntityNames);
+  ids.forEach(function(id, idx){
+    rows.push({
+      id: priceListId + '::' + id,
+      priceListId: priceListId,
+      organizationId: organizationId || '',
+      legalEntityId: id,
+      legalEntityName: names[idx] || names[0] || id
+    });
+  });
+  SUP_PRICE_LIST_LEGALS = (Array.isArray(SUP_PRICE_LIST_LEGALS) ? SUP_PRICE_LIST_LEGALS.filter(function(row){
+    return row && row.priceListId !== priceListId;
+  }) : []).concat(rows);
+  return rows;
+}
+function _supplierImportSyncPriceItems(priceListId, organizationId, rows){
+  var items = [];
+  (Array.isArray(rows) ? rows : []).forEach(function(row){
+    items.push({
+      id: priceListId + '::' + String(row.sourceRow || Date.now()),
+      priceListId: priceListId,
+      organizationId: organizationId || '',
+      productId: row.productId || '',
+      productName: row.name || '',
+      nameInPrice: row.name || '',
+      price: row.price1 || row.price || 0,
+      unitId: row.unit || '',
+      sourceRowNumber: row.sourceRow || 0,
+      rawData: row.rawRow || row.rawData || {}
+    });
+  });
+  SUP_PRICE_ITEMS = (Array.isArray(SUP_PRICE_ITEMS) ? SUP_PRICE_ITEMS.filter(function(row){
+    return row && row.priceListId !== priceListId;
+  }) : []).concat(items);
+  return items;
+}
 
 // ── СЛОВАРИ ПАРСЕРА И ПОИСКА ─────────────────────────────────
 
@@ -128,6 +300,9 @@ var UNIT_ALIASES = {
 let PRODUCTS   = [];
 let SUP_PRODS  = [];
 let SUPS_DATA  = [];
+let SUP_PRICE_LISTS = [];
+let SUP_PRICE_LIST_LEGALS = [];
+let SUP_PRICE_ITEMS = [];
 let ORDERS     = [];
 let TECH_CARDS = [];
 let ALL_SUPS   = [];
@@ -206,6 +381,24 @@ function dbLoad(callback){
           if(Array.isArray(d.products) && d.products.length > 0){
             PRODUCTS = d.products;
           }
+          if(Array.isArray(d.supplierPriceLists) && d.supplierPriceLists.length > 0){
+            SUP_PRICE_LISTS = d.supplierPriceLists;
+          }
+          if(Array.isArray(d.supplierPriceListLegals) && d.supplierPriceListLegals.length > 0){
+            SUP_PRICE_LIST_LEGALS = d.supplierPriceListLegals;
+          }
+          if(Array.isArray(d.supplierPriceItems) && d.supplierPriceItems.length > 0){
+            SUP_PRICE_ITEMS = d.supplierPriceItems;
+          }
+          if(Array.isArray(d.priceImportBatches) && d.priceImportBatches.length > 0){
+            window.priceImportBatches = d.priceImportBatches;
+          }
+          if(Array.isArray(d.priceImportItems) && d.priceImportItems.length > 0){
+            window.priceImportItems = d.priceImportItems;
+          }
+          if(Array.isArray(d.supplierImportTemplates) && d.supplierImportTemplates.length > 0){
+            window.supplierImportTemplates = d.supplierImportTemplates;
+          }
           if(Array.isArray(d.orders) && d.orders.length > 0){
             ORDERS = d.orders;
           }
@@ -229,6 +422,12 @@ function dbLoad(callback){
     if(Array.isArray(local.supProds)) SUP_PRODS = local.supProds;
     if(Array.isArray(local.supsData)) SUPS_DATA = local.supsData;
     if(Array.isArray(local.products)) PRODUCTS = local.products;
+    if(Array.isArray(local.supplierPriceLists)) SUP_PRICE_LISTS = local.supplierPriceLists;
+    if(Array.isArray(local.supplierPriceListLegals)) SUP_PRICE_LIST_LEGALS = local.supplierPriceListLegals;
+    if(Array.isArray(local.supplierPriceItems)) SUP_PRICE_ITEMS = local.supplierPriceItems;
+    if(Array.isArray(local.priceImportBatches)) window.priceImportBatches = local.priceImportBatches;
+    if(Array.isArray(local.priceImportItems)) window.priceImportItems = local.priceImportItems;
+    if(Array.isArray(local.supplierImportTemplates)) { _dbCache.supplierImportTemplates = local.supplierImportTemplates; window.supplierImportTemplates = local.supplierImportTemplates; }
     if(Array.isArray(local.orders))   ORDERS   = local.orders;
   if(Array.isArray(local.techCards)) TECH_CARDS = local.techCards;
     if(callback) callback();
@@ -239,6 +438,12 @@ function dbLoad(callback){
     if(Array.isArray(local.supProds)) SUP_PRODS = local.supProds;
     if(Array.isArray(local.supsData)) SUPS_DATA = local.supsData;
     if(Array.isArray(local.products)) PRODUCTS = local.products;
+    if(Array.isArray(local.supplierPriceLists)) SUP_PRICE_LISTS = local.supplierPriceLists;
+    if(Array.isArray(local.supplierPriceListLegals)) SUP_PRICE_LIST_LEGALS = local.supplierPriceListLegals;
+    if(Array.isArray(local.supplierPriceItems)) SUP_PRICE_ITEMS = local.supplierPriceItems;
+    if(Array.isArray(local.priceImportBatches)) window.priceImportBatches = local.priceImportBatches;
+    if(Array.isArray(local.priceImportItems)) window.priceImportItems = local.priceImportItems;
+    if(Array.isArray(local.supplierImportTemplates)) { _dbCache.supplierImportTemplates = local.supplierImportTemplates; window.supplierImportTemplates = local.supplierImportTemplates; }
     if(Array.isArray(local.orders))   ORDERS   = local.orders;
     if(callback) callback();
   };
@@ -289,9 +494,14 @@ function dbSet(d){
   d.supProds = SUP_PRODS;
   d.supsData = SUPS_DATA;
   d.products = PRODUCTS;
+  d.supplierPriceLists = SUP_PRICE_LISTS;
+  d.supplierPriceListLegals = SUP_PRICE_LIST_LEGALS;
+  d.supplierPriceItems = SUP_PRICE_ITEMS;
+  d.supplierImportTemplates = Array.isArray(window.supplierImportTemplates) ? window.supplierImportTemplates : (Array.isArray(d.supplierImportTemplates) ? d.supplierImportTemplates : []);
+  d.priceImportBatches = Array.isArray(window.priceImportBatches) ? window.priceImportBatches : (Array.isArray(d.priceImportBatches) ? d.priceImportBatches : []);
+  d.priceImportItems = Array.isArray(window.priceImportItems) ? window.priceImportItems : (Array.isArray(d.priceImportItems) ? d.priceImportItems : []);
   d.orders   = ORDERS;
   d.techCards = TECH_CARDS;
-  if(!Array.isArray(d.supplierImportTemplates)) d.supplierImportTemplates = [];
   _dbCache = d;
   try{ localStorage.setItem('pv_cache', JSON.stringify(d)); }catch(e){}
   _writeToFirebase(d, null);
@@ -314,6 +524,11 @@ function _getDefaults(){
        status:'blocked',ev:false,created:'2026-01-01',bootstrapOnly:true}
     ],
     restaurants:[],
+    supplierPriceLists:[],
+    supplierPriceListLegals:[],
+    supplierPriceItems:[],
+    priceImportBatches:[],
+    priceImportItems:[],
     orgInvites:[],
     audit:[{ts:new Date().toLocaleString('ru'),user:'Система',
             action:'Инициализация',page:'-'}],
@@ -1618,6 +1833,7 @@ function renderSuppliers(){
 
     // Кнопки загрузки прайса — для всех пользователей
     var priceBtns=canManagePrices?'<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--br);">'
+      +'<button onclick="openSupPriceLists(\''+s.name+'\')" style="flex:1;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;font-weight:600;">Прайсы</button>'
       +'<button onclick="deleteSupPrice(\''+s.name+'\')" style="flex:1;background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;">Удалить прайс</button>'
       +'<button onclick="openSupPriceUpload(\''+s.name+'\',false)" style="flex:1;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;font-weight:600;">Основной прайс</button>'
       +'<button onclick="openSupPriceUpload(\''+s.name+'\',true)" style="flex:1;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;">+ Доп.прайс</button>'
@@ -4145,6 +4361,12 @@ function savePriceData(){
   d.supProds = SUP_PRODS;
   d.supsData = SUPS_DATA;
   d.products = PRODUCTS;
+  d.supplierPriceLists = SUP_PRICE_LISTS;
+  d.supplierPriceListLegals = SUP_PRICE_LIST_LEGALS;
+  d.supplierPriceItems = SUP_PRICE_ITEMS;
+  d.supplierImportTemplates = Array.isArray(window.supplierImportTemplates) ? window.supplierImportTemplates : (Array.isArray(d.supplierImportTemplates) ? d.supplierImportTemplates : []);
+  d.priceImportBatches = Array.isArray(window.priceImportBatches) ? window.priceImportBatches : (Array.isArray(d.priceImportBatches) ? d.priceImportBatches : []);
+  d.priceImportItems = Array.isArray(window.priceImportItems) ? window.priceImportItems : (Array.isArray(d.priceImportItems) ? d.priceImportItems : []);
   dbSet(d);
 }
 
@@ -4883,18 +5105,25 @@ function downloadTenderTemplate(){ downloadPriceTemplate(); }
 function downloadCatalogTemplate(){ downloadPriceTemplate(); }
 function downloadSupTemplate(){ downloadPriceTemplate(); }
 
-function _supPriceTemplateStorageKey(supName){
-  return 'pv_sup_price_templates_' + String(supName || '').toLowerCase().trim();
+function _supPriceTemplateStorageKey(supName, orgKey){
+  var supplierKey = String(supName || '').toLowerCase().trim();
+  var org = _normalizeOrgKey(orgKey || getCurrentOrganizationKey(CU) || '');
+  if(org) return 'pv_sup_price_templates_' + org + '_' + supplierKey;
+  return 'pv_sup_price_templates_' + supplierKey;
 }
 
 function _saveSupPriceTemplate(supName, template){
   if(!supName || !template) return;
-  var key = _supPriceTemplateStorageKey(supName);
+  var orgKey = _normalizeOrgKey(template.organizationId || getCurrentOrganizationKey(CU) || '');
+  var key = _supPriceTemplateStorageKey(supName, orgKey);
   var next = Object.assign({}, template, {
     nameCols: Array.isArray(template.nameCols) ? template.nameCols.slice() : (template.nameCol >= 0 ? [template.nameCol] : []),
     unitCols: Array.isArray(template.unitCols) ? template.unitCols.slice() : (template.unitCol >= 0 ? [template.unitCol] : []),
     priceCols: Array.isArray(template.priceCols) ? template.priceCols.slice() : (template.priceCol >= 0 ? [template.priceCol] : []),
     price2Cols: Array.isArray(template.price2Cols) ? template.price2Cols.slice() : (template.priceCol2 >= 0 ? [template.priceCol2] : []),
+    legalEntityIds: Array.isArray(template.legalEntityIds) ? template.legalEntityIds.slice() : [],
+    legalEntityNames: Array.isArray(template.legalEntityNames) ? template.legalEntityNames.slice() : [],
+    organizationId: orgKey,
     headerRow: typeof template.headerRow === 'number' ? template.headerRow : parseInt(template.headerRow, 10) || 0
   });
   try{
@@ -4912,6 +5141,7 @@ function _saveSupPriceTemplate(supName, template){
     var dbNext = Object.assign({}, next, {
       id: key,
       supplierName: supName,
+      organizationId: orgKey,
       updatedAt: new Date().toISOString()
     });
     var idx = db.supplierImportTemplates.findIndex(function(item){ return item && item.id === key; });
@@ -4923,11 +5153,21 @@ function _saveSupPriceTemplate(supName, template){
 
 function _loadSupPriceTemplate(supName){
   if(!supName) return null;
+  var orgKey = _normalizeOrgKey(getCurrentOrganizationKey(CU) || '');
   try{
     var db = dbGet();
     if(db && Array.isArray(db.supplierImportTemplates)){
-      var key = _supPriceTemplateStorageKey(supName);
+      var key = _supPriceTemplateStorageKey(supName, orgKey);
       var found = db.supplierImportTemplates.find(function(item){ return item && item.id === key; });
+      if(!found && orgKey){
+        found = db.supplierImportTemplates.find(function(item){
+          return item && item.supplierName === supName && _normalizeOrgKey(item.organizationId || '') === orgKey;
+        });
+      }
+      if(!found){
+        var legacyKey = _supPriceTemplateStorageKey(supName, '');
+        found = db.supplierImportTemplates.find(function(item){ return item && item.id === legacyKey; });
+      }
       if(found) return {
         sheetName: found.sheetName || '',
         headerRow: parseInt(found.headerRow, 10) || 0,
@@ -4936,13 +5176,16 @@ function _loadSupPriceTemplate(supName){
         unitCols: Array.isArray(found.unitCols) ? found.unitCols.slice() : (found.unitCol >= 0 ? [found.unitCol] : []),
         priceCols: Array.isArray(found.priceCols) ? found.priceCols.slice() : (found.priceCol >= 0 ? [found.priceCol] : []),
         price2Cols: Array.isArray(found.price2Cols) ? found.price2Cols.slice() : (found.priceCol2 >= 0 ? [found.priceCol2] : []),
+        legalEntityIds: Array.isArray(found.legalEntityIds) ? found.legalEntityIds.slice() : [],
+        legalEntityNames: Array.isArray(found.legalEntityNames) ? found.legalEntityNames.slice() : [],
         skipRules: found.skipRules || {},
-        supplierName: found.supplierName || supName
+        supplierName: found.supplierName || supName,
+        organizationId: found.organizationId || orgKey
       };
     }
   }catch(e){}
   try{
-    var raw = localStorage.getItem(_supPriceTemplateStorageKey(supName));
+    var raw = localStorage.getItem(_supPriceTemplateStorageKey(supName, orgKey)) || localStorage.getItem(_supPriceTemplateStorageKey(supName, ''));
     if(!raw) return null;
     var parsed = JSON.parse(raw);
     return {
@@ -4953,8 +5196,11 @@ function _loadSupPriceTemplate(supName){
       unitCols: Array.isArray(parsed.unitCols) ? parsed.unitCols.slice() : (parsed.unitCol >= 0 ? [parsed.unitCol] : []),
       priceCols: Array.isArray(parsed.priceCols) ? parsed.priceCols.slice() : (parsed.priceCol >= 0 ? [parsed.priceCol] : []),
       price2Cols: Array.isArray(parsed.price2Cols) ? parsed.price2Cols.slice() : (parsed.priceCol2 >= 0 ? [parsed.priceCol2] : []),
+      legalEntityIds: Array.isArray(parsed.legalEntityIds) ? parsed.legalEntityIds.slice() : [],
+      legalEntityNames: Array.isArray(parsed.legalEntityNames) ? parsed.legalEntityNames.slice() : [],
       skipRules: parsed.skipRules || {},
-      supplierName: parsed.supplierName || supName
+      supplierName: parsed.supplierName || supName,
+      organizationId: parsed.organizationId || orgKey
     };
   }catch(e){
     return null;
@@ -5165,21 +5411,24 @@ function openSupPriceUpload(supName, append){
   if(nameEl) nameEl.textContent = supName;
   var priceNameEl = document.getElementById('supPriceName');
   if(priceNameEl) priceNameEl.value = '';
-  var db = dbGet();
-  var users = (db.users||[]).filter(function(u){
-    return u.status==='active' && u.role!=='supplier';
-  });
+  var legalOptions = getPriceImportLegalOptions();
   var listEl = document.getElementById('supPriceCompList');
   if(listEl){
-    listEl.innerHTML = users.length ? users.map(function(u){
-      var rd=ROLES[u.role]||{label:u.role};
+    listEl.innerHTML = legalOptions.length ? legalOptions.map(function(opt){
       return '<label style="display:flex;align-items:center;gap:10px;padding:6px 4px;cursor:pointer;">'
-        +'<input type="checkbox" class="sup-price-comp-cb" value="'+u.id+'" data-company="'+(u.company||'')+'" checked '
+        +'<input type="checkbox" class="sup-price-legal-cb" value="'+opt.id+'" data-name="'+opt.name.replace(/"/g,'&quot;')+'" data-org="'+opt.orgKey+'" checked '
         +'style="width:16px;height:16px;cursor:pointer;accent-color:var(--ac);">'
-        +'<div><div style="font-size:13px;font-weight:600;">'+u.first+' '+u.last+'</div>'
-        +'<div style="font-size:11px;color:var(--t3);">'+(u.company||'—')+' — '+rd.label+'</div></div></label>';
-    }).join('') : '<div style="color:var(--t3);padding:8px;font-size:12px;">Нет пользователей</div>';
+        +'<div><div style="font-size:13px;font-weight:600;">'+opt.name+'</div>'
+        +'<div style="font-size:11px;color:var(--t3);">'+(opt.orgName||'Организация')+' · '+opt.id+'</div></div></label>';
+    }).join('') : '<div style="color:var(--t3);padding:8px;font-size:12px;">Нет доступных юр. лиц</div>';
+    var tpl = _loadSupPriceTemplate(supName);
+    if(tpl && Array.isArray(tpl.legalEntityIds) && tpl.legalEntityIds.length){
+      listEl.querySelectorAll('.sup-price-legal-cb').forEach(function(cb){
+        cb.checked = tpl.legalEntityIds.indexOf(cb.value) >= 0;
+      });
+    }
   }
+  _supplierImportCaptureLegalState();
   var fi=document.getElementById('supPriceFile'); if(fi)fi.value='';
   var err=document.getElementById('supPriceErr'); if(err)err.textContent='';
   _supPriceImportBook = null;
@@ -5196,13 +5445,29 @@ function openSupPriceUpload(supName, append){
 }
 
 function selectAllSupPriceComps(val){
-  document.querySelectorAll('.sup-price-comp-cb').forEach(function(cb){cb.checked=val;});
+  selectAllSupPriceLegals(val);
 }
 
 
 function canSeePrices(product){
   if(!CU)return false;
   if(CU.role==='owner'||CU.role==='admin'||CU.role==='supplier')return true;
+  if(product && product.priceListActive === false) return false;
+
+  var scope = _getCurrentPriceScope();
+  var prodOrg = _normalizeOrgKey(product && (product.organizationId || product.organization_id || product.organization || ''));
+  if(prodOrg && scope.organizationId && prodOrg !== scope.organizationId && !isOwnerUser(CU) && CU.role !== 'admin'){
+    return false;
+  }
+  var prodLegalIds = _uniqList(product && (product.legalEntityIds || product.legal_entity_ids || product.legalEntities || []));
+  if(prodLegalIds.length){
+    var contextIds = _uniqList(scope.legalEntityIds);
+    if(contextIds.length){
+      var legalMatch = prodLegalIds.some(function(id){ return contextIds.indexOf(id) >= 0; });
+      if(!legalMatch) return false;
+    }
+  }
+
   if(product.allowedUserIds&&product.allowedUserIds.length>0){
     if(product.allowedUserIds.indexOf(CU.id)>=0)return true;
   }
@@ -5368,8 +5633,23 @@ function quickSelect(){}
 function deleteSupPrice(supName) {
   if(!confirm('Удалить все прайсы поставщика «'+supName+'»?'))return;
   var before=SUP_PRODS.length;
+  var orgKey = getCurrentOrganizationKey(CU);
+  var removedPriceListIds = (SUP_PRICE_LISTS || []).filter(function(list){
+    return String(list.supplierName || '').toLowerCase() === String(supName || '').toLowerCase()
+      && _normalizeOrgKey(list.organizationId || '') === _normalizeOrgKey(orgKey);
+  }).map(function(list){ return list.id; });
   SUP_PRODS=SUP_PRODS.filter(function(p){
     return !(p._supplier===supName||p.supplier===supName);
+  });
+  SUP_PRICE_ITEMS = (SUP_PRICE_ITEMS || []).filter(function(item){
+    return removedPriceListIds.indexOf(item.priceListId) < 0;
+  });
+  SUP_PRICE_LIST_LEGALS = (SUP_PRICE_LIST_LEGALS || []).filter(function(row){
+    return removedPriceListIds.indexOf(row.priceListId) < 0;
+  });
+  SUP_PRICE_LISTS = (SUP_PRICE_LISTS || []).filter(function(list){
+    return String(list.supplierName || '').toLowerCase() !== String(supName || '').toLowerCase()
+      || _normalizeOrgKey(list.organizationId || '') !== _normalizeOrgKey(orgKey);
   });
   // Убрать поставщика из каталога
   PRODUCTS.forEach(function(p){
@@ -6919,12 +7199,15 @@ function getCanonicalName(name) {
 // ── ЗАПОМИНАНИЕ СТРУКТУРЫ ПРАЙСА ─────────────────────────────
 
 function rememberPriceLayout(supName, layout) {
-  _priceLayoutMemory[supName] = {
+  var orgKey = _normalizeOrgKey((layout && layout.organizationId) || getCurrentOrganizationKey(CU) || '');
+  var memoryKey = orgKey ? (orgKey + '::' + String(supName || '').toLowerCase().trim()) : String(supName || '').toLowerCase().trim();
+  _priceLayoutMemory[memoryKey] = {
     nameCols:  Array.isArray(layout.nameCols) ? layout.nameCols.slice() : (layout.nameCol >= 0 ? [layout.nameCol] : []),
     unitCols:  Array.isArray(layout.unitCols) ? layout.unitCols.slice() : (layout.unitCol >= 0 ? [layout.unitCol] : []),
     priceCols: Array.isArray(layout.priceCols) ? layout.priceCols.slice() : (layout.priceCol >= 0 ? [layout.priceCol] : []),
     price2Cols:Array.isArray(layout.price2Cols) ? layout.price2Cols.slice() : (layout.priceCol2 >= 0 ? [layout.priceCol2] : []),
     headerRow: layout.headerRow,
+    organizationId: orgKey,
     savedAt:   new Date().toISOString()
   };
   // Сохранить в localStorage
@@ -6934,7 +7217,10 @@ function rememberPriceLayout(supName, layout) {
 }
 
 function recallPriceLayout(supName) {
+  var orgKey = _normalizeOrgKey(getCurrentOrganizationKey(CU) || '');
+  var memoryKey = orgKey ? (orgKey + '::' + String(supName || '').toLowerCase().trim()) : String(supName || '').toLowerCase().trim();
   // Попробовать из памяти
+  if(_priceLayoutMemory[memoryKey]) return _priceLayoutMemory[memoryKey];
   if(_priceLayoutMemory[supName]) return _priceLayoutMemory[supName];
   // Попробовать из localStorage
   try {
@@ -6942,6 +7228,7 @@ function recallPriceLayout(supName) {
     if(stored) {
       var parsed = JSON.parse(stored);
       _priceLayoutMemory = parsed;
+      if(parsed[memoryKey]) return parsed[memoryKey];
       if(parsed[supName]) return parsed[supName];
     }
   } catch(e) {}
@@ -7440,6 +7727,7 @@ function _scoreMatch(productName, keyword) {
 function _findBestForSupplier(keyword, supName) {
   var best = {item: null, score: 0};
   var keywords = [keyword];
+  var scopedCandidates = [];
 
   // Добавить синонимы
   if(typeof PRODUCT_SYNONYMS !== 'undefined') {
@@ -7472,13 +7760,22 @@ function _findBestForSupplier(keyword, supName) {
     if(maxScore > best.score) {
       best = { item: p, score: maxScore, price: price };
     }
+    scopedCandidates.push(p);
   });
+
+  if(scopedCandidates.length) return best.score > 0 ? best : null;
 
   // Поиск по PRODUCTS этого поставщика
   PRODUCTS.forEach(function(p) {
     var sup = (p.suppliers||[]).find(function(s){ return s.name===supName; });
     if(!sup || !sup.price) return;
-    if(!canSeePrices({allowedCompanies:p.allowedCompanies,allowedUserIds:p.allowedUserIds})) return;
+    if(!canSeePrices({
+      organizationId: p.organizationId,
+      legalEntityIds: p.legalEntityIds,
+      legalEntityNames: p.legalEntityNames,
+      allowedCompanies:p.allowedCompanies,
+      allowedUserIds:p.allowedUserIds
+    })) return;
 
     var maxScore = 0;
     keywords.forEach(function(kw) {
@@ -7901,6 +8198,95 @@ function filterOrderSupList(val){ _renderOrderSupList(val); }
 
 function selectAllOrderSups(val){
   document.querySelectorAll('.co-sup-cb').forEach(function(cb){ cb.checked = val; });
+}
+
+function getPriceImportLegalOptions(){
+  var db = dbGet();
+  var scopeKey = getCurrentOrganizationKey(CU);
+  var map = {};
+  var legalByName = [];
+  (db.restaurants || []).forEach(function(rest){
+    if(!rest || rest.id === 'r0') return;
+    if(CU && CU.role !== 'owner' && CU.role !== 'admin'){
+      var allowedIds = getUserScopedRestaurantIds(CU, db);
+      if(allowedIds.indexOf(rest.id) < 0) return;
+    }
+    var legalNames = getRestLegalEntities(rest);
+    legalNames.forEach(function(name){
+      var key = _legalEntityId(scopeKey, name);
+      if(!map[key]){
+        map[key] = true;
+        legalByName.push({
+          id: key,
+          name: name,
+          orgKey: scopeKey,
+          orgName: rest.brandName || rest.legalName || rest.name || ''
+        });
+      }
+    });
+  });
+  return legalByName;
+}
+
+function getSelectedSupPriceLegalIds(){
+  var ids = [];
+  document.querySelectorAll('.sup-price-legal-cb:checked').forEach(function(cb){
+    if(cb.value && ids.indexOf(cb.value) < 0) ids.push(cb.value);
+  });
+  return ids;
+}
+
+function getSelectedSupPriceLegalNames(){
+  var names = [];
+  document.querySelectorAll('.sup-price-legal-cb:checked').forEach(function(cb){
+    var name = cb.dataset.name || cb.value || '';
+    if(name && names.indexOf(name) < 0) names.push(name);
+  });
+  return names;
+}
+
+function selectAllSupPriceLegals(val){
+  document.querySelectorAll('.sup-price-legal-cb').forEach(function(cb){ cb.checked = val; });
+  _supplierImportCaptureLegalState();
+}
+
+function openSupPriceLists(supName){
+  var orgKey = getCurrentOrganizationKey(CU);
+  var lists = (SUP_PRICE_LISTS || []).filter(function(list){
+    if(!list) return false;
+    if(String(list.supplierName || '').toLowerCase() !== String(supName || '').toLowerCase()) return false;
+    return _normalizeOrgKey(list.organizationId || '') === _normalizeOrgKey(orgKey);
+  });
+  var body = document.getElementById('supplierPriceListsBody');
+  var title = document.getElementById('supplierPriceListsTitle');
+  var hint = document.getElementById('supplierPriceListsHint');
+  if(title) title.textContent = 'Прайсы поставщика: ' + supName;
+  if(hint) hint.textContent = 'Организация: ' + (orgKey || 'default') + ' · только прайсы текущей организации';
+  if(body){
+    if(!lists.length){
+      body.innerHTML = '<div style="padding:16px;color:var(--t3);font-size:12px;">Для этого поставщика пока нет сохранённых прайсов.</div>';
+    }else{
+      body.innerHTML = '<div style="overflow:auto;max-height:360px;"><table style="width:100%;border-collapse:collapse;">'
+        + '<thead><tr style="background:var(--bg3);">'
+        + '<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Прайс</th>'
+        + '<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Юр. лица</th>'
+        + '<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Дата</th>'
+        + '<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Статус</th>'
+        + '</tr></thead><tbody>'
+        + lists.map(function(list){
+          var legalText = _uniqList(list.legalEntityNames || []).join(' · ') || '—';
+          var status = list.active ? '<span class="badge bg">Активен</span>' : '<span class="badge bgr">Архив</span>';
+          return '<tr>'
+            + '<td style="padding:10px 12px;border-bottom:1px solid var(--br);"><b>'+_esc(list.priceName || 'Прайс')+'</b><div style="font-size:11px;color:var(--t3);margin-top:3px;">'+_esc(list.sourceFile || '')+'</div></td>'
+            + '<td style="padding:10px 12px;border-bottom:1px solid var(--br);font-size:12px;color:var(--t2);">'+_esc(legalText)+'</td>'
+            + '<td style="padding:10px 12px;border-bottom:1px solid var(--br);font-size:12px;color:var(--t2);">'+_esc(String(list.uploadedAt || '').replace('T', ' ').slice(0, 16))+'</td>'
+            + '<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+status+'</td>'
+          + '</tr>';
+        }).join('')
+        + '</tbody></table></div>';
+    }
+  }
+  openModal('supplierPriceLists');
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -8657,7 +9043,12 @@ var _supPriceImportState = {
   dataStartRow: 1,
   mapping: { name: [], unit: [], price: [], price2: [] },
   parsedRows: [],
-  template: null
+  template: null,
+  organizationId: '',
+  legalEntityIds: [],
+  legalEntityNames: [],
+  priceListId: '',
+  priceListName: ''
 };
 
 function _excelColLabel(idx){
@@ -8682,7 +9073,12 @@ function _supplierImportResetState(){
     dataStartRow: 1,
     mapping: { name: [], unit: [], price: [], price2: [] },
     parsedRows: [],
-    template: null
+    template: null,
+    organizationId: '',
+    legalEntityIds: [],
+    legalEntityNames: [],
+    priceListId: '',
+    priceListName: ''
   };
   _mcmRows = [];
   _mcmLayout = null;
@@ -9082,10 +9478,16 @@ function applyManualColumnMapAndSave(){
 }
 
 function saveCurrentSupPriceTemplate(){
+  _supplierImportCaptureLegalState();
   var mapping = syncMcmRolesFromPreview() || _supPriceImportState.mapping || { name: [], unit: [], price: [], price2: [] };
   if(!mapping.name.length || !mapping.price.length){
     var err = document.getElementById('mcm-err');
     if(err) err.textContent = 'Сначала назначьте обязательные колонки: наименование и цена.';
+    return;
+  }
+  if(!_supplierImportHasLegalSelection()){
+    var err2 = document.getElementById('mcm-err');
+    if(err2) err2.textContent = 'Выберите хотя бы одно юр. лицо для этого прайса.';
     return;
   }
   _saveSupPriceTemplate(_currentSupName, {
@@ -9096,6 +9498,8 @@ function saveCurrentSupPriceTemplate(){
     unitCols: (mapping.unit || []).slice(),
     priceCols: (mapping.price || []).slice(),
     price2Cols: (mapping.price2 || []).slice(),
+    legalEntityIds: (_supPriceImportState.legalEntityIds || []).slice(),
+    legalEntityNames: (_supPriceImportState.legalEntityNames || []).slice(),
     skipRules: { dropEmpty: true, requirePrice: true }
   });
   toast('Шаблон импорта сохранён', 'ok');
@@ -9194,6 +9598,11 @@ function priceAddRow(){
 }
 
 function processSupPriceRows(rows, cols, supName, append, priceName, allowedUserIds){
+  var priceScope = _supplierImportCaptureLegalState();
+  if(!_supplierImportHasLegalSelection()){
+    toast('Выберите хотя бы одно юр. лицо для прайса','err');
+    return { added: 0, updated: 0, skipped: Array.isArray(rows) ? rows.length : 0, needsReview: 0, error: 'legal_entities_required' };
+  }
   var allowedCompanies = [];
   document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
     var co = cb.dataset.company;
@@ -9211,6 +9620,16 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
       return !(p._supplier === supName && (p._priceName === priceName || !p._priceName));
     });
   }
+  var priceList = _supplierImportCreateOrUpdateList(
+    _supplierImportPriceListId(supName, priceName, priceScope.organizationId),
+    {
+      sourceFile: _supPriceImportState.fileName || '',
+      active: true
+    }
+  );
+  _supPriceImportState.priceListId = priceList.id;
+  _supPriceImportState.priceListName = priceList.priceName;
+  _supplierImportSyncPriceListLegals(priceList.id, priceList.organizationId, priceList.legalEntityIds, priceList.legalEntityNames);
 
   var items = Array.isArray(rows) ? rows : [];
   var added = 0, updated = 0, skipped = 0, needsReview = [];
@@ -9266,6 +9685,13 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
       supplier: supName,
       _supplier: supName,
       _priceName: priceName,
+      organizationId: priceScope.organizationId,
+      priceListId: priceList.id,
+      priceListName: priceList.priceName,
+      priceListActive: true,
+      legalEntityIds: priceList.legalEntityIds.slice(),
+      legalEntityNames: priceList.legalEntityNames.slice(),
+      sourceFile: _supPriceImportState.fileName || '',
       pKg: pKg,
       pSh: pSh,
       pL: pL,
@@ -9287,8 +9713,19 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
     });
     if(prodIdx >= 0){
       var spIdx = PRODUCTS[prodIdx].suppliers.findIndex(function(s){ return s.name === supName; });
-      if(spIdx >= 0) PRODUCTS[prodIdx].suppliers[spIdx].price = price;
-      else PRODUCTS[prodIdx].suppliers.push({ name: supName, price: price });
+      var supObj = {
+        name: supName,
+        price: price,
+        organizationId: priceScope.organizationId,
+        priceListId: priceList.id,
+        priceListName: priceList.priceName,
+        legalEntityIds: priceList.legalEntityIds.slice(),
+        legalEntityNames: priceList.legalEntityNames.slice(),
+        sourceFile: _supPriceImportState.fileName || '',
+        active: true
+      };
+      if(spIdx >= 0) PRODUCTS[prodIdx].suppliers[spIdx] = Object.assign({}, PRODUCTS[prodIdx].suppliers[spIdx], supObj);
+      else PRODUCTS[prodIdx].suppliers.push(supObj);
       PRODUCTS[prodIdx].unit = PRODUCTS[prodIdx].unit || normUnit;
     } else {
       PRODUCTS.push({
@@ -9309,6 +9746,17 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
       if(ALL_SUPS.indexOf(supName) < 0) ALL_SUPS.push(supName);
     }
   });
+
+  _supplierImportSyncPriceItems(priceList.id, priceScope.organizationId, items.map(function(row, idx){
+    return {
+      sourceRow: row && row.sourceRow ? row.sourceRow : (idx + 1),
+      name: row && row.name ? String(row.name).trim() : '',
+      unit: row && row.unit ? String(row.unit).trim() : '',
+      price1: row && row.price1 ? row.price1 : 0,
+      price2: row && row.price2 ? row.price2 : 0,
+      rawRow: row && row.rawRow ? row.rawRow : []
+    };
+  }));
 
   rememberPriceLayout(supName, {
     headerRow: Math.max(0, (_supPriceImportState.dataStartRow || 1) - 1),
@@ -9338,6 +9786,11 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
 }
 
 function _saveSupplierImportRowsDirect(rows, supName, append, priceName, allowedUserIds){
+  var priceScope = _supplierImportCaptureLegalState();
+  if(!_supplierImportHasLegalSelection()){
+    toast('Выберите хотя бы одно юр. лицо для прайса','err');
+    return { added: 0, updated: 0, skipped: Array.isArray(rows) ? rows.length : 0, needsReview: 0, error: 'legal_entities_required' };
+  }
   var allowedCompanies = [];
   document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
     var co = cb.dataset.company;
@@ -9355,6 +9808,16 @@ function _saveSupplierImportRowsDirect(rows, supName, append, priceName, allowed
       return !(p._supplier === supName && (p._priceName === priceName || !p._priceName));
     });
   }
+  var priceList = _supplierImportCreateOrUpdateList(
+    _supplierImportPriceListId(supName, priceName, priceScope.organizationId),
+    {
+      sourceFile: _supPriceImportState.fileName || '',
+      active: true
+    }
+  );
+  _supPriceImportState.priceListId = priceList.id;
+  _supPriceImportState.priceListName = priceList.priceName;
+  _supplierImportSyncPriceListLegals(priceList.id, priceList.organizationId, priceList.legalEntityIds, priceList.legalEntityNames);
 
   var added = 0;
   var updated = 0;
@@ -9392,6 +9855,13 @@ function _saveSupplierImportRowsDirect(rows, supName, append, priceName, allowed
       supplier: supName,
       _supplier: supName,
       _priceName: priceName,
+      organizationId: priceScope.organizationId,
+      priceListId: priceList.id,
+      priceListName: priceList.priceName,
+      priceListActive: true,
+      legalEntityIds: priceList.legalEntityIds.slice(),
+      legalEntityNames: priceList.legalEntityNames.slice(),
+      sourceFile: _supPriceImportState.fileName || '',
       pKg: pKg,
       pSh: pSh,
       pL: pL,
@@ -9413,8 +9883,19 @@ function _saveSupplierImportRowsDirect(rows, supName, append, priceName, allowed
     });
     if(prodIdx >= 0){
       var spIdx = PRODUCTS[prodIdx].suppliers.findIndex(function(s){ return s.name === supName; });
-      if(spIdx >= 0) PRODUCTS[prodIdx].suppliers[spIdx].price = price;
-      else PRODUCTS[prodIdx].suppliers.push({ name: supName, price: price });
+      var supObj = {
+        name: supName,
+        price: price,
+        organizationId: priceScope.organizationId,
+        priceListId: priceList.id,
+        priceListName: priceList.priceName,
+        legalEntityIds: priceList.legalEntityIds.slice(),
+        legalEntityNames: priceList.legalEntityNames.slice(),
+        sourceFile: _supPriceImportState.fileName || '',
+        active: true
+      };
+      if(spIdx >= 0) PRODUCTS[prodIdx].suppliers[spIdx] = Object.assign({}, PRODUCTS[prodIdx].suppliers[spIdx], supObj);
+      else PRODUCTS[prodIdx].suppliers.push(supObj);
       PRODUCTS[prodIdx].unit = PRODUCTS[prodIdx].unit || normUnit;
     } else {
       PRODUCTS.push({
@@ -9436,6 +9917,17 @@ function _saveSupplierImportRowsDirect(rows, supName, append, priceName, allowed
     }
   });
 
+  _supplierImportSyncPriceItems(priceList.id, priceScope.organizationId, items.map(function(row, idx){
+    return {
+      sourceRow: row && row.sourceRow ? row.sourceRow : (idx + 1),
+      name: row && row.name ? String(row.name).trim() : '',
+      unit: row && row.unit ? String(row.unit).trim() : '',
+      price1: row && row.price1 ? row.price1 : 0,
+      price2: row && row.price2 ? row.price2 : 0,
+      rawRow: row && row.rawRow ? row.rawRow : []
+    };
+  }));
+
   if(added > 0 || updated > 0){
     savePriceData();
     renderSupProducts();
@@ -9451,6 +9943,7 @@ function priceSaveEdited(){
   var startRowInput = document.getElementById('mcm-start-row');
   _supPriceImportState.dataStartRow = Math.max(1, parseInt((startRowInput || { value: '1' }).value, 10) || 1);
   syncMcmRolesFromPreview();
+  _supplierImportCaptureLegalState();
   _supplierImportRenderParsedPreview();
 
   var validRows = _priceEditRows.filter(function(r){
@@ -9480,6 +9973,12 @@ function priceSaveEdited(){
     return;
   }
   try{
+    if(!_supplierImportHasLegalSelection()){
+      toast('Выберите хотя бы одно юр. лицо для прайса','err');
+      var legalErr = document.getElementById('mcm-err');
+      if(legalErr) legalErr.textContent = 'Выберите хотя бы одно юр. лицо для прайса.';
+      return;
+    }
     _saveSupPriceTemplate(ctx.supName, {
       sheetName: _supPriceImportState.sheetName || '',
       headerRow: Math.max(0, (_supPriceImportState.dataStartRow || 1) - 1),
@@ -9488,6 +9987,8 @@ function priceSaveEdited(){
       unitCols: (_supPriceImportState.mapping.unit || []).slice(),
       priceCols: (_supPriceImportState.mapping.price || []).slice(),
       price2Cols: (_supPriceImportState.mapping.price2 || []).slice(),
+      legalEntityIds: (_supPriceImportState.legalEntityIds || []).slice(),
+      legalEntityNames: (_supPriceImportState.legalEntityNames || []).slice(),
       skipRules: { dropEmpty: true, requirePrice: true }
     });
 

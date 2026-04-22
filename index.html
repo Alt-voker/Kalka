@@ -1224,11 +1224,11 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
     style="width:100%;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);
            padding:8px;color:var(--tx);font-size:12px;box-sizing:border-box;margin-bottom:12px;">
 
-  <!-- Доступ к ценам -->
+  <!-- Юр. лица прайса -->
   <div style="font-size:11px;font-weight:700;color:var(--t3);margin-bottom:6px;border-bottom:1px solid var(--br);padding-bottom:6px;">
-    Доступ к ценам
+    Юр. лица прайса
   </div>
-  <div style="font-size:11px;color:var(--t3);margin-bottom:8px;">Без галочки — пользователь видит ассортимент, но не цены</div>
+  <div style="font-size:11px;color:var(--t3);margin-bottom:8px;">Выберите одно или несколько юр. лиц, для которых действует этот прайс.</div>
   <div id="supPriceCompList" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;max-height:140px;overflow-y:auto;margin-bottom:6px;"></div>
   <div style="display:flex;gap:8px;margin-bottom:14px;">
     <button onclick="selectAllSupPriceComps(true)" style="font-size:11px;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:5px;padding:4px 10px;cursor:pointer;">Все</button>
@@ -1247,6 +1247,15 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
   <div class="m-acts">
     <button class="m-cancel" onclick="closeModal('supPriceUpload')">Закрыть</button>
     <button class="m-ok" id="supPriceUploadBtn" onclick="prepareSupPriceImportPreview()">📤 Открыть предпросмотр</button>
+  </div>
+</div></div>
+
+<div class="ov" id="ov-supplierPriceLists"><div class="modal xl">
+  <div class="m-title" id="supplierPriceListsTitle">Прайсы поставщика</div>
+  <div id="supplierPriceListsHint" style="font-size:12px;color:var(--t3);margin-bottom:12px;">Список прайсов по текущей организации.</div>
+  <div id="supplierPriceListsBody" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;"></div>
+  <div class="m-acts">
+    <button class="m-cancel" onclick="closeModal('supplierPriceLists')">Закрыть</button>
   </div>
 </div></div>
 

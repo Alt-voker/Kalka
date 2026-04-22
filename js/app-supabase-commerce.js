@@ -41,6 +41,12 @@
       safeArray(data.supsData || data.suppliers).length ||
       safeArray(data.products).length ||
       safeArray(data.supProds).length ||
+      safeArray(data.supplierPriceLists).length ||
+      safeArray(data.supplierPriceListLegals).length ||
+      safeArray(data.supplierPriceItems).length ||
+      safeArray(data.supplierImportTemplates).length ||
+      safeArray(data.priceImportBatches).length ||
+      safeArray(data.priceImportItems).length ||
       safeArray(data.orders).length ||
       safeArray(data.techCards).length
     );
@@ -49,6 +55,7 @@
   function mapRestaurant(row) {
     return {
       id: row.legacy_id || row.id,
+      organizationId: row.organization_id || '',
       name: row.name || '',
       emoji: row.emoji || '🍽️',
       type: row.kind || 'Ресторан',
@@ -60,6 +67,7 @@
 
   function mapSupplier(row) {
     return {
+      organizationId: row.organization_id || '',
       emoji: row.emoji || '🏭',
       name: row.name || '',
       type: row.kind || 'Поставщик',
@@ -87,6 +95,7 @@
 
     return {
       id: row.legacy_product_id || row.id,
+      organizationId: row.organization_id || '',
       name: row.name || '',
       cat: row.category || 'dry',
       unit: row.unit || 'кг',
@@ -105,12 +114,19 @@
   function mapSupProd(priceRow) {
     return {
       id: priceRow.legacy_sup_prod_id || priceRow.id,
+      organizationId: priceRow.organization_id || '',
       name: priceRow.product_name || '',
       cat: priceRow.category || '—',
       unit: priceRow.unit || 'кг',
       supplier: priceRow.supplier_name || '',
       _supplier: priceRow.supplier_name || '',
       _priceName: priceRow.price_name || '',
+      priceListId: priceRow.price_list_id || '',
+      priceListName: priceRow.price_list_name || '',
+      priceListActive: priceRow.active !== false,
+      legalEntityIds: safeArray(priceRow.legal_entity_ids),
+      legalEntityNames: safeArray(priceRow.legal_entity_names),
+      sourceFile: priceRow.source_file || '',
       pKg: Number(priceRow.p_kg || 0) || 0,
       pSh: Number(priceRow.p_sh || 0) || 0,
       pL: Number(priceRow.p_l || 0) || 0,
@@ -124,9 +140,102 @@
     };
   }
 
+  function mapPriceList(row) {
+    return {
+      id: row.legacy_price_list_id || row.id,
+      organizationId: row.organization_id || '',
+      supplierId: row.supplier_id || '',
+      supplierName: row.supplier_name || '',
+      priceName: row.price_name || row.name || '',
+      legalEntityIds: safeArray(row.legal_entity_ids),
+      legalEntityNames: safeArray(row.legal_entity_names),
+      comment: row.comment || '',
+      sourceFile: row.source_file || '',
+      active: row.active !== false,
+      uploadedAt: row.uploaded_at || row.created_at || '',
+      updatedAt: row.updated_at || row.created_at || ''
+    };
+  }
+
+  function mapPriceListLegal(row) {
+    return {
+      id: row.legacy_price_list_legal_id || row.id,
+      priceListId: row.price_list_id || '',
+      organizationId: row.organization_id || '',
+      legalEntityId: row.legal_entity_id || '',
+      legalEntityName: row.legal_entity_name || ''
+    };
+  }
+
+  function mapPriceItem(row) {
+    return {
+      id: row.legacy_price_item_id || row.id,
+      priceListId: row.price_list_id || '',
+      organizationId: row.organization_id || '',
+      productId: row.product_id || '',
+      productName: row.product_name || '',
+      nameInPrice: row.name_in_price || row.product_name || '',
+      price: Number(row.price || 0) || 0,
+      unitId: row.unit_id || '',
+      sourceRowNumber: parseInt(row.source_row_number || 0, 10) || 0,
+      rawData: row.raw_data || {}
+    };
+  }
+
+  function mapImportTemplate(row) {
+    return {
+      id: row.id,
+      organizationId: row.organization_id || '',
+      supplierName: row.supplier_name || '',
+      supplierLegacyKey: row.supplier_legacy_key || '',
+      sheetName: row.sheet_name || '',
+      headerRow: parseInt(row.header_row || 0, 10) || 0,
+      dataStartRow: parseInt(row.data_start_row || 1, 10) || 1,
+      columnMapping: row.column_mapping || {},
+      skipRules: row.skip_rules || {},
+      createdBy: row.created_by || '',
+      createdAt: row.created_at || '',
+      updatedAt: row.updated_at || ''
+    };
+  }
+
+  function mapImportBatch(row) {
+    return {
+      id: row.id,
+      organizationId: row.organization_id || '',
+      supplierName: row.supplier_name || '',
+      supplierLegacyKey: row.supplier_legacy_key || '',
+      templateId: row.template_id || '',
+      sourceFileName: row.source_file_name || '',
+      sheetName: row.sheet_name || '',
+      totalRows: parseInt(row.total_rows || 0, 10) || 0,
+      importedRows: parseInt(row.imported_rows || 0, 10) || 0,
+      skippedRows: parseInt(row.skipped_rows || 0, 10) || 0,
+      status: row.status || 'draft',
+      createdBy: row.created_by || '',
+      createdAt: row.created_at || ''
+    };
+  }
+
+  function mapImportItem(row) {
+    return {
+      id: row.id,
+      organizationId: row.organization_id || '',
+      batchId: row.batch_id || '',
+      supplierName: row.supplier_name || '',
+      sourceRowNumber: parseInt(row.source_row_number || 0, 10) || 0,
+      name: row.name || '',
+      unit: row.unit || 'кг',
+      price: Number(row.price || 0) || 0,
+      rawData: row.raw_data || {},
+      createdAt: row.created_at || ''
+    };
+  }
+
   function mapOrder(row) {
     return {
       id: row.legacy_order_id || row.id,
+      organizationId: row.organization_id || '',
       rest: row.restaurant_name || '—',
       sup: row.supplier_label || row.supplier_name || '—',
       items: row.items_text || '',
@@ -140,6 +249,7 @@
   function mapTechCard(row) {
     return {
       id: row.legacy_tech_card_id || row.id,
+      organizationId: row.organization_id || '',
       name: row.name || '',
       cat: row.category || 'hot',
       inputG: Number(row.input_g || 0) || 0,
@@ -159,6 +269,12 @@
       supabase.from('suppliers').select('*').order('name'),
       supabase.from('products').select('*').order('name'),
       supabase.from('product_supplier_prices').select('*').order('product_name'),
+      supabase.from('supplier_price_lists').select('*').order('uploaded_at', { ascending: false }),
+      supabase.from('supplier_price_list_legal_entities').select('*').order('legal_entity_name'),
+      supabase.from('supplier_price_items').select('*').order('source_row_number'),
+      supabase.from('supplier_import_templates').select('*').order('updated_at', { ascending: false }),
+      supabase.from('price_import_batches').select('*').order('created_at', { ascending: false }),
+      supabase.from('price_import_items').select('*').order('source_row_number'),
       supabase.from('orders').select('*').order('created_at', { ascending: false }),
       supabase.from('tech_cards').select('*').order('name')
     ]);
@@ -169,6 +285,12 @@
     var suppliers = safeArray(results[1].data).map(mapSupplier);
     var productRows = safeArray(results[2].data);
     var priceRows = safeArray(results[3].data);
+    var priceListRows = safeArray(results[4].data);
+    var priceListLegalRows = safeArray(results[5].data);
+    var priceItemRows = safeArray(results[6].data);
+    var importTemplateRows = safeArray(results[7].data);
+    var importBatchRows = safeArray(results[8].data);
+    var importItemRows = safeArray(results[9].data);
     var groupedPrices = {};
     priceRows.forEach(function (row) {
       var key = row.product_id;
@@ -185,8 +307,14 @@
       supsData: suppliers,
       products: products,
       supProds: priceRows.map(mapSupProd),
-      orders: safeArray(results[4].data).map(mapOrder),
-      techCards: safeArray(results[5].data).map(mapTechCard)
+      supplierPriceLists: priceListRows.map(mapPriceList),
+      supplierPriceListLegals: priceListLegalRows.map(mapPriceListLegal),
+      supplierPriceItems: priceItemRows.map(mapPriceItem),
+      supplierImportTemplates: importTemplateRows.map(mapImportTemplate),
+      priceImportBatches: importBatchRows.map(mapImportBatch),
+      priceImportItems: importItemRows.map(mapImportItem),
+      orders: safeArray(results[10].data).map(mapOrder),
+      techCards: safeArray(results[11].data).map(mapTechCard)
     };
 
     if (!hasCommerceData(incoming) && hasCommerceData(baseDb)) {
@@ -204,6 +332,12 @@
       supsData: firstNonEmptyArray(incoming.supsData, baseDb && baseDb.supsData),
       products: firstNonEmptyArray(incoming.products, baseDb && baseDb.products),
       supProds: firstNonEmptyArray(incoming.supProds, baseDb && baseDb.supProds),
+      supplierPriceLists: firstNonEmptyArray(incoming.supplierPriceLists, baseDb && baseDb.supplierPriceLists),
+      supplierPriceListLegals: firstNonEmptyArray(incoming.supplierPriceListLegals, baseDb && baseDb.supplierPriceListLegals),
+      supplierPriceItems: firstNonEmptyArray(incoming.supplierPriceItems, baseDb && baseDb.supplierPriceItems),
+      supplierImportTemplates: firstNonEmptyArray(incoming.supplierImportTemplates, baseDb && baseDb.supplierImportTemplates),
+      priceImportBatches: firstNonEmptyArray(incoming.priceImportBatches, baseDb && baseDb.priceImportBatches),
+      priceImportItems: firstNonEmptyArray(incoming.priceImportItems, baseDb && baseDb.priceImportItems),
       orders: firstNonEmptyArray(incoming.orders, baseDb && baseDb.orders),
       techCards: firstNonEmptyArray(incoming.techCards, baseDb && baseDb.techCards)
     });
@@ -217,6 +351,12 @@
       suppliers: firstNonEmptyArray(state.supsData, runtime.SUPS_DATA),
       products: firstNonEmptyArray(state.products, runtime.PRODUCTS),
       supProds: firstNonEmptyArray(state.supProds, runtime.SUP_PRODS),
+      supplierPriceLists: firstNonEmptyArray(state.supplierPriceLists, runtime.SUP_PRICE_LISTS),
+      supplierPriceListLegals: firstNonEmptyArray(state.supplierPriceListLegals, runtime.SUP_PRICE_LIST_LEGALS),
+      supplierPriceItems: firstNonEmptyArray(state.supplierPriceItems, runtime.SUP_PRICE_ITEMS),
+      supplierImportTemplates: firstNonEmptyArray(state.supplierImportTemplates, runtime.supplierImportTemplates),
+      priceImportBatches: firstNonEmptyArray(state.priceImportBatches, runtime.priceImportBatches),
+      priceImportItems: firstNonEmptyArray(state.priceImportItems, runtime.priceImportItems),
       orders: firstNonEmptyArray(state.orders, runtime.ORDERS),
       techCards: firstNonEmptyArray(state.techCards, runtime.TECH_CARDS)
     };
