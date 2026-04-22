@@ -1898,6 +1898,7 @@ function renderSuppliers(){
 
   var addBtn=canManageSupplierPage?'<div class="sup-card dsh" onclick="openSupplierModal()" style="display:flex;align-items:center;justify-content:center;min-height:170px;"><div style="text-align:center;color:var(--t3);"><div style="font-size:26px;margin-bottom:7px;">➕</div><div style="font-size:13px;font-weight:600;">Добавить поставщика</div></div></div>':'';
   el.innerHTML=cards+addBtn;
+  bindSupplierCardActions(el);
 }
 
 function supCardAction(btn){
@@ -1914,6 +1915,28 @@ function supCardAction(btn){
   else if(action === 'delete-price') deleteSupPrice(supName);
   else if(action === 'main-price') openSupPriceUpload(supName, false);
   else if(action === 'extra-price') openSupPriceUpload(supName, true);
+}
+
+function bindSupplierCardActions(root){
+  root = root || document.getElementById('supGrid');
+  if(!root) return;
+  if(!window.__supplierCardActionBound){
+    window.__supplierCardActionBound = true;
+    root.addEventListener('click', function(ev){
+      var btn = ev && ev.target ? ev.target.closest('button[data-sup-action]') : null;
+      if(!btn) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      supCardAction(btn);
+    }, true);
+  }
+  root.querySelectorAll('button[data-sup-action]').forEach(function(btn){
+    btn.onclick = function(ev){
+      if(ev){ ev.preventDefault(); ev.stopPropagation(); }
+      supCardAction(btn);
+    };
+  });
+  window.supCardAction = supCardAction;
 }
 
 function togglePersonalSup(supName){
