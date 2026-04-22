@@ -1839,10 +1839,10 @@ function renderSuppliers(){
 
     // Кнопки загрузки прайса — для всех пользователей
     var priceBtns=canManagePrices?'<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--br);">'
-      +'<button onclick="openSupPriceLists(\''+s.name+'\')" style="flex:1;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;font-weight:600;">Прайсы</button>'
-      +'<button onclick="deleteSupPrice(\''+s.name+'\')" style="flex:1;background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;">Удалить прайс</button>'
-      +'<button onclick="openSupPriceUpload(\''+s.name+'\',false)" style="flex:1;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;font-weight:600;">Основной прайс</button>'
-      +'<button onclick="openSupPriceUpload(\''+s.name+'\',true)" style="flex:1;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;">+ Доп.прайс</button>'
+      +'<button type="button" data-sup-action="prices" data-supplier="'+_esc(s.name)+'" style="flex:1;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;font-weight:600;">Прайсы</button>'
+      +'<button type="button" data-sup-action="delete-price" data-supplier="'+_esc(s.name)+'" style="flex:1;background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;">Удалить прайс</button>'
+      +'<button type="button" data-sup-action="main-price" data-supplier="'+_esc(s.name)+'" style="flex:1;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;font-weight:600;">Основной прайс</button>'
+      +'<button type="button" data-sup-action="extra-price" data-supplier="'+_esc(s.name)+'" style="flex:1;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;">+ Доп.прайс</button>'
       +'</div>':'';
 
     var manageBtn=canManageSupplier?(
@@ -1897,6 +1897,18 @@ function renderSuppliers(){
 
   var addBtn=canManageSupplierPage?'<div class="sup-card dsh" onclick="openSupplierModal()" style="display:flex;align-items:center;justify-content:center;min-height:170px;"><div style="text-align:center;color:var(--t3);"><div style="font-size:26px;margin-bottom:7px;">➕</div><div style="font-size:13px;font-weight:600;">Добавить поставщика</div></div></div>':'';
   el.innerHTML=cards+addBtn;
+  el.onclick=function(ev){
+    var btn = ev && ev.target ? ev.target.closest('button[data-sup-action]') : null;
+    if(!btn) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    var supName = btn.getAttribute('data-supplier') || '';
+    var action = btn.getAttribute('data-sup-action') || '';
+    if(action === 'prices') openSupPriceLists(supName);
+    else if(action === 'delete-price') deleteSupPrice(supName);
+    else if(action === 'main-price') openSupPriceUpload(supName, false);
+    else if(action === 'extra-price') openSupPriceUpload(supName, true);
+  };
 }
 
 function togglePersonalSup(supName){
