@@ -1284,6 +1284,9 @@ function checkoutSupplierItems(supName, items, comment, suffix){
     }),
     zones:items.map(function(item){return item.zone||'';}).filter(Boolean),
     invoiceGroup:suffix||'Основная накладная',
+    deliveryDate:_orderDeliveryDate||'',
+    deliveryFrom:_orderDeliveryFrom||'',
+    deliveryTo:_orderDeliveryTo||'',
     sum:total,
     date:today().slice(5).split('-').reverse().join('.')+'.26',
     status:'processing',
@@ -1383,6 +1386,12 @@ function orderMetaLines(o){
   if(o.brand) lines.push('🏷 '+o.brand);
   if(Array.isArray(o.legalEntities) && o.legalEntities.length) lines.push('🏛 '+o.legalEntities.join(' · '));
   if(Array.isArray(o.zones) && o.zones.filter(Boolean).length) lines.push('🏷 Зоны: '+o.zones.filter(Boolean).join(' · '));
+  if(o.deliveryDate || o.deliveryFrom || o.deliveryTo){
+    var delivery = [];
+    if(o.deliveryDate) delivery.push(o.deliveryDate);
+    if(o.deliveryFrom || o.deliveryTo) delivery.push((o.deliveryFrom||'—')+'–'+(o.deliveryTo||'—'));
+    lines.push('🚚 Доставка: '+delivery.join(' · '));
+  }
   if(o.invoiceGroup) lines.push('🧾 '+o.invoiceGroup);
   return lines.join(' · ');
 }
@@ -1437,6 +1446,10 @@ function openOrderDetails(orderId){
     +'<div><b>Юр. лица:</b> '+(Array.isArray(order.legalEntities)&&order.legalEntities.length?order.legalEntities.join(' · '):'—')+'</div>'
     +'<div><b>Зоны:</b> '+(Array.isArray(order.zones)&&order.zones.filter(Boolean).length?order.zones.filter(Boolean).join(' · '):'—')+'</div>'
     +'<div><b>Накладная:</b> '+(order.invoiceGroup||'—')+'</div>'
+    +'<div><b>Доставка:</b> '+((order.deliveryDate||order.deliveryFrom||order.deliveryTo)?[
+      order.deliveryDate||'',
+      (order.deliveryFrom||'—')+'–'+(order.deliveryTo||'—')
+    ].filter(Boolean).join(' · '):'—')+'</div>'
     +'<div><b>Дата:</b> '+(order.date||'—')+'</div>'
     +'<div><b>Комментарий:</b> '+(order.comment||'—')+'</div>'
     +'</div>'
@@ -1462,6 +1475,10 @@ function exportOrderExcel(orderId){
     ['Юр. лица', Array.isArray(order.legalEntities)&&order.legalEntities.length?order.legalEntities.join(' · '):'—'],
     ['Зоны', Array.isArray(order.zones)&&order.zones.filter(Boolean).length?order.zones.filter(Boolean).join(' · '):'—'],
     ['Накладная', order.invoiceGroup||'—'],
+    ['Доставка', (order.deliveryDate||order.deliveryFrom||order.deliveryTo)?[
+      order.deliveryDate||'',
+      (order.deliveryFrom||'—')+' – '+(order.deliveryTo||'—')
+    ].filter(Boolean).join(' · '):'—'],
     ['Дата', order.date||'—'],
     ['Статус', (SM[order.status]||[])[1]||order.status||'—'],
     ['Комментарий', order.comment||'—'],
@@ -2919,6 +2936,9 @@ function submitOrder(){
     itemsDetailed:[{name:item,qty:(parseFloat(qty)||1),unit:unit,zone:'',invoiceGroup:'main',comment:comment}],
     zones:[],
     invoiceGroup:'Основная накладная',
+    deliveryDate:_orderDeliveryDate||'',
+    deliveryFrom:_orderDeliveryFrom||'',
+    deliveryTo:_orderDeliveryTo||'',
     sum:Math.round((parseFloat(qty)||1)*500),
     date:today().slice(5).split('-').reverse().join('.')+'.26',
     status:'processing',comment:comment});
@@ -4501,6 +4521,11 @@ function getCurrentOrderRestaurantMeta(){
 function getOrderHeaderRows(restName, date, supName, comment){
   var rest=getCurrentOrderRestaurantMeta();
   var chosenLegal = _orderLegalEntityNames.length ? _orderLegalEntityNames[0] : '';
+  var deliveryParts = [];
+  if(_orderDeliveryDate) deliveryParts.push(_orderDeliveryDate);
+  if(_orderDeliveryFrom || _orderDeliveryTo){
+    deliveryParts.push((_orderDeliveryFrom || '—')+' – '+(_orderDeliveryTo || '—'));
+  }
   var rows=[
     ['Ресторан / Заведение:', restName||'Не указано']
   ];
@@ -4525,6 +4550,7 @@ function getOrderHeaderRows(restName, date, supName, comment){
     rows.push(['Юр. лицо для заказа:', chosenLegal]);
   }
   if(supName) rows.push(['Поставщик:', supName]);
+  if(deliveryParts.length) rows.push(['Доставка:', deliveryParts.join(' · ')]);
   rows.push(['Дата заказа:', date]);
   if(comment) rows.push(['Комментарий:', comment]);
   return rows;
@@ -6309,17 +6335,18 @@ function renderCart(){
 
   // Итоги внизу
   html += '<div style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);padding:14px 16px;margin-top:4px;">'
-    +'<div style="font-size:18px;font-weight:900;color:var(--tx);margin-bottom:14px;">'
-      +'Итог по корзине: '+cart.length+' позиций · ₽'+grandTotal.toLocaleString()
-    +'</div>'
-    +'<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;justify-content:space-between;">'
-    +'<div style="display:flex;gap:24px;flex-wrap:wrap;">'
+    +'<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;">'
+    +'<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end;">'
     +'<div><div style="font-size:11px;color:var(--t3);">Поставщиков</div><div style="font-size:20px;font-weight:800;">'+_supOrder.length+'</div></div>'
     +'<div><div style="font-size:11px;color:var(--t3);">Мин. по поставщику</div><div style="font-size:20px;font-weight:800;color:var(--gr);">₽'+minTotal.toLocaleString()+'</div></div>'
     +'<div><div style="font-size:11px;color:var(--t3);">Средний</div><div style="font-size:20px;font-weight:800;color:var(--ac);">₽'+Math.round(avgTotal).toLocaleString()+'</div></div>'
-    +'<div><div style="font-size:11px;color:var(--t3);">Итого всё</div><div style="font-size:20px;font-weight:800;">₽'+grandTotal.toLocaleString()+'</div></div>'
+    +'<div style="text-align:right;min-width:240px;">'
+      +'<div style="font-size:12px;color:var(--t3);">Итоговая информация</div>'
+      +'<div style="font-size:20px;font-weight:900;color:var(--tx);">Итог по корзине: '+cart.length+' позиций</div>'
+      +'<div style="font-size:26px;font-weight:900;color:var(--gr);line-height:1.1;">₽'+grandTotal.toLocaleString()+'</div>'
     +'</div>'
-    +'<button onclick="exportFullCart()" style="background:var(--gr);color:#fff;border:none;border-radius:var(--r);padding:10px 18px;font-weight:800;font-size:13px;cursor:pointer;">Excel — вся корзина</button>'
+    +'</div>'
+    +'<button onclick="exportFullCart()" style="background:var(--gr);color:#fff;border:none;border-radius:var(--r);padding:10px 18px;font-weight:800;font-size:13px;cursor:pointer;align-self:flex-end;">Excel — вся корзина</button>'
     +'</div>'
   +'</div>';
 
@@ -7705,6 +7732,9 @@ var _orderDraft    = {};   // {query:supplier -> выбранный вариан
 var _ossRowQuery   = '';   // поиск в прайсе: текущий запрос
 var _ossSup        = '';   // поиск в прайсе: поставщик
 var _pendingOrderTemplate = null;
+var _orderDeliveryDate = '';
+var _orderDeliveryFrom = '';
+var _orderDeliveryTo   = '';
 
 function getRestLegalEntities(rest){
   if(!rest) return [];
@@ -7875,6 +7905,9 @@ function submitCreateOrder(){
   _orderSups     = sels;
   _orderHidden   = {};
   _orderDraft    = {};
+  _orderDeliveryDate = (document.getElementById('co-delivery-date')||{value:''}).value || '';
+  _orderDeliveryFrom = (document.getElementById('co-delivery-from')||{value:''}).value || '';
+  _orderDeliveryTo   = (document.getElementById('co-delivery-to')||{value:''}).value || '';
 
   // Обновить активный ресторан
   if(rest){ activeRest = {id:rest.id, name:rest.name, emoji:rest.emoji||'🍽️'}; }
