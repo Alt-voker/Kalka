@@ -67,6 +67,20 @@ function getCurrentOrganizationKey(user){
   if(u && u.company) return _normalizeOrgKey(u.company);
   return 'default';
 }
+function getPriceImportOrganizationKey(user){
+  var u = user || CU || null;
+  if(u && u.company) return _normalizeOrgKey(u.company);
+  var rest = getCurrentOrderRestaurantMeta ? getCurrentOrderRestaurantMeta() : null;
+  if(rest && rest.brandName) return _normalizeOrgKey(rest.brandName);
+  if(rest && rest.legalName) return _normalizeOrgKey(rest.legalName);
+  if(rest && rest.name) return _normalizeOrgKey(rest.name);
+  if(activeRest && activeRest.id && activeRest.id !== 'r0'){
+    var db = dbGet();
+    var rest2 = (db.restaurants || []).find(function(r){ return r.id === activeRest.id; });
+    if(rest2) return _normalizeOrgKey(rest2.brandName || rest2.legalName || rest2.name || activeRest.name || '');
+  }
+  return getCurrentOrganizationKey(u);
+}
 function getOrgLegalEntityNames(db, orgKey){
   db = db || dbGet();
   var allowedRestIds = CU && CU.role === 'owner'
@@ -101,7 +115,6 @@ function getCurrentLegalEntityNames(){
 }
 function _getCurrentPriceScope(){
   var legalNames = getCurrentLegalEntityNames();
-  if(legalNames.length > 1) legalNames = [legalNames[0]];
   var orgKey = getCurrentOrganizationKey(CU);
   return {
     organizationId: orgKey,
@@ -119,7 +132,7 @@ function _supplierImportLegalSelection(){
     names = _supPriceImportState.legalEntityNames.slice();
   }
   return {
-    organizationId: getCurrentOrganizationKey(CU),
+    organizationId: getPriceImportOrganizationKey(CU),
     legalEntityIds: _uniqList(ids),
     legalEntityNames: _uniqList(names)
   };
@@ -140,7 +153,7 @@ function _supplierImportPriceListId(supName, priceName, orgKey){
   var suffix = Math.random().toString(36).slice(2, 8);
   var base = [
     'plist',
-    _normalizeOrgKey(orgKey || getCurrentOrganizationKey(CU) || 'default'),
+    _normalizeOrgKey(orgKey || getPriceImportOrganizationKey(CU) || 'default'),
     String(supName || '').trim().toLowerCase().replace(/[^a-zа-я0-9]+/gi,'-').replace(/^-+|-+$/g,''),
     String(priceName || '').trim().toLowerCase().replace(/[^a-zа-я0-9]+/gi,'-').replace(/^-+|-+$/g,''),
     String(Date.now()),
@@ -5463,7 +5476,7 @@ function openSupPriceUpload(supName, append){
   _currentSupName = supName;
   _supPriceAppend = append;
   _supplierImportResetState();
-  _supPriceImportState.organizationId = getCurrentOrganizationKey(CU);
+  _supPriceImportState.organizationId = getPriceImportOrganizationKey(CU);
   openModal('supPriceUpload');
   var titleEl = document.getElementById('supPriceUploadTitle');
   if(titleEl) titleEl.textContent = append ? 'Доп. прайс: '+supName : 'Новый прайс: '+supName;
@@ -5694,10 +5707,21 @@ function quickSelect(){}
 function deleteSupPrice(supName) {
   if(!confirm('Удалить все прайсы поставщика «'+supName+'»?'))return;
   var before=SUP_PRODS.length;
-  var orgKey = getCurrentOrganizationKey(CU);
+  var scope = _getCurrentPriceScope();
+  var orgKey = _normalizeOrgKey(scope.organizationId || getPriceImportOrganizationKey(CU));
+  var legalIds = _uniqList(scope.legalEntityIds || []);
+  var legalNames = _uniqList(scope.legalEntityNames || []);
   var removedPriceListIds = (SUP_PRICE_LISTS || []).filter(function(list){
-    return String(list.supplierName || '').toLowerCase() === String(supName || '').toLowerCase()
-      && _normalizeOrgKey(list.organizationId || '') === _normalizeOrgKey(orgKey);
+    if(String(list.supplierName || '').toLowerCase() !== String(supName || '').toLowerCase()) return false;
+    var listOrg = _normalizeOrgKey(list.organizationId || '');
+    var listLegalIds = _uniqList(list.legalEntityIds || []);
+    var listLegalNames = _uniqList(list.legalEntityNames || []);
+    var orgMatch = !listOrg || listOrg === orgKey;
+    var legalMatch = !legalIds.length
+      || !listLegalIds.length && !listLegalNames.length
+      || listLegalIds.some(function(id){ return legalIds.indexOf(id) >= 0; })
+      || listLegalNames.some(function(name){ return legalNames.indexOf(name) >= 0; });
+    return orgMatch || legalMatch;
   }).map(function(list){ return list.id; });
   SUP_PRODS=SUP_PRODS.filter(function(p){
     return !(p._supplier===supName||p.supplier===supName);
@@ -5709,8 +5733,16 @@ function deleteSupPrice(supName) {
     return removedPriceListIds.indexOf(row.priceListId) < 0;
   });
   SUP_PRICE_LISTS = (SUP_PRICE_LISTS || []).filter(function(list){
-    return String(list.supplierName || '').toLowerCase() !== String(supName || '').toLowerCase()
-      || _normalizeOrgKey(list.organizationId || '') !== _normalizeOrgKey(orgKey);
+    if(String(list.supplierName || '').toLowerCase() !== String(supName || '').toLowerCase()) return true;
+    var listOrg = _normalizeOrgKey(list.organizationId || '');
+    var listLegalIds = _uniqList(list.legalEntityIds || []);
+    var listLegalNames = _uniqList(list.legalEntityNames || []);
+    var orgMatch = !listOrg || listOrg === orgKey;
+    var legalMatch = !legalIds.length
+      || !listLegalIds.length && !listLegalNames.length
+      || listLegalIds.some(function(id){ return legalIds.indexOf(id) >= 0; })
+      || listLegalNames.some(function(name){ return legalNames.indexOf(name) >= 0; });
+    return !(orgMatch || legalMatch);
   });
   // Убрать поставщика из каталога
   PRODUCTS.forEach(function(p){
@@ -8264,7 +8296,7 @@ function selectAllOrderSups(val){
 
 function getPriceImportLegalOptions(){
   var db = dbGet();
-  var scopeKey = getCurrentOrganizationKey(CU);
+  var scopeKey = getPriceImportOrganizationKey(CU);
   var map = {};
   var legalByName = [];
   (db.restaurants || []).forEach(function(rest){
@@ -8315,15 +8347,20 @@ function selectAllSupPriceLegals(val){
 function openSupPriceLists(supName){
   openModal('supplierPriceLists');
   var scope = _getCurrentPriceScope();
-  var orgKey = _normalizeOrgKey(scope.organizationId || getCurrentOrganizationKey(CU));
+  var orgKey = _normalizeOrgKey(scope.organizationId || getPriceImportOrganizationKey(CU));
   var legalIds = _uniqList(scope.legalEntityIds || []);
+  var legalNames = _uniqList(scope.legalEntityNames || []);
   var lists = (SUP_PRICE_LISTS || []).filter(function(list){
     if(!list) return false;
     if(String(list.supplierName || '').toLowerCase() !== String(supName || '').toLowerCase()) return false;
     var listOrg = _normalizeOrgKey(list.organizationId || '');
     var listLegalIds = _uniqList(list.legalEntityIds || []);
+    var listLegalNames = _uniqList(list.legalEntityNames || []);
     var orgMatch = !listOrg || !orgKey || listOrg === orgKey;
-    var legalMatch = !legalIds.length || !listLegalIds.length || listLegalIds.some(function(id){ return legalIds.indexOf(id) >= 0; });
+    var legalMatch = !legalIds.length
+      || !listLegalIds.length && !listLegalNames.length
+      || listLegalIds.some(function(id){ return legalIds.indexOf(id) >= 0; })
+      || listLegalNames.some(function(name){ return legalNames.indexOf(name) >= 0; });
     return orgMatch && legalMatch;
   });
   var body = document.getElementById('supplierPriceListsBody');
