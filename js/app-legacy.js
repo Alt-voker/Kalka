@@ -54,7 +54,7 @@ function _legalEntityId(orgKey, name){
 }
 function getCurrentOrganizationKey(user){
   var u = user || CU || null;
-  var rest = getCurrentRestMeta && getCurrentRestMeta();
+  var rest = getCurrentOrderRestaurantMeta ? getCurrentOrderRestaurantMeta() : null;
   if(rest && rest.brandName) return _normalizeOrgKey(rest.brandName);
   if(rest && rest.legalName) return _normalizeOrgKey(rest.legalName);
   if(rest && rest.name) return _normalizeOrgKey(rest.name);
