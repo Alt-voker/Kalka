@@ -7594,6 +7594,10 @@ function orderSearchMulti(val) {
               + ' title="Поиск товара в прайсе '+_esc(sup)+'"'
               + ' style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);'
                 + 'padding:4px 8px;font-size:13px;cursor:pointer;flex-shrink:0;">🔍</button>'
+            + '<button onclick="_orderToggleInvoiceGroup(\''+_esc(row.line)+'\',\''+_esc(sup)+'\')"'
+              + ' title="Переключить на доп. накладную"'
+              + ' style="background:'+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--orD)':'var(--bg2)')+';color:'+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--or)':'var(--t2)')+';border:1px solid '+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--or)':'var(--br)')+';border-radius:var(--r);'
+                + 'padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">'+((currentOrderItem && currentOrderItem.invoiceGroup==='extra')?'Доп. накладная':'Основная')+'</button>'
             + (inCart
               ? '<button onclick="orderRemove(\''+_esc(currentCartItem.name)+'\',\''+_esc(sup)+'\',\''+_esc(row.line)+'\')"'
                 + ' style="flex:1;background:var(--ac);color:#fff;border:none;border-radius:var(--r);'
@@ -7963,6 +7967,13 @@ function _renderOrderTable(filter){
             +' title="Поиск в прайсе '+sup+'"'
             +' style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);'
               +'padding:4px 7px;font-size:13px;cursor:pointer;">🔍</button>'
+          +'<button onclick="_orderToggleInvoiceGroup(\''+_esc(row.query)+'\',\''+_esc(sup)+'\')"'
+            +' title="Переключить на доп. накладную"'
+            +' style="background:'+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--orD)':'var(--bg2)')+';color:'+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--or)':'var(--t2)')+';'
+              +'border:1px solid '+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--or)':'var(--br)')+';border-radius:var(--r);'
+              +'padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">'
+            +((currentOrderItem && currentOrderItem.invoiceGroup==='extra')?'Доп. накладная':'Основная')
+          +'</button>'
           // В корзину / В корзине
           +(inCart
             ?'<button onclick="orderRemove(\''+_esc(currentCartItem.name)+'\',\''+_esc(sup)+'\',\''+_esc(row.query)+'\')"'
@@ -8076,6 +8087,7 @@ function _orderDisplayEntry(query, sup, fallback){
       price: fallback.price,
       unit: fallback.item.unit,
       _type: fallback.item._type || 'main',
+      invoiceGroup: fallback.item.invoiceGroup || 'main',
       replacedFrom: ''
     };
 }
@@ -8086,6 +8098,7 @@ function _orderUpsertItem(query, name, sup, price, unit, itemType, qty){
   var normalizedQty=Math.max(0.001, parseFloat(qty)||1);
   var selected = _orderDraftEntryByQuery(q, sup);
   var replacementLabel = selected && selected.name===name ? (selected.replacedFrom || '') : '';
+  var selectedInvoice = selected && selected.invoiceGroup ? selected.invoiceGroup : 'main';
   var existing = cart.findIndex(function(c){
     return c.supplier===sup && (c._orderQuery||'')===q;
   });
@@ -8100,6 +8113,7 @@ function _orderUpsertItem(query, name, sup, price, unit, itemType, qty){
       qty: normalizedQty,
       unit: unit || cart[existing].unit || 'кг',
       _type: itemType || cart[existing]._type || 'main',
+      invoiceGroup: selectedInvoice || cart[existing].invoiceGroup || 'main',
       _orderQuery: q,
       replacedFrom: replacementLabel || cart[existing].replacedFrom || ''
     });
@@ -8116,10 +8130,43 @@ function _orderUpsertItem(query, name, sup, price, unit, itemType, qty){
     unit: unit || 'кг',
     comment: '',
     _type: itemType || 'main',
+    invoiceGroup: selectedInvoice,
     _orderQuery: q,
     replacedFrom: replacementLabel
   });
   return 'added';
+}
+
+function _orderToggleInvoiceGroup(query, sup){
+  var existingCart = _orderCartEntryByQuery(query, sup);
+  var existingDraft = _orderDraftEntryByQuery(query, sup);
+  var current = existingCart || existingDraft || null;
+  var nextGroup = current && current.invoiceGroup === 'extra' ? 'main' : 'extra';
+  var currentName = current ? current.name : query;
+  var currentPrice = current ? current.price : 0;
+  var currentUnit = current ? current.unit : 'кг';
+  var currentType = current ? current._type : 'main';
+  var currentReplacedFrom = current && current.replacedFrom ? current.replacedFrom : '';
+
+  if(existingCart){
+    existingCart.invoiceGroup = nextGroup;
+  } else {
+    _orderSetDraftEntry(query, sup, {
+      name: currentName,
+      price: currentPrice,
+      unit: currentUnit,
+      _type: currentType,
+      invoiceGroup: nextGroup,
+      replacedFrom: currentReplacedFrom
+    });
+  }
+
+  updBdg();
+  renderCart();
+  _renderOrderTable((document.getElementById('orderTableSearch')||{value:''}).value);
+  var inp=document.getElementById('orderSearchInput');
+  if(inp && inp.value) orderSearch(inp.value);
+  flashCartUI();
 }
 
 // Добавить в корзину из таблицы заказа
@@ -8234,6 +8281,7 @@ function ossSelect(itemName, price, unit, itemType){
     price: price,
     unit: unit || 'кг',
     _type: itype,
+    invoiceGroup: current && current.invoiceGroup ? current.invoiceGroup : 'main',
     replacedFrom: current && current.name !== itemName ? current.name : ''
   });
   var rowNode = document.querySelector('[data-order-row="'+_cssAttrVal(_ossRowQuery)+'"][data-order-sup="'+_cssAttrVal(sup)+'"]');
