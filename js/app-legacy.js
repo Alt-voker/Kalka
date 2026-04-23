@@ -32,232 +32,6 @@ const PM={
   cart:           {sec:null,          ico:'', lbl:'Корзина (legacy)'},
 };
 const PT={order:'Заказ и Корзина',tender:'Тендер',owner:'Панель владельца',admin:'Управление пользователями',dashboard:'Дашборд',catalog:'Каталог товаров',cart:'Корзина',favorites:'Избранное',orders:'История заказов',suppliers:'Поставщики',analytics:'Аналитика','tender':'Тендер',techcards:'Технологические карты','chef-calc':'Калькулятор','sup-dashboard':'Панель поставщика','sup-products':'Мои товары','sup-orders':'Входящие заказы','sup-analytics':'Аналитика продаж'};
-const OWNER_EMAIL_HINTS=['owner@provision.ru','michaelkeepcalm@gmail.com','keepcalm3300@gmail.com','michaelkeepcalm3300gmail.com','keepcalm3300gmail.com','keepcalm3300gmail.com@MacBook-Air-Mihail.local'];
-function reportRuntimeIssue(message, detail){
-  try{
-    console.error(message, detail || '');
-  }catch(e){}
-  try{
-    toast('Страница открылась с ошибкой. Мы уже исправляем её.','err');
-  }catch(e){}
-}
-if(!window.__kalkaRuntimeGuardInstalled){
-  window.__kalkaRuntimeGuardInstalled = true;
-  window.addEventListener('error', function(ev){
-    var msg = ev && ev.message ? String(ev.message) : 'Unknown error';
-    reportRuntimeIssue(msg, ev && ev.error ? ev.error : null);
-  });
-  window.addEventListener('unhandledrejection', function(ev){
-    var reason = ev && ev.reason ? (ev.reason.message || ev.reason) : 'Unhandled rejection';
-    reportRuntimeIssue(reason, ev && ev.reason ? ev.reason : null);
-  });
-}
-function isOwnerUser(u){
-  if(!u) return false;
-  if(u.role==='owner') return true;
-  var email=String(u.email||'').toLowerCase();
-  if(!email) return false;
-  return OWNER_EMAIL_HINTS.some(function(h){
-    h=String(h||'').toLowerCase();
-    return email===h || email.indexOf(h)>=0 || h.indexOf(email)>=0;
-  });
-}
-function normalizeUserRole(role, user){
-  if(isOwnerUser(user)) return 'owner';
-  var key=String(role||'').trim().toLowerCase();
-  return ROLES[key] ? key : 'manager';
-}
-function _uniqList(list){
-  return Array.from(new Set((Array.isArray(list)?list:[]).filter(Boolean).map(function(v){ return String(v).trim(); }).filter(Boolean)));
-}
-function _normalizeOrgKey(value){
-  return String(value||'').trim().toLowerCase();
-}
-function _legalEntityId(orgKey, name){
-  return _normalizeOrgKey(orgKey||'org')+'::'+String(name||'').trim().toLowerCase().replace(/[^a-zа-я0-9]+/gi,'-').replace(/^-+|-+$/g,'');
-}
-function getCurrentOrganizationKey(user){
-  var u = user || CU || null;
-  var rest = getCurrentOrderRestaurantMeta ? getCurrentOrderRestaurantMeta() : null;
-  if(rest && rest.brandName) return _normalizeOrgKey(rest.brandName);
-  if(rest && rest.legalName) return _normalizeOrgKey(rest.legalName);
-  if(rest && rest.name) return _normalizeOrgKey(rest.name);
-  if(activeRest && activeRest.id && activeRest.id !== 'r0'){
-    var db = dbGet();
-    var rest2 = (db.restaurants || []).find(function(r){ return r.id === activeRest.id; });
-    if(rest2) return _normalizeOrgKey(rest2.brandName || rest2.legalName || rest2.name || activeRest.name || '');
-  }
-  if(isOwnerUser(u) && u && u.company) return _normalizeOrgKey(u.company);
-  if(u && u.company) return _normalizeOrgKey(u.company);
-  return 'default';
-}
-function getPriceImportOrganizationKey(user){
-  var u = user || CU || null;
-  if(u && u.company) return _normalizeOrgKey(u.company);
-  var rest = getCurrentOrderRestaurantMeta ? getCurrentOrderRestaurantMeta() : null;
-  if(rest && rest.brandName) return _normalizeOrgKey(rest.brandName);
-  if(rest && rest.legalName) return _normalizeOrgKey(rest.legalName);
-  if(rest && rest.name) return _normalizeOrgKey(rest.name);
-  if(activeRest && activeRest.id && activeRest.id !== 'r0'){
-    var db = dbGet();
-    var rest2 = (db.restaurants || []).find(function(r){ return r.id === activeRest.id; });
-    if(rest2) return _normalizeOrgKey(rest2.brandName || rest2.legalName || rest2.name || activeRest.name || '');
-  }
-  return getCurrentOrganizationKey(u);
-}
-function getOrgLegalEntityNames(db, orgKey){
-  db = db || dbGet();
-  var allowedRestIds = CU && CU.role === 'owner'
-    ? (db.restaurants || []).filter(function(rest){ return rest.id !== 'r0'; }).map(function(rest){ return rest.id; })
-    : getUserScopedRestaurantIds(CU, db);
-  var names = [];
-  (db.restaurants || []).forEach(function(rest){
-    if(!rest || rest.id === 'r0') return;
-    if(allowedRestIds.indexOf(rest.id) < 0) return;
-    var legal = Array.isArray(rest.assignedLegalEntities) && rest.assignedLegalEntities.length
-      ? rest.assignedLegalEntities
-      : (rest.legalEntities && rest.legalEntities.length ? rest.legalEntities : (rest.legalName ? [rest.legalName] : []));
-    legal.forEach(function(name){
-      if(name && names.indexOf(name) < 0) names.push(name);
-    });
-  });
-  return _uniqList(names);
-}
-function getCurrentLegalEntityNames(){
-  var orderLegals = Array.isArray(_orderLegalEntityNames) && _orderLegalEntityNames.length ? _orderLegalEntityNames : [];
-  if(orderLegals.length) return _uniqList(orderLegals);
-  var tenderLegals = Array.isArray(_tenderLegalEntityNames) && _tenderLegalEntityNames.length ? _tenderLegalEntityNames : [];
-  if(tenderLegals.length) return _uniqList(tenderLegals);
-  var rest = getCurrentOrderRestaurantMeta ? getCurrentOrderRestaurantMeta() : null;
-  if(rest) return getRestLegalEntities(rest);
-  if(activeRest && activeRest.id && activeRest.id !== 'r0'){
-    var db = dbGet();
-    var rest2 = (db.restaurants || []).find(function(r){ return r.id === activeRest.id; });
-    if(rest2) return getRestLegalEntities(rest2);
-  }
-  return [];
-}
-function _getCurrentPriceScope(){
-  var legalNames = getCurrentLegalEntityNames();
-  var orgKey = getCurrentOrganizationKey(CU);
-  return {
-    organizationId: orgKey,
-    legalEntityNames: legalNames,
-    legalEntityIds: legalNames.map(function(name){ return _legalEntityId(orgKey, name); })
-  };
-}
-function _supplierImportLegalSelection(){
-  var ids = getSelectedSupPriceLegalIds ? getSelectedSupPriceLegalIds() : [];
-  var names = getSelectedSupPriceLegalNames ? getSelectedSupPriceLegalNames() : [];
-  if(!ids.length && _supPriceImportState && Array.isArray(_supPriceImportState.legalEntityIds) && _supPriceImportState.legalEntityIds.length){
-    ids = _supPriceImportState.legalEntityIds.slice();
-  }
-  if(!names.length && _supPriceImportState && Array.isArray(_supPriceImportState.legalEntityNames) && _supPriceImportState.legalEntityNames.length){
-    names = _supPriceImportState.legalEntityNames.slice();
-  }
-  return {
-    organizationId: getPriceImportOrganizationKey(CU),
-    legalEntityIds: _uniqList(ids),
-    legalEntityNames: _uniqList(names)
-  };
-}
-function _supplierImportCaptureLegalState(){
-  var sel = _supplierImportLegalSelection();
-  _supPriceImportState.organizationId = sel.organizationId;
-  _supPriceImportState.legalEntityIds = sel.legalEntityIds.slice();
-  _supPriceImportState.legalEntityNames = sel.legalEntityNames.slice();
-  return sel;
-}
-function _supplierImportHasLegalSelection(){
-  var sel = _supplierImportLegalSelection();
-  return !!(sel.legalEntityIds.length || sel.legalEntityNames.length);
-}
-function _supplierImportPriceListId(supName, priceName, orgKey){
-  if(_supPriceImportState && _supPriceImportState.priceListId) return _supPriceImportState.priceListId;
-  var suffix = Math.random().toString(36).slice(2, 8);
-  var base = [
-    'plist',
-    _normalizeOrgKey(orgKey || getPriceImportOrganizationKey(CU) || 'default'),
-    String(supName || '').trim().toLowerCase().replace(/[^a-zа-я0-9]+/gi,'-').replace(/^-+|-+$/g,''),
-    String(priceName || '').trim().toLowerCase().replace(/[^a-zа-я0-9]+/gi,'-').replace(/^-+|-+$/g,''),
-    String(Date.now()),
-    suffix
-  ].filter(Boolean).join('::');
-  _supPriceImportState.priceListId = base;
-  return base;
-}
-function _supplierImportCreateOrUpdateList(meta, extra){
-  extra = extra || {};
-  SUP_PRICE_LISTS = Array.isArray(SUP_PRICE_LISTS) ? SUP_PRICE_LISTS.slice() : [];
-  var now = new Date().toISOString();
-  var existingIdx = SUP_PRICE_LISTS.findIndex(function(list){ return list && list.id === meta.id; });
-  var rec = Object.assign({}, existingIdx >= 0 ? SUP_PRICE_LISTS[existingIdx] : {}, {
-    id: meta.id,
-    organizationId: meta.organizationId || '',
-    supplierName: meta.supplierName || '',
-    priceName: meta.priceName || '',
-    legalEntityIds: _uniqList(meta.legalEntityIds || []),
-    legalEntityNames: _uniqList(meta.legalEntityNames || []),
-    sourceFile: extra.sourceFile || '',
-    comment: extra.comment || '',
-    active: extra.active !== false,
-    uploadedAt: extra.uploadedAt || now,
-    updatedAt: now
-  });
-  if(existingIdx >= 0) SUP_PRICE_LISTS[existingIdx] = rec; else SUP_PRICE_LISTS.push(rec);
-  var selected = _uniqList(rec.legalEntityIds || []);
-  if(selected.length){
-    SUP_PRICE_LISTS = SUP_PRICE_LISTS.map(function(list){
-      if(!list || list.id === rec.id) return list;
-      if(_normalizeOrgKey(list.organizationId) !== _normalizeOrgKey(rec.organizationId)) return list;
-      if(String(list.supplierName || '').toLowerCase() !== String(rec.supplierName || '').toLowerCase()) return list;
-      var listIds = _uniqList(list.legalEntityIds || []);
-      var overlap = listIds.some(function(id){ return selected.indexOf(id) >= 0; });
-      if(!overlap) return list;
-      return Object.assign({}, list, { active: false, updatedAt: now });
-    });
-  }
-  return rec;
-}
-function _supplierImportSyncPriceListLegals(priceListId, organizationId, legalEntityIds, legalEntityNames){
-  var rows = [];
-  var ids = _uniqList(legalEntityIds);
-  var names = _uniqList(legalEntityNames);
-  ids.forEach(function(id, idx){
-    rows.push({
-      id: priceListId + '::' + id,
-      priceListId: priceListId,
-      organizationId: organizationId || '',
-      legalEntityId: id,
-      legalEntityName: names[idx] || names[0] || id
-    });
-  });
-  SUP_PRICE_LIST_LEGALS = (Array.isArray(SUP_PRICE_LIST_LEGALS) ? SUP_PRICE_LIST_LEGALS.filter(function(row){
-    return row && row.priceListId !== priceListId;
-  }) : []).concat(rows);
-  return rows;
-}
-function _supplierImportSyncPriceItems(priceListId, organizationId, rows){
-  var items = [];
-  (Array.isArray(rows) ? rows : []).forEach(function(row){
-    items.push({
-      id: priceListId + '::' + String(row.sourceRow || Date.now()),
-      priceListId: priceListId,
-      organizationId: organizationId || '',
-      productId: row.productId || '',
-      productName: row.name || '',
-      nameInPrice: row.name || '',
-      price: row.price1 || row.price || 0,
-      unitId: row.unit || '',
-      sourceRowNumber: row.sourceRow || 0,
-      rawData: row.rawRow || row.rawData || {}
-    });
-  });
-  SUP_PRICE_ITEMS = (Array.isArray(SUP_PRICE_ITEMS) ? SUP_PRICE_ITEMS.filter(function(row){
-    return row && row.priceListId !== priceListId;
-  }) : []).concat(items);
-  return items;
-}
 
 // ── СЛОВАРИ ПАРСЕРА И ПОИСКА ─────────────────────────────────
 
@@ -343,9 +117,6 @@ var UNIT_ALIASES = {
 let PRODUCTS   = [];
 let SUP_PRODS  = [];
 let SUPS_DATA  = [];
-let SUP_PRICE_LISTS = [];
-let SUP_PRICE_LIST_LEGALS = [];
-let SUP_PRICE_ITEMS = [];
 let ORDERS     = [];
 let TECH_CARDS = [];
 let ALL_SUPS   = [];
@@ -424,24 +195,6 @@ function dbLoad(callback){
           if(Array.isArray(d.products) && d.products.length > 0){
             PRODUCTS = d.products;
           }
-          if(Array.isArray(d.supplierPriceLists) && d.supplierPriceLists.length > 0){
-            SUP_PRICE_LISTS = d.supplierPriceLists;
-          }
-          if(Array.isArray(d.supplierPriceListLegals) && d.supplierPriceListLegals.length > 0){
-            SUP_PRICE_LIST_LEGALS = d.supplierPriceListLegals;
-          }
-          if(Array.isArray(d.supplierPriceItems) && d.supplierPriceItems.length > 0){
-            SUP_PRICE_ITEMS = d.supplierPriceItems;
-          }
-          if(Array.isArray(d.priceImportBatches) && d.priceImportBatches.length > 0){
-            window.priceImportBatches = d.priceImportBatches;
-          }
-          if(Array.isArray(d.priceImportItems) && d.priceImportItems.length > 0){
-            window.priceImportItems = d.priceImportItems;
-          }
-          if(Array.isArray(d.supplierImportTemplates) && d.supplierImportTemplates.length > 0){
-            window.supplierImportTemplates = d.supplierImportTemplates;
-          }
           if(Array.isArray(d.orders) && d.orders.length > 0){
             ORDERS = d.orders;
           }
@@ -449,19 +202,6 @@ function dbLoad(callback){
             TECH_CARDS = d.techCards;
           }
           try{ localStorage.setItem('pv_cache', JSON.stringify(d)); }catch(e){}
-          _catalogDataRevision = Date.now();
-          _catalogProductsCache = { key:'', bySupplier:{} };
-          _catalogRatingCache = { key:'', bySupplier:{} };
-          _supplierTurnoverCache = { key:'', bySupplier:{} };
-          _supplierTurnoverIndexCache = { key:'', bySupplier:{} };
-          _dashboardOrdersCache = { key:'', orders:[] };
-          _productCategoryCache = { key:'', byName:{} };
-          _visibleOrdersCache = { key:'', orders:[] };
-          _visibleSuppliersCache = { key:'', items:[] };
-          _techCardsRenderCache = { key:'', html:'' };
-          _tenderAffCache = { key:'', byPid:{} };
-          _orderBestMatchCache = { key:'', byKey:{} };
-          _restaurantHistoryCache = { key:'', byId:{} };
           if(callback) callback();
           return;
         }
@@ -478,27 +218,8 @@ function dbLoad(callback){
     if(Array.isArray(local.supProds)) SUP_PRODS = local.supProds;
     if(Array.isArray(local.supsData)) SUPS_DATA = local.supsData;
     if(Array.isArray(local.products)) PRODUCTS = local.products;
-    if(Array.isArray(local.supplierPriceLists)) SUP_PRICE_LISTS = local.supplierPriceLists;
-    if(Array.isArray(local.supplierPriceListLegals)) SUP_PRICE_LIST_LEGALS = local.supplierPriceListLegals;
-    if(Array.isArray(local.supplierPriceItems)) SUP_PRICE_ITEMS = local.supplierPriceItems;
-    if(Array.isArray(local.priceImportBatches)) window.priceImportBatches = local.priceImportBatches;
-    if(Array.isArray(local.priceImportItems)) window.priceImportItems = local.priceImportItems;
-    if(Array.isArray(local.supplierImportTemplates)) { _dbCache.supplierImportTemplates = local.supplierImportTemplates; window.supplierImportTemplates = local.supplierImportTemplates; }
     if(Array.isArray(local.orders))   ORDERS   = local.orders;
   if(Array.isArray(local.techCards)) TECH_CARDS = local.techCards;
-    _catalogDataRevision = Date.now();
-    _catalogProductsCache = { key:'', bySupplier:{} };
-    _catalogRatingCache = { key:'', bySupplier:{} };
-    _supplierTurnoverCache = { key:'', bySupplier:{} };
-    _supplierTurnoverIndexCache = { key:'', bySupplier:{} };
-    _dashboardOrdersCache = { key:'', orders:[] };
-    _productCategoryCache = { key:'', byName:{} };
-    _visibleOrdersCache = { key:'', orders:[] };
-    _visibleSuppliersCache = { key:'', items:[] };
-    _techCardsRenderCache = { key:'', html:'' };
-    _tenderAffCache = { key:'', byPid:{} };
-    _orderBestMatchCache = { key:'', byKey:{} };
-    _restaurantHistoryCache = { key:'', byId:{} };
     if(callback) callback();
   };
   xhr.ontimeout = xhr.onerror = function(){
@@ -507,26 +228,7 @@ function dbLoad(callback){
     if(Array.isArray(local.supProds)) SUP_PRODS = local.supProds;
     if(Array.isArray(local.supsData)) SUPS_DATA = local.supsData;
     if(Array.isArray(local.products)) PRODUCTS = local.products;
-    if(Array.isArray(local.supplierPriceLists)) SUP_PRICE_LISTS = local.supplierPriceLists;
-    if(Array.isArray(local.supplierPriceListLegals)) SUP_PRICE_LIST_LEGALS = local.supplierPriceListLegals;
-    if(Array.isArray(local.supplierPriceItems)) SUP_PRICE_ITEMS = local.supplierPriceItems;
-    if(Array.isArray(local.priceImportBatches)) window.priceImportBatches = local.priceImportBatches;
-    if(Array.isArray(local.priceImportItems)) window.priceImportItems = local.priceImportItems;
-    if(Array.isArray(local.supplierImportTemplates)) { _dbCache.supplierImportTemplates = local.supplierImportTemplates; window.supplierImportTemplates = local.supplierImportTemplates; }
     if(Array.isArray(local.orders))   ORDERS   = local.orders;
-    _catalogDataRevision = Date.now();
-    _catalogProductsCache = { key:'', bySupplier:{} };
-    _catalogRatingCache = { key:'', bySupplier:{} };
-    _supplierTurnoverCache = { key:'', bySupplier:{} };
-    _supplierTurnoverIndexCache = { key:'', bySupplier:{} };
-    _dashboardOrdersCache = { key:'', orders:[] };
-    _productCategoryCache = { key:'', byName:{} };
-    _visibleOrdersCache = { key:'', orders:[] };
-    _visibleSuppliersCache = { key:'', items:[] };
-    _techCardsRenderCache = { key:'', html:'' };
-    _tenderAffCache = { key:'', byPid:{} };
-    _orderBestMatchCache = { key:'', byKey:{} };
-    _restaurantHistoryCache = { key:'', byId:{} };
     if(callback) callback();
   };
   xhr.send();
@@ -566,11 +268,8 @@ function syncRolePagesFromDb(db){
     : null;
   Object.keys(ROLES).forEach(function(roleKey){
     var fallback=(ROLE_DEFAULT_PAGES[roleKey]||[]).slice();
-    var saved=stored&&Array.isArray(stored[roleKey]) ? stored[roleKey].filter(function(pg){
-      return !!pg && !!PM[pg] && pg !== 'cart';
-    }) : null;
-    var merged=_uniqList((saved&&saved.length ? saved : fallback).concat(fallback));
-    ROLES[roleKey].pages=merged.length ? merged : fallback.slice();
+    var saved=stored&&Array.isArray(stored[roleKey]) ? stored[roleKey].filter(Boolean) : null;
+    ROLES[roleKey].pages=(saved&&saved.length ? saved : fallback).slice();
   });
 }
 
@@ -579,28 +278,10 @@ function dbSet(d){
   d.supProds = SUP_PRODS;
   d.supsData = SUPS_DATA;
   d.products = PRODUCTS;
-  d.supplierPriceLists = SUP_PRICE_LISTS;
-  d.supplierPriceListLegals = SUP_PRICE_LIST_LEGALS;
-  d.supplierPriceItems = SUP_PRICE_ITEMS;
-  d.supplierImportTemplates = Array.isArray(window.supplierImportTemplates) ? window.supplierImportTemplates : (Array.isArray(d.supplierImportTemplates) ? d.supplierImportTemplates : []);
-  d.priceImportBatches = Array.isArray(window.priceImportBatches) ? window.priceImportBatches : (Array.isArray(d.priceImportBatches) ? d.priceImportBatches : []);
-  d.priceImportItems = Array.isArray(window.priceImportItems) ? window.priceImportItems : (Array.isArray(d.priceImportItems) ? d.priceImportItems : []);
   d.orders   = ORDERS;
   d.techCards = TECH_CARDS;
+  if(!Array.isArray(d.supplierImportTemplates)) d.supplierImportTemplates = [];
   _dbCache = d;
-  _catalogDataRevision = (_catalogDataRevision || 0) + 1;
-  _catalogProductsCache = { key:'', bySupplier:{} };
-  _catalogRatingCache = { key:'', bySupplier:{} };
-  _supplierTurnoverCache = { key:'', bySupplier:{} };
-  _supplierTurnoverIndexCache = { key:'', bySupplier:{} };
-  _dashboardOrdersCache = { key:'', orders:[] };
-  _productCategoryCache = { key:'', byName:{} };
-  _visibleOrdersCache = { key:'', orders:[] };
-  _visibleSuppliersCache = { key:'', items:[] };
-  _techCardsRenderCache = { key:'', html:'' };
-  _tenderAffCache = { key:'', byPid:{} };
-  _orderBestMatchCache = { key:'', byKey:{} };
-  _restaurantHistoryCache = { key:'', byId:{} };
   try{ localStorage.setItem('pv_cache', JSON.stringify(d)); }catch(e){}
   _writeToFirebase(d, null);
 }
@@ -622,11 +303,6 @@ function _getDefaults(){
        status:'blocked',ev:false,created:'2026-01-01',bootstrapOnly:true}
     ],
     restaurants:[],
-    supplierPriceLists:[],
-    supplierPriceListLegals:[],
-    supplierPriceItems:[],
-    priceImportBatches:[],
-    priceImportItems:[],
     orgInvites:[],
     audit:[{ts:new Date().toLocaleString('ru'),user:'Система',
             action:'Инициализация',page:'-'}],
@@ -686,26 +362,17 @@ function getSupplierRatingsStore(){
 }
 
 function getSupplierRatingSummary(supName){
-  var sig = String(_catalogDataRevision || 0);
-  if(_catalogRatingCache.key !== sig){
-    _catalogRatingCache = { key:sig, bySupplier:{} };
-  }
-  if(_catalogRatingCache.bySupplier && _catalogRatingCache.bySupplier[supName]){
-    return _catalogRatingCache.bySupplier[supName];
-  }
   var store=getSupplierRatingsStore();
   var supplierStore=store[supName] && typeof store[supName]==='object' ? store[supName] : {};
   var values=Object.values(supplierStore).map(function(v){ return Number(v)||0; }).filter(function(v){ return v>=1 && v<=5; });
   var count=values.length;
   var average=count ? values.reduce(function(sum,v){ return sum+v; },0)/count : 0;
   var mine=CU && supplierStore[CU.id] ? Number(supplierStore[CU.id])||0 : 0;
-  var summary = {
+  return {
     average:average,
     count:count,
     mine:mine
   };
-  _catalogRatingCache.bySupplier[supName] = summary;
-  return summary;
 }
 
 function formatSupplierRatingAverage(value){
@@ -898,12 +565,10 @@ function enterApp(u){
   }
 }
 function setupUI(u){
-  u = Object.assign({}, u, { role: normalizeUserRole(u && u.role, u) });
   const rd=ROLES[u.role]||{};const tc=['owner','chef','buyer'].includes(u.role)?'#000':'#fff';
   const av=document.getElementById('sbAva');av.style.background=`linear-gradient(135deg,${rd.color},${rd.color}88)`;av.style.color=tc;av.textContent=(u.first[0]+u.last[0]).toUpperCase();
   document.getElementById('sbName').textContent=u.first+' '+u.last;document.getElementById('sbRole').textContent=u.company;
   const isS=u.role==='supplier',isAcc=u.role==='accountant';
-  ensureUserRestSelection(u);
   const scopedRestaurants=getUserScopedRestaurantIds(u, dbGet());
   document.getElementById('cartBtn').style.display=(!isS&&!isAcc)?'flex':'none';
   document.getElementById('favBtn').style.display=(!isS&&!isAcc)?'flex':'none';
@@ -914,30 +579,11 @@ function setupUI(u){
   else if(['chef','manager','admin'].includes(u.role)){ta.textContent='+ Тех. карта';  ta.onclick=()=>openModal('newTC');}
   else if(u.role==='owner')                      {ta.textContent='🛡 Панель владельца';ta.onclick=()=>goPage('owner');}
   else                                           {ta.textContent='+ Заказ';            ta.onclick=()=>openModal('newOrder');}
-  if(!scopedRestaurants.length && !isS && !isAcc && u.role!=='owner' && u.role!=='admin'){
-    reportRuntimeIssue('No restaurant context for user '+(u.email||u.id||''), null);
-  }
   buildNav(u);
   renderOrgInviteBadge();
-  var navFirst=document.querySelector('#sbNav .sb-item[data-page]');
-  var firstPage=navFirst ? navFirst.getAttribute('data-page') : (((ROLES[u.role]||{}).pages||[]).find(function(pg){ return canAccessPage(u, pg); })||'orders');
-  if(!firstPage) firstPage='orders';
-  var shellPage=document.getElementById('pg-'+firstPage);
-  if(shellPage){
-    document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('on'); });
-    document.querySelectorAll('.sb-item').forEach(function(i){ i.classList.remove('on'); });
-    shellPage.classList.add('on');
-    document.querySelectorAll('[data-page="'+firstPage+'"]').forEach(function(i){ i.classList.add('on'); });
-    var titleEl=document.getElementById('topTitle');
-    if(titleEl) titleEl.textContent=PT[firstPage]||firstPage;
-    setTimeout(function(){
-      window.requestAnimationFrame(function(){
-        try{ goPage(firstPage); }catch(e){ console.error('deferred initial page failed', e); }
-      });
-    }, 0);
-  } else {
-    goPage(firstPage);
-  }
+  var firstPage=((ROLES[u.role]||{}).pages||[]).find(function(pg){ return canAccessPage(u, pg); })||'dashboard';
+  if(!canAccessPage(u, firstPage)) firstPage='orders';
+  goPage(firstPage);
   renderDemoG();
 }
 function doLogout(){
@@ -952,7 +598,6 @@ function doLogout(){
 
 function toggleSB(){sbC=!sbC;document.getElementById('SB').classList.toggle('slim',sbC);document.getElementById('sbTog').textContent=sbC?'›':'‹';}
 function buildNav(u){
-  u = Object.assign({}, u, { role: normalizeUserRole(u && u.role, u), status: (isOwnerUser(u) ? 'active' : (u && u.status) || 'active') });
   const basePages=((ROLES[u.role]||{}).pages||[]).slice();
   const rawPages=(u.role==='admin'&&ownerGetSettings().adminAdvanced&&basePages.indexOf('owner')<0)?['owner'].concat(basePages):basePages;
   const pages=rawPages.filter(function(pg){ return pg!=='dashboard' || userCanSeeDashboard(u); });
@@ -968,78 +613,20 @@ function buildNav(u){
     html+=`<div class="sb-item" data-page="${pg}" onclick="goPage('${pg}')"><span class="sb-ico">${m.ico}</span><span class="sb-lbl">${m.lbl}</span>${badge}<span class="sb-tip">${m.lbl}</span></div>`;
   });
   document.getElementById('sbNav').innerHTML=html;
-  bindNavActions();
-}
-function bindNavActions(){
-  var nav=document.getElementById('sbNav');
-  if(!nav || nav.dataset.navBound==='1') return;
-  nav.dataset.navBound='1';
-  nav.addEventListener('click', function(e){
-    var item=e.target && e.target.closest ? e.target.closest('.sb-item[data-page]') : null;
-    if(!item) return;
-    var pg=item.getAttribute('data-page');
-    if(!pg) return;
-    e.preventDefault();
-    e.stopPropagation();
-    try{ goPage(pg); }catch(err){ console.error('nav click failed for '+pg+':', err); }
-  }, true);
-  document.addEventListener('click', function(e){
-    var item=e.target && e.target.closest ? e.target.closest('.sb-item[data-page]') : null;
-    if(!item) return;
-    if(nav && nav.contains(item)) return;
-    var pg=item.getAttribute('data-page');
-    if(!pg) return;
-    e.preventDefault();
-    e.stopPropagation();
-    try{ goPage(pg); }catch(err){ console.error('global nav click failed for '+pg+':', err); }
-  }, true);
 }
 function goPage(pg){
   if(!CU)return;
-  CU = Object.assign({}, CU, { role: normalizeUserRole(CU && CU.role, CU), status: (isOwnerUser(CU) ? 'active' : (CU && CU.status) || 'active') });
-  var navVisible=document.querySelector('#sbNav .sb-item[data-page="'+String(pg).replace(/"/g,'&quot;')+'"]');
-  if(!canAccessPage(CU, pg) && !navVisible){toast('🚫 Нет доступа к этому разделу','err');return;}
-  document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('on'); });
-  document.querySelectorAll('.sb-item').forEach(function(i){ i.classList.remove('on'); });
-  var pageEl=document.getElementById('pg-'+pg);
-  if(pageEl) pageEl.classList.add('on');
-  document.querySelectorAll('[data-page="'+pg+'"]').forEach(function(i){ i.classList.add('on'); });
-  var titleEl=document.getElementById('topTitle');
-  if(titleEl) titleEl.textContent=PT[pg]||pg;
-  var renderMap={order:renderOrder,dashboard:renderDash,catalog:renderCatalog,cart:renderCart,favorites:renderFavorites,orders:renderOrders,suppliers:renderSuppliers,analytics:renderAnalytics,tender:renderTender,techcards:renderTechCards,'chef-calc':initCalc,'sup-products':renderSupProducts,'sup-orders':renderSupOrders,'sup-analytics':renderSupAnalytics,'sup-dashboard':renderSupDash,admin:renderAdmin,restaurants:renderRestaurants,owner:renderOwner};
-  var renderFn=renderMap[pg];
-  if(!renderFn) return;
-  setTimeout(function(){
-    window.requestAnimationFrame(function(){
-      try{
-        renderFn();
-      }catch(e){
-        console.error('goPage render failed for '+pg+':', e);
-        toast('Страница открылась с ошибкой. Мы уже исправляем её.','err');
-      }
-    });
-  }, 0);
+  if(!canAccessPage(CU, pg)){toast('🚫 Нет доступа к этому разделу','err');return;}
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.sb-item').forEach(i=>i.classList.remove('on'));
+  document.getElementById('pg-'+pg)?.classList.add('on');
+  document.querySelectorAll(`[data-page="${pg}"]`).forEach(i=>i.classList.add('on'));
+  document.getElementById('topTitle').textContent=PT[pg]||pg;
+  const R={order:renderOrder,dashboard:renderDash,catalog:renderCatalog,cart:renderCart,favorites:renderFavorites,orders:renderOrders,suppliers:renderSuppliers,analytics:renderAnalytics,tender:renderTender,techcards:renderTechCards,'chef-calc':initCalc,'sup-products':renderSupProducts,'sup-orders':renderSupOrders,'sup-analytics':renderSupAnalytics,'sup-dashboard':renderSupDash,admin:renderAdmin,restaurants:renderRestaurants,owner:renderOwner};
+  if(R[pg])R[pg]();
 }
 function getDashboardOrders(){
   ensureDashboardRestSelection();
-  var scopeKey = normalizeDashboardAccess(CU).scope || 'assigned';
-  var allowedKey = '';
-  if(CU && CU.role !== 'owner'){
-    allowedKey = getUserDashboardRestaurantIds(CU).slice().sort().join('|');
-  }
-  var restKey = activeRest && activeRest.id && activeRest.id !== 'r0' ? String(activeRest.id) : 'all';
-  var cacheKey = [
-    String(_catalogDataRevision || 0),
-    String(CU && CU.id || ''),
-    String(CU && CU.role || ''),
-    scopeKey,
-    allowedKey,
-    restKey,
-    String((ORDERS||[]).length || 0)
-  ].join('::');
-  if(_dashboardOrdersCache.key === cacheKey && Array.isArray(_dashboardOrdersCache.orders)){
-    return _dashboardOrdersCache.orders.slice();
-  }
   var orders=(ORDERS||[]).slice();
   if(CU && normalizeDashboardAccess(CU).scope!=='all_orgs' && CU.role!=='owner'){
     var allowedIds=getUserDashboardRestaurantIds(CU);
@@ -1052,7 +639,6 @@ function getDashboardOrders(){
       return String(order.restId||'')===String(activeRest.id) || String(order.rest||'')===String(activeRest.name||'');
     });
   }
-  _dashboardOrdersCache = { key:cacheKey, orders:orders.slice() };
   return orders;
 }
 function getOrderSupplierName(order){
@@ -1098,63 +684,19 @@ function getOrganizationTurnoverRows(orders){
   return Object.entries(totals).sort(function(a,b){ return b[1]-a[1]; });
 }
 function getSupplierTurnoverSummary(supplierName, orders){
-  var sig = [
-    String(_catalogDataRevision || 0),
-    String((orders||[]).length || 0),
-    String(supplierName || '')
-  ].join('::');
-  if(_supplierTurnoverCache.key !== sig){
-    _supplierTurnoverCache = { key:sig, bySupplier:{} };
-  }
-  if(_supplierTurnoverCache.bySupplier && _supplierTurnoverCache.bySupplier[supplierName]){
-    return _supplierTurnoverCache.bySupplier[supplierName];
-  }
   var matched=(orders||[]).filter(function(order){
     return (getOrderSupplierName(order)||order.sup||'')===supplierName;
   });
   var by30=getOrdersForPeriod(matched,30).reduce(function(sum,order){ return sum+(Number(order.sum)||0); },0);
   var by90=getOrdersForPeriod(matched,90).reduce(function(sum,order){ return sum+(Number(order.sum)||0); },0);
   var all=matched.reduce(function(sum,order){ return sum+(Number(order.sum)||0); },0);
-  var summary = {
+  return {
     count:matched.length,
     by30:by30,
     by90:by90,
     all:all,
     organizations:getOrganizationTurnoverRows(matched)
   };
-  _supplierTurnoverCache.bySupplier[supplierName] = summary;
-  return summary;
-}
-
-function getSupplierTurnoverIndex(orders){
-  var sig = [
-    String(_catalogDataRevision || 0),
-    String((orders||[]).length || 0)
-  ].join('::');
-  if(_supplierTurnoverIndexCache.key === sig && _supplierTurnoverIndexCache.bySupplier){
-    return _supplierTurnoverIndexCache.bySupplier;
-  }
-  var now = Date.now();
-  var th30 = now - 30*24*60*60*1000;
-  var th90 = now - 90*24*60*60*1000;
-  var index = {};
-  (orders||[]).forEach(function(order){
-    var supplier = getOrderSupplierName(order);
-    if(!supplier) return;
-    if(!index[supplier]){
-      index[supplier] = { count:0, by30:0, by90:0, all:0, organizations:{} };
-    }
-    var bucket = index[supplier];
-    var sum = Number(order.sum)||0;
-    var time = _parseOrderDateValue(order.date);
-    bucket.count += 1;
-    bucket.all += sum;
-    if(!time || time >= th30) bucket.by30 += sum;
-    if(!time || time >= th90) bucket.by90 += sum;
-    if(order.rest) bucket.organizations[order.rest] = (bucket.organizations[order.rest] || 0) + sum;
-  });
-  _supplierTurnoverIndexCache = { key:sig, bySupplier:index };
-  return index;
 }
 function getAnalyticsPeriodValue(){
   var value=document.getElementById('analyticsPeriod');
@@ -1174,22 +716,13 @@ function getDashboardCategoryData(orders){
   var colors={meat:'#5ba3f5',fish:'#4fc3f7',veg:'#4caf82',fruit:'#ffb74d',dairy:'#ffd54f',alcohol:'#ab7df8',dry:'#ff7043',other:'#8a9ba8'};
   var labels={meat:'Мясо',fish:'Рыба',veg:'Овощи',fruit:'Фрукты',dairy:'Молочное',alcohol:'Алкоголь',dry:'Бакалея',other:'Прочее'};
   var sums={};
-  var productIndexKey = String(_catalogDataRevision || 0) + '::' + String((PRODUCTS||[]).length || 0);
-  if(_productCategoryCache.key !== productIndexKey){
-    var byName = {};
-    (PRODUCTS||[]).forEach(function(prod){
-      if(!prod) return;
-      var key = String(prod.name||'').toLowerCase().trim();
-      if(key && !byName[key]) byName[key] = prod.cat || 'other';
-    });
-    _productCategoryCache = { key:productIndexKey, byName:byName };
-  }
   orders.forEach(function(order){
     var items=getOrderItemNames(order);
     if(!items.length) return;
     var perItem=(Number(order.sum)||0)/items.length;
     items.forEach(function(name){
-      var cat=_productCategoryCache.byName[String(name||'').toLowerCase().trim()] || 'other';
+      var prod=PRODUCTS.find(function(p){ return String(p.name||'').toLowerCase()===String(name||'').toLowerCase(); });
+      var cat=prod&&prod.cat?prod.cat:'other';
       if(!labels[cat]) cat='other';
       sums[cat]=(sums[cat]||0)+perItem;
     });
@@ -1200,7 +733,6 @@ function getDashboardCategoryData(orders){
 }
 function renderDash(){
   function setEl(id,v){var e=document.getElementById(id);if(e)e.innerHTML=v;}
-  var token = ++_dashRenderToken;
   var dashPeriod=parseInt(document.getElementById('dashPeriod')?.value||'6',10)||6;
   var orders=getOrdersForMonths(getDashboardOrders(), dashPeriod).slice().sort(function(a,b){
     return _parseOrderDateValue(b.date)-_parseOrderDateValue(a.date);
@@ -1251,111 +783,85 @@ function renderDash(){
   }).join('');
   pulseHtml+='<div style="margin-top:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);font-size:12px;color:var(--t2);">Активных поставщиков: <b>'+Object.keys(activeSuppliers).length+'</b> · Рисков по ценам: <b>'+atRisk+'</b> · Заказов в работе: <b>'+pendingMinCheck+'</b></div>';
   setEl('dashPulse', pulseHtml);
-  requestAnimationFrame(function(){
-    if(token !== _dashRenderToken) return;
-    var supMap={};
-    orders.forEach(function(o){
-      var sn=getOrderSupplierName(o);
-      supMap[sn]=(supMap[sn]||0)+(o.sum||0);
-    });
-    var tops=Object.entries(supMap).sort(function(a,b){return b[1]-a[1];}).slice(0,5);
-    setEl('dashTopSup', tops.length ? tops.map(function(x){
-      var pct=tops[0][1]?Math.round(x[1]/tops[0][1]*100):0;
-      return '<div style="margin-bottom:8px;">'
-        +'<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">'
-        +'<span>'+x[0]+'</span><span style="font-weight:700;">₽'+Math.round(x[1]/1000)+'к</span></div>'
-        +'<div style="background:var(--bg3);border-radius:3px;height:5px;">'
-        +'<div style="background:var(--ac);border-radius:3px;height:5px;width:'+pct+'%;"></div>'
-        +'</div></div>';
-    }).join('') : '<div style="color:var(--t3);font-size:12px;padding:10px;">Нет данных о заказах</div>');
+  // Топ поставщики
+  var supMap={};
+  orders.forEach(function(o){
+    var sn=getOrderSupplierName(o);
+    supMap[sn]=(supMap[sn]||0)+(o.sum||0);
   });
-  requestAnimationFrame(function(){
-    if(token !== _dashRenderToken) return;
-    var catData=getDashboardCategoryData(orders).slice(0,5);
-    var catTotal=catData.reduce(function(sum,item){ return sum+item.sum; },0);
-    setEl('dashStructure', catData.length?catData.map(function(item){
-      var pct=catTotal?Math.round(item.sum/catTotal*100):0;
-      return '<div style="margin-bottom:10px;">'
-        +'<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;"><span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+item.color+';margin-right:6px;"></span>'+item.label+'</span><span style="font-weight:700;">'+pct+'%</span></div>'
-        +'<div style="background:var(--bg3);border-radius:999px;height:7px;overflow:hidden;"><div style="height:7px;border-radius:999px;background:'+item.color+';width:'+pct+'%;"></div></div>'
-        +'</div>';
-    }).join(''):'<div style="color:var(--t3);font-size:12px;padding:10px;">Пока недостаточно данных для структуры закупок</div>');
-  });
-  requestAnimationFrame(function(){
-    if(token !== _dashRenderToken) return;
-    var changes=(typeof tenderChanges!=='undefined'&&Array.isArray(tenderChanges))?tenderChanges:[];
-    setEl('dashSavings', changes.length ?
-      '<div style="padding:10px 12px;margin-bottom:10px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);font-size:12px;color:var(--t2);">Потенциальная экономия: <b style="color:var(--gr);">₽'+Math.round(tenderSavings).toLocaleString()+'</b> · Ростов цен: <b style="color:var(--rd);">'+atRisk+'</b></div>'
-      +changes.slice(0,5).map(function(t){
-        var diff=t.newPrice-t.oldPrice,isUp=diff>0;
-        var pct=t.oldPrice?Math.round(Math.abs(diff)/t.oldPrice*100):0;
-        return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--br);font-size:12px;">'
-          +'<span>'+t.name+' ('+t.sup+')</span>'
-          +'<span style="color:'+(isUp?'var(--rd)':'var(--gr)')+';font-weight:700;">'
-          +(isUp?'+':'')+diff.toLocaleString()+' ₽ ('+pct+'%)</span></div>';
-      }).join('')
-      : '<div style="color:var(--t3);font-size:12px;padding:10px;">Загрузите тендер для анализа экономии и рисков цен</div>');
-  });
-  requestAnimationFrame(function(){
-    if(token !== _dashRenderToken) return;
-    var orgTurnover=getOrganizationTurnoverRows(orders).slice(0,5);
-    var insights=[];
-    if(orgTurnover.length){
-      insights.push('<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:8px;">Оборот по организациям</div>'
-        +orgTurnover.map(function(row){
-          return '<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--br);font-size:12px;">'
-            +'<span>'+row[0]+'</span><b>₽'+Math.round(row[1]).toLocaleString()+'</b></div>';
-        }).join(''));
-    }
-    if(orders.length){
-      var supMap2={}; orders.forEach(function(o){ var sn=getOrderSupplierName(o); supMap2[sn]=(supMap2[sn]||0)+(o.sum||0); });
-      var topSupplier=Object.entries(supMap2).sort(function(a,b){return b[1]-a[1];})[0];
-      if(topSupplier) insights.push('Самый дорогой поставщик периода: <b>'+topSupplier[0]+'</b> на ₽'+Math.round(topSupplier[1]).toLocaleString());
-      if(statusCounts.processing>0) insights.push('В обработке сейчас <b>'+statusCounts.processing+'</b> заказ'+(statusCounts.processing===1?'':'ов')+'.');
-      if(extraInvoices>0) insights.push('Используется разделение на накладные: <b>'+extraInvoices+'</b> доп. накладных.');
-      if(catData[0]) insights.push('Главная категория закупки: <b>'+catData[0].label+'</b> ('+(catTotal?Math.round(catData[0].sum/catTotal*100):0)+'%).');
-    } else {
-      insights.push('По текущей точке ещё нет заказов. Начните с создания первого заказа или применения шаблона.');
-    }
-    if(atRisk>0) insights.push('После последнего тендера выросли цены по <b>'+atRisk+'</b> позициям.');
-    setEl('dashInsights', insights.map(function(text){
-      return '<div style="padding:10px 12px;margin-bottom:8px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);font-size:12px;color:var(--t2);">'+text+'</div>';
-    }).join(''));
-  });
-  requestAnimationFrame(function(){
-    if(token !== _dashRenderToken) return;
-    var dashOrdersWrap=document.getElementById('dashOrders');
-    if(dashOrdersWrap) dashOrdersWrap.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:18px;">Загрузка заказов…</td></tr>';
-    var dashOrdersRows = orders.slice(0,7);
-    var rowHtml=[];
-    var rowIndex=0;
-    (function paintRows(){
-      if(token !== _dashRenderToken) return;
-      var end=Math.min(rowIndex+3, dashOrdersRows.length);
-      for(; rowIndex<end; rowIndex++){
-        var o=dashOrdersRows[rowIndex];
-        var s=SM[o.status]||['bg','—'];
-        var names=getOrderItemNames(o);
-        rowHtml.push('<tr><td>'+o.id+'</td><td>'+(o.rest||'—')+'</td><td>'+getOrderSupplierName(o)+'</td><td>'+names.slice(0,3).join(', ')+(names.length>3?' ...':'')+'</td><td>₽'+(o.sum||0).toLocaleString()+'</td><td>'+String(o.date||'')+'</td><td><span class="badge '+s[0]+'">'+s[1]+'</span></td></tr>');
-      }
-      if(dashOrdersWrap) dashOrdersWrap.innerHTML=rowHtml.length ? rowHtml.join('') : '<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:18px;">Заказов пока нет</td></tr>';
-      if(rowIndex<dashOrdersRows.length){
-        requestAnimationFrame(paintRows);
-      } else {
-        renderDashChart();
-      }
-    })();
-  });
+  var tops=Object.entries(supMap).sort(function(a,b){return b[1]-a[1];}).slice(0,5);
+  setEl('dashTopSup', tops.length ? tops.map(function(x){
+    var pct=tops[0][1]?Math.round(x[1]/tops[0][1]*100):0;
+    return '<div style="margin-bottom:8px;">'
+      +'<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">'
+      +'<span>'+x[0]+'</span><span style="font-weight:700;">₽'+Math.round(x[1]/1000)+'к</span></div>'
+      +'<div style="background:var(--bg3);border-radius:3px;height:5px;">'
+      +'<div style="background:var(--ac);border-radius:3px;height:5px;width:'+pct+'%;"></div>'
+      +'</div></div>';
+  }).join('') : '<div style="color:var(--t3);font-size:12px;padding:10px;">Нет данных о заказах</div>');
+  // Структура закупок
+  var catData=getDashboardCategoryData(orders).slice(0,5);
+  var catTotal=catData.reduce(function(sum,item){ return sum+item.sum; },0);
+  setEl('dashStructure', catData.length?catData.map(function(item){
+    var pct=catTotal?Math.round(item.sum/catTotal*100):0;
+    return '<div style="margin-bottom:10px;">'
+      +'<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;"><span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+item.color+';margin-right:6px;"></span>'+item.label+'</span><span style="font-weight:700;">'+pct+'%</span></div>'
+      +'<div style="background:var(--bg3);border-radius:999px;height:7px;overflow:hidden;"><div style="height:7px;border-radius:999px;background:'+item.color+';width:'+pct+'%;"></div></div>'
+      +'</div>';
+  }).join(''):'<div style="color:var(--t3);font-size:12px;padding:10px;">Пока недостаточно данных для структуры закупок</div>');
+  // Изменения цен / экономия
+  var changes=(typeof tenderChanges!=='undefined'&&Array.isArray(tenderChanges))?tenderChanges:[];
+  setEl('dashSavings', changes.length ?
+    '<div style="padding:10px 12px;margin-bottom:10px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);font-size:12px;color:var(--t2);">Потенциальная экономия: <b style="color:var(--gr);">₽'+Math.round(tenderSavings).toLocaleString()+'</b> · Ростов цен: <b style="color:var(--rd);">'+atRisk+'</b></div>'
+    +changes.slice(0,5).map(function(t){
+      var diff=t.newPrice-t.oldPrice,isUp=diff>0;
+      var pct=t.oldPrice?Math.round(Math.abs(diff)/t.oldPrice*100):0;
+      return '<div style="display:flex;justify-content:space-between;padding:6px 0;'
+        +'border-bottom:1px solid var(--br);font-size:12px;">'
+        +'<span>'+t.name+' ('+t.sup+')</span>'
+        +'<span style="color:'+(isUp?'var(--rd)':'var(--gr)')+';font-weight:700;">'
+        +(isUp?'+':'')+diff.toLocaleString()+' ₽ ('+pct+'%)</span></div>';
+    }).join('')
+    : '<div style="color:var(--t3);font-size:12px;padding:10px;">Загрузите тендер для анализа экономии и рисков цен</div>');
+  var orgTurnover=getOrganizationTurnoverRows(orders).slice(0,5);
+  var insights=[];
+  if(orgTurnover.length){
+    insights.push('<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:8px;">Оборот по организациям</div>'
+      +orgTurnover.map(function(row){
+        return '<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--br);font-size:12px;">'
+          +'<span>'+row[0]+'</span><b>₽'+Math.round(row[1]).toLocaleString()+'</b></div>';
+      }).join(''));
+  }
+  if(orders.length){
+    var topSupplier=tops[0];
+    if(topSupplier) insights.push('Самый дорогой поставщик периода: <b>'+topSupplier[0]+'</b> на ₽'+Math.round(topSupplier[1]).toLocaleString());
+    if(statusCounts.processing>0) insights.push('В обработке сейчас <b>'+statusCounts.processing+'</b> заказ'+(statusCounts.processing===1?'':'ов')+'.');
+    if(extraInvoices>0) insights.push('Используется разделение на накладные: <b>'+extraInvoices+'</b> доп. накладных.');
+    if(catData[0]) insights.push('Главная категория закупки: <b>'+catData[0].label+'</b> ('+(catTotal?Math.round(catData[0].sum/catTotal*100):0)+'%).');
+  } else {
+    insights.push('По текущей точке ещё нет заказов. Начните с создания первого заказа или применения шаблона.');
+  }
+  if(atRisk>0) insights.push('После последнего тендера выросли цены по <b>'+atRisk+'</b> позициям.');
+  setEl('dashInsights', insights.map(function(text){
+    return '<div style="padding:10px 12px;margin-bottom:8px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);font-size:12px;color:var(--t2);">'+text+'</div>';
+  }).join(''));
+  // Последние заказы
+  setEl('dashOrders', orders.length ? orders.slice(0,7).map(function(o){
+    var s=SM[o.status]||['bg','—'];
+    return '<tr>'
+      +'<td>'+o.id+'</td>'
+      +'<td>'+(o.rest||'—')+'</td>'
+      +'<td>'+getOrderSupplierName(o)+'</td>'
+      +'<td>'+getOrderItemNames(o).slice(0,3).join(', ')+(getOrderItemNames(o).length>3?' ...':'')+'</td>'
+      +'<td>₽'+(o.sum||0).toLocaleString()+'</td>'
+      +'<td>'+String(o.date||'')+'</td>'
+      +'<td><span class="badge '+s[0]+'">'+s[1]+'</span></td>'
+      +'</tr>';
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:18px;">Заказов пока нет</td></tr>');
+  renderDashChart();
 }
 function renderDashChart(){
-  var token = _dashRenderToken;
   var monthsCount=parseInt(document.getElementById('dashPeriod')?.value||'6',10)||6;
-  var cacheKey=[String(_catalogDataRevision||0), String((ORDERS||[]).length||0), String(monthsCount), String(CU&&CU.id||''), String(CU&&CU.role||''), String(activeRest&&activeRest.id||'r0')].join('::');
-  if(_dashChartCache && _dashChartCache.key === cacheKey && _dashChartCache.html){
-    var cached=document.getElementById('dashChart');
-    if(cached) cached.innerHTML=_dashChartCache.html;
-    return;
-  }
   var orders=getOrdersForMonths(getDashboardOrders(), monthsCount);
   var now=new Date();
   var months=[];
@@ -1376,14 +882,10 @@ function renderDashChart(){
     if(found) found.v+=(Number(order.sum)||0);
   });
   var max=Math.max.apply(null, months.map(function(item){ return item.v; }).concat([1]));
-  var html=months.map(function(d){
+  document.getElementById('dashChart').innerHTML=months.map(function(d){
     var label=Math.round(d.v/1000);
     return `<div class="bc-col"><div class="bc-v">${label?label+'К':'0'}</div><div class="bc-bar" style="height:${Math.max(8,Math.round(d.v/max*100))}%;background:linear-gradient(180deg,var(--ac),rgba(200,240,80,.15));"></div><div class="bc-l">${d.l}</div></div>`;
   }).join('');
-  if(token !== _dashRenderToken) return;
-  _dashChartCache = { key:cacheKey, html:html };
-  var chart=document.getElementById('dashChart');
-  if(chart) chart.innerHTML=html;
 }
 function renderRestPick(){
   const db=dbGet();
@@ -1409,29 +911,6 @@ var _catalogSort = 'name';
 var _catalogSupplierId = '';
 var _catalogSupplierSort = 'asc';
 var _catalogSupplierQuery = '';
-var _catalogProductsCache = { key:'', bySupplier:{} };
-var _catalogRatingCache = { key:'', bySupplier:{} };
-var _catalogDataRevision = 1;
-var _catalogRenderToken = 0;
-var _supplierRenderToken = 0;
-var _catalogCardBatchSize = 8;
-var _catalogSupplierCardToken = 0;
-var _supplierTurnoverCache = { key:'', bySupplier:{} };
-var _supplierTurnoverIndexCache = { key:'', bySupplier:{} };
-var _dashboardOrdersCache = { key:'', orders:[] };
-var _productCategoryCache = { key:'', byName:{} };
-var _visibleOrdersCache = { key:'', orders:[] };
-var _visibleSuppliersCache = { key:'', items:[] };
-var _ordersRenderToken = 0;
-var _analyticsRenderToken = 0;
-var _dashRenderToken = 0;
-var _dashChartCache = { key:'', html:'' };
-var _techCardsRenderToken = 0;
-var _techCardsRenderCache = { key:'', html:'' };
-var _tenderRenderToken = 0;
-var _tenderAffCache = { key:'', byPid:{} };
-var _orderBestMatchCache = { key:'', byKey:{} };
-var _restaurantHistoryCache = { key:'', byId:{} };
 
 function renderSupSel(){}
 function togSup(){ renderCatalog(); }
@@ -1443,88 +922,66 @@ function getCatalogVisibleSuppliers(){
 }
 
 function getSupplierCatalogProducts(supName){
-  var sig=[
-    String(_catalogDataRevision || 0),
-    String((SUP_PRODS||[]).length),
-    String((PRODUCTS||[]).length),
-    String(_catalogSupplierSort||'asc')
-  ].join('::');
-  if(_catalogProductsCache.key!==sig){
-    var index={};
-    var pushItem=function(owner, item){
-      if(!owner || !item) return;
-      if(!index[owner]) index[owner]={seen:{},items:[]};
-      var bucket=index[owner];
-      var key=String(item.name||'').trim().toLowerCase();
-      if(!key || bucket.seen[key]) return;
-      bucket.seen[key]=true;
-      bucket.items.push(item);
-    };
-    (SUP_PRODS||[]).forEach(function(p){
-      var owner=p && (p._supplier||p.supplier||'');
-      if(!owner || p.hidden || p.active===false) return;
-      pushItem(owner, {
-        id:p.id,
-        name:String(p.name||'').trim(),
-        unit:p.unit||'',
-        category:p.cat||'',
-        source:'price'
-      });
+  var seen={};
+  var items=[];
+  (SUP_PRODS||[]).forEach(function(p){
+    var owner=p && (p._supplier||p.supplier||'');
+    if(owner!==supName) return;
+    if(p.hidden || p.active===false) return;
+    var key=String(p.name||'').trim().toLowerCase();
+    if(!key || seen[key]) return;
+    seen[key]=true;
+    items.push({
+      id:p.id,
+      name:String(p.name||'').trim(),
+      unit:p.unit||'',
+      category:p.cat||'',
+      source:'price'
     });
-    (PRODUCTS||[]).forEach(function(prod){
-      if(!prod || !Array.isArray(prod.suppliers)) return;
-      var baseItem={
-        id:prod.id,
-        name:String(prod.name||'').trim(),
-        unit:prod.unit||'',
-        category:prod.cat||'',
-        source:'catalog'
-      };
-      prod.suppliers.forEach(function(s){
-        if(s && s.name) pushItem(s.name, baseItem);
-      });
+  });
+  (PRODUCTS||[]).forEach(function(prod){
+    if(!prod || !Array.isArray(prod.suppliers)) return;
+    var match=prod.suppliers.some(function(s){ return s && s.name===supName; });
+    if(!match) return;
+    var key=String(prod.name||'').trim().toLowerCase();
+    if(!key || seen[key]) return;
+    seen[key]=true;
+    items.push({
+      id:prod.id,
+      name:String(prod.name||'').trim(),
+      unit:prod.unit||'',
+      category:prod.cat||'',
+      source:'catalog'
     });
-    Object.keys(index).forEach(function(owner){
-      index[owner].items.sort(function(a,b){
-        var cmp=String(a.name||'').localeCompare(String(b.name||''),'ru');
-        return _catalogSupplierSort==='desc' ? -cmp : cmp;
-      });
-    });
-    _catalogProductsCache = { key:sig, bySupplier:index };
-  }
-  var bucket=_catalogProductsCache.bySupplier[String(supName||'')] || { items:[] };
-  return bucket.items.slice();
+  });
+  items.sort(function(a,b){
+    var cmp=String(a.name||'').localeCompare(String(b.name||''),'ru');
+    return _catalogSupplierSort==='desc' ? -cmp : cmp;
+  });
+  return items;
 }
 
 function getCatalogSupplierAssortmentCount(supName){
   return getSupplierCatalogProducts(supName).length;
 }
 
-function getCatalogSuppliers(opts){
-  opts = opts || {};
+function getCatalogSuppliers(){
   var query=_catalogQuery;
-  var lazyAssortment = opts.lazyAssortment !== false;
-  var needsAssortment = !lazyAssortment || !!query || _catalogSort === 'assortment';
   var list=getCatalogVisibleSuppliers().map(function(s){
+    var assortment=getSupplierCatalogProducts(s.name);
     var rating=getSupplierRatingSummary(s.name);
-    var item = Object.assign({}, s, {
+    return Object.assign({}, s, {
       legalName:s.legalName||s.name||'—',
       city:s.city||'—',
       minOrderLabel:s.min||'—',
       deliverySchedule:s.deliverySchedule||s.delivery||'—',
       workSchedule:s.workSchedule||'—',
-      assortmentCount:null,
-      assortmentIndex:'',
+      assortmentCount:assortment.length,
+      assortmentIndex:assortment.map(function(item){ return item.name; }).join(' '),
       ratingAverage:rating.average,
       ratingCount:rating.count,
       myRating:rating.mine
     });
-    if(needsAssortment){
-      var assortment=getSupplierCatalogProducts(s.name);
-      item.assortmentCount = assortment.length;
-      item.assortmentIndex = query ? assortment.map(function(item){ return item.name; }).join(' ') : '';
-    }
-    return item;
   });
   if(query){
     list=list.filter(function(s){
@@ -1614,35 +1071,16 @@ function renderCatalogSupplierCard(){
     +'<div style="padding:10px 12px;border:1px solid var(--br);border-radius:10px;background:var(--bg2);"><div style="font-size:10px;color:var(--t3);text-transform:uppercase;">Ассортимент</div><div style="font-size:13px;font-weight:700;margin-top:4px;">'+assortment.length+' позиций</div></div>'
     +'</div>'
     +'</div>';
-  var token = ++_catalogSupplierCardToken;
-  body.innerHTML='';
-  if(!assortment.length){
-    body.innerHTML='<div style="padding:20px;border:1px dashed var(--br2);border-radius:10px;color:var(--t3);text-align:center;">'+(_catalogSupplierQuery?'По вашему поиску ничего не найдено':'У этого поставщика пока нет ассортимента в каталоге')+'</div>';
-    return;
-  }
-  var listWrap=document.createElement('div');
-  listWrap.style.cssText='display:grid;gap:6px;';
-  body.appendChild(listWrap);
-  var idx=0;
-  var batch=10;
-  function appendItems(){
-    if(token !== _catalogSupplierCardToken || !listWrap) return;
-    var frag=document.createDocumentFragment();
-    var end=Math.min(idx + batch, assortment.length);
-    for(; idx<end; idx++){
-      var item=assortment[idx];
-      var row=document.createElement('div');
-      row.style.cssText='display:grid;grid-template-columns:40px minmax(0,1fr) 90px 130px;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--br);border-radius:10px;background:var(--bg3);';
-      row.innerHTML='<div style="font-size:12px;color:var(--t3);font-weight:700;">'+(idx+1)+'</div>'
-        +'<div style="font-size:13px;font-weight:700;">'+item.name+'</div>'
-        +'<div style="font-size:12px;color:var(--t3);">'+(item.unit||'—')+'</div>'
-        +'<div style="font-size:11px;color:var(--t3);">'+(item.category||'—')+'</div>';
-      frag.appendChild(row);
-    }
-    listWrap.appendChild(frag);
-    if(idx < assortment.length) requestAnimationFrame(appendItems);
-  }
-  requestAnimationFrame(appendItems);
+  body.innerHTML=assortment.length
+    ? '<div style="display:grid;gap:6px;">'+assortment.map(function(item, idx){
+        return '<div style="display:grid;grid-template-columns:40px minmax(0,1fr) 90px 130px;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--br);border-radius:10px;background:var(--bg3);">'
+          +'<div style="font-size:12px;color:var(--t3);font-weight:700;">'+(idx+1)+'</div>'
+          +'<div style="font-size:13px;font-weight:700;">'+item.name+'</div>'
+          +'<div style="font-size:12px;color:var(--t3);">'+(item.unit||'—')+'</div>'
+          +'<div style="font-size:11px;color:var(--t3);">'+(item.category||'—')+'</div>'
+          +'</div>';
+      }).join('')+'</div>'
+    : '<div style="padding:20px;border:1px dashed var(--br2);border-radius:10px;color:var(--t3);text-align:center;">'+(_catalogSupplierQuery?'По вашему поиску ничего не найдено':'У этого поставщика пока нет ассортимента в каталоге')+'</div>';
 }
 
 function sortCatalogSupplierProducts(direction){
@@ -1662,15 +1100,12 @@ function catalogSupplierUploadPrice(){
 }
 
 function renderCatalog(){
-  var started = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-  var list=getCatalogSuppliers({lazyAssortment:true});
+  var list=getCatalogSuppliers();
   var sub=document.getElementById('catalogSub');
   if(sub){
     sub.textContent='Открытый каталог поставщиков: '+list.length+' компаний · ассортимент обновляется автоматически после загрузки прайсов в системе';
   }
   renderCatList(list);
-  var elapsed = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - started;
-  if(elapsed > 120) console.warn('[perf] renderCatalog took ' + Math.round(elapsed) + 'ms');
 }
 
 function renderCatList(list){
@@ -1680,86 +1115,40 @@ function renderCatList(list){
     grid.innerHTML='<div class="empty"><div class="empty-ico">🏭</div><div class="empty-txt">Поставщики не найдены</div></div>';
     return;
   }
-  var token = ++_catalogRenderToken;
-  grid.innerHTML='<div id="catGridWrap" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;"></div>'
-    +'<div id="catGridHint" style="padding:14px 6px;color:var(--t3);font-size:12px;">Подготавливаем каталог…</div>';
-  var wrap=grid.querySelector('#catGridWrap');
-  var hint=grid.querySelector('#catGridHint');
-  var index=0;
-  var total=list.length;
-  function appendBatch(){
-    if(token !== _catalogRenderToken || !wrap) return;
-    var frag=document.createDocumentFragment();
-    var end=Math.min(index + _catalogCardBatchSize, total);
-    for(; index<end; index++){
-      var s=list[index];
-      var card=document.createElement('div');
-      var countLabel = (s.assortmentCount == null ? '…' : String(s.assortmentCount));
-      card.style.cssText='background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);overflow:hidden;cursor:pointer;';
-      card.setAttribute('data-sup-name', s.name || '');
-      card.onclick=(function(name){
-        return function(){ openCatalogSupplierCard(name); };
-      })(s.name);
-      card.innerHTML=
-        '<div style="padding:14px 16px;border-bottom:1px solid var(--br);background:var(--bg3);">'
-        +'<div style="display:flex;align-items:flex-start;gap:12px;">'
-        +'<div style="flex:1;min-width:0;">'
-        +'<div style="font-size:17px;font-weight:800;">'+s.name+'</div>'
-        +'<div style="font-size:12px;color:var(--t3);margin-top:4px;">'+(s.type||'Поставщик')+'</div>'
-        +'</div>'
-        +'<div class="cat-assort-count" style="font-size:11px;color:var(--t3);white-space:nowrap;">'+countLabel+' поз.</div>'
-        +'</div>'
-        +'</div>'
-        +'<div style="padding:14px 16px;display:grid;gap:8px;">'
-        +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--br);border-radius:10px;background:var(--bg3);">'
-        +'<div style="font-size:12px;color:var(--t2);"><b>Рейтинг:</b> '+formatSupplierRatingAverage(s.ratingAverage)+'</div>'
-        +'<div style="font-size:11px;color:var(--t3);">'+s.ratingCount+' оценок</div>'
-        +'</div>'
-        +'<div style="font-size:12px;color:var(--t2);"><b>Юр. лицо:</b> '+(s.legalName||s.name)+'</div>'
-        +'<div style="font-size:12px;color:var(--t2);"><b>Мин. сумма заказа:</b> '+(s.minOrderLabel||'—')+'</div>'
-        +'<div style="font-size:12px;color:var(--t2);"><b>Город:</b> '+(s.city||'—')+'</div>'
-        +'<div style="font-size:12px;color:var(--t2);"><b>График доставки:</b> '+(s.deliverySchedule||'—')+'</div>'
-        +'<div style="font-size:12px;color:var(--t2);"><b>График работы:</b> '+(s.workSchedule||'—')+'</div>'
-        +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-top:4px;" onclick="event.stopPropagation();">'
-        +'<div style="font-size:11px;color:var(--t3);">Поставьте свою оценку</div>'
-        +'<div style="display:flex;gap:4px;">'+renderSupplierRatingStars(s.name, s.myRating)+'</div>'
-        +'</div>'
-        +'<div style="margin-top:4px;font-size:11px;color:var(--t3);">Нажмите, чтобы открыть карточку поставщика и посмотреть ассортимент без цен</div>'
-        +'</div>';
-      frag.appendChild(card);
-    }
-    wrap.appendChild(frag);
-    if(hint) hint.textContent='Показаны '+index+' из '+total+' поставщиков';
-    if(index < total) requestAnimationFrame(appendBatch);
-    else {
-      if(hint) hint.textContent='Показаны все поставщики: '+total;
-      hydrateCatalogAssortmentCounts(list, wrap, token);
-    }
-  }
-  requestAnimationFrame(appendBatch);
-}
-
-function hydrateCatalogAssortmentCounts(list, wrap, token){
-  if(!wrap || token !== _catalogRenderToken) return;
-  var idx = 0;
-  var batch = 8;
-  function paintCounts(){
-    if(token !== _catalogRenderToken || !wrap) return;
-    var end = Math.min(idx + batch, list.length);
-    for(; idx < end; idx++){
-      var s = list[idx];
-      var card = Array.from(wrap.querySelectorAll('[data-sup-name]')).find(function(node){
-        return node && node.getAttribute('data-sup-name') === String(s.name || '');
-      });
-      if(!card) continue;
-      var countEl = card.querySelector('.cat-assort-count');
-      if(!countEl) continue;
-      var count = getCatalogSupplierAssortmentCount(s.name);
-      countEl.textContent = count + ' поз.';
-    }
-    if(idx < list.length) requestAnimationFrame(paintCounts);
-  }
-  requestAnimationFrame(paintCounts);
+  grid.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;"></div>';
+  var wrap=grid.firstChild;
+  list.forEach(function(s){
+    var card=document.createElement('div');
+    card.style.cssText='background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);overflow:hidden;cursor:pointer;';
+    card.onclick=function(){ openCatalogSupplierCard(s.name); };
+    card.innerHTML=
+      '<div style="padding:14px 16px;border-bottom:1px solid var(--br);background:var(--bg3);">'
+      +'<div style="display:flex;align-items:flex-start;gap:12px;">'
+      +'<div style="flex:1;min-width:0;">'
+      +'<div style="font-size:17px;font-weight:800;">'+s.name+'</div>'
+      +'<div style="font-size:12px;color:var(--t3);margin-top:4px;">'+(s.type||'Поставщик')+'</div>'
+      +'</div>'
+      +'<div style="font-size:11px;color:var(--t3);white-space:nowrap;">'+s.assortmentCount+' поз.</div>'
+      +'</div>'
+      +'</div>'
+      +'<div style="padding:14px 16px;display:grid;gap:8px;">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--br);border-radius:10px;background:var(--bg3);">'
+      +'<div style="font-size:12px;color:var(--t2);"><b>Рейтинг:</b> '+formatSupplierRatingAverage(s.ratingAverage)+'</div>'
+      +'<div style="font-size:11px;color:var(--t3);">'+s.ratingCount+' оценок</div>'
+      +'</div>'
+      +'<div style="font-size:12px;color:var(--t2);"><b>Юр. лицо:</b> '+(s.legalName||s.name)+'</div>'
+      +'<div style="font-size:12px;color:var(--t2);"><b>Мин. сумма заказа:</b> '+(s.minOrderLabel||'—')+'</div>'
+      +'<div style="font-size:12px;color:var(--t2);"><b>Город:</b> '+(s.city||'—')+'</div>'
+      +'<div style="font-size:12px;color:var(--t2);"><b>График доставки:</b> '+(s.deliverySchedule||'—')+'</div>'
+      +'<div style="font-size:12px;color:var(--t2);"><b>График работы:</b> '+(s.workSchedule||'—')+'</div>'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-top:4px;" onclick="event.stopPropagation();">'
+      +'<div style="font-size:11px;color:var(--t3);">Поставьте свою оценку</div>'
+      +'<div style="display:flex;gap:4px;">'+renderSupplierRatingStars(s.name, s.myRating)+'</div>'
+      +'</div>'
+      +'<div style="margin-top:4px;font-size:11px;color:var(--t3);">Нажмите, чтобы открыть карточку поставщика и посмотреть ассортимент без цен</div>'
+      +'</div>';
+    wrap.appendChild(card);
+  });
 }
 function addToCartD(pid){
   // Берём минимальную цену по умолчанию
@@ -1784,14 +1173,10 @@ function flashCartUI(){
   var cartBtn=document.getElementById('cartBtn');
   var sec=document.getElementById('orderCartSection');
   if(cartBtn){
-    cartBtn.classList.remove('cart-flash');
-    void cartBtn.offsetWidth;
     cartBtn.classList.add('cart-flash');
     setTimeout(function(){cartBtn.classList.remove('cart-flash');},1200);
   }
   if(sec){
-    sec.classList.remove('cart-flash-box');
-    void sec.offsetWidth;
     sec.classList.add('cart-flash-box');
     setTimeout(function(){sec.classList.remove('cart-flash-box');},1200);
   }
@@ -1895,9 +1280,6 @@ function checkoutSupplierItems(supName, items, comment, suffix){
     }),
     zones:items.map(function(item){return item.zone||'';}).filter(Boolean),
     invoiceGroup:suffix||'Основная накладная',
-    deliveryDate:_orderDeliveryDate||'',
-    deliveryFrom:_orderDeliveryFrom||'',
-    deliveryTo:_orderDeliveryTo||'',
     sum:total,
     date:today().slice(5).split('-').reverse().join('.')+'.26',
     status:'processing',
@@ -1997,12 +1379,6 @@ function orderMetaLines(o){
   if(o.brand) lines.push('🏷 '+o.brand);
   if(Array.isArray(o.legalEntities) && o.legalEntities.length) lines.push('🏛 '+o.legalEntities.join(' · '));
   if(Array.isArray(o.zones) && o.zones.filter(Boolean).length) lines.push('🏷 Зоны: '+o.zones.filter(Boolean).join(' · '));
-  if(o.deliveryDate || o.deliveryFrom || o.deliveryTo){
-    var delivery = [];
-    if(o.deliveryDate) delivery.push(o.deliveryDate);
-    if(o.deliveryFrom || o.deliveryTo) delivery.push((o.deliveryFrom||'—')+'–'+(o.deliveryTo||'—'));
-    lines.push('🚚 Доставка: '+delivery.join(' · '));
-  }
   if(o.invoiceGroup) lines.push('🧾 '+o.invoiceGroup);
   return lines.join(' · ');
 }
@@ -2057,10 +1433,6 @@ function openOrderDetails(orderId){
     +'<div><b>Юр. лица:</b> '+(Array.isArray(order.legalEntities)&&order.legalEntities.length?order.legalEntities.join(' · '):'—')+'</div>'
     +'<div><b>Зоны:</b> '+(Array.isArray(order.zones)&&order.zones.filter(Boolean).length?order.zones.filter(Boolean).join(' · '):'—')+'</div>'
     +'<div><b>Накладная:</b> '+(order.invoiceGroup||'—')+'</div>'
-    +'<div><b>Доставка:</b> '+((order.deliveryDate||order.deliveryFrom||order.deliveryTo)?[
-      order.deliveryDate||'',
-      (order.deliveryFrom||'—')+'–'+(order.deliveryTo||'—')
-    ].filter(Boolean).join(' · '):'—')+'</div>'
     +'<div><b>Дата:</b> '+(order.date||'—')+'</div>'
     +'<div><b>Комментарий:</b> '+(order.comment||'—')+'</div>'
     +'</div>'
@@ -2086,10 +1458,6 @@ function exportOrderExcel(orderId){
     ['Юр. лица', Array.isArray(order.legalEntities)&&order.legalEntities.length?order.legalEntities.join(' · '):'—'],
     ['Зоны', Array.isArray(order.zones)&&order.zones.filter(Boolean).length?order.zones.filter(Boolean).join(' · '):'—'],
     ['Накладная', order.invoiceGroup||'—'],
-    ['Доставка', (order.deliveryDate||order.deliveryFrom||order.deliveryTo)?[
-      order.deliveryDate||'',
-      (order.deliveryFrom||'—')+' – '+(order.deliveryTo||'—')
-    ].filter(Boolean).join(' · '):'—'],
     ['Дата', order.date||'—'],
     ['Статус', (SM[order.status]||[])[1]||order.status||'—'],
     ['Комментарий', order.comment||'—'],
@@ -2120,7 +1488,6 @@ function exportOrderExcel(orderId){
 }
 function renderOrders(){
   const el=document.getElementById('ordersList');if(!el)return;
-  var token = ++_ordersRenderToken;
   renderOrdersRestaurantFilter();
   const scoped=getUserVisibleOrders(CU);
   const orgScoped=ordersRestFilter==='all'?scoped:scoped.filter(function(o){
@@ -2138,24 +1505,11 @@ function renderOrders(){
     {cls:'cp',ico:'🏭',label:'Поставщиков',value:String(supplierCount),note:supplierCount?'В этой выборке':'Нет поставщиков'}
   ]);
   if(!list.length){el.innerHTML='<div class="empty"><div class="empty-ico">📦</div><div class="empty-txt">Нет заказов</div></div>';return;}
-  el.innerHTML='<div style="padding:14px;color:var(--t3);font-size:12px;">Загрузка заказов…</div>';
-  var rows=list.slice(0,120);
-  var index=0;
-  var html=[];
-  (function paintOrderRows(){
-    if(token !== _ordersRenderToken) return;
-    var end=Math.min(index+4, rows.length);
-    for(; index<end; index++){
-      var o=rows[index];
-      var pair=SM[o.status]||['bgr','—'];
-      var meta=orderMetaLines(o);
-      html.push(`<div style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);padding:12px;margin-bottom:6px;display:grid;grid-template-columns:90px 1.2fr 110px auto auto auto;align-items:center;gap:12px;transition:border-color .15s;" onmouseenter="this.style.borderColor='var(--br2)'" onmouseleave="this.style.borderColor='var(--br)'"><div><div style="font-family:var(--fH);font-size:13px;font-weight:800;color:var(--ac);">${o.id}</div><div class="c3 fs11">${o.date}</div></div><div><div class="fw6 fs13" style="margin-bottom:4px;">${o.rest||'Без организации'}</div><div class="c3 fs11" style="margin-bottom:4px;">Поставщик: ${getOrderSupplierName(o)||o.sup||'—'}</div><div class="c3 fs11">${o.items}</div>${meta?`<div class="c3 fs11" style="margin-top:4px;">${meta}</div>`:''}</div><div class="fw7" style="font-size:13px;">₽${o.sum.toLocaleString()}</div><span class="badge ${pair[0]}">${pair[1]}</span><button onclick="openOrderDetails('${o.id}')" style="background:var(--bg3);border:1px solid var(--br);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;color:var(--t2);">Просмотр</button><button onclick="exportOrderExcel('${o.id}')" style="background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;">Excel</button></div>`);
-    }
-    el.innerHTML=html.join('') || '<div class="empty"><div class="empty-ico">📦</div><div class="empty-txt">Нет заказов</div></div>';
-    if(index < rows.length){
-      requestAnimationFrame(paintOrderRows);
-    }
-  })();
+  el.innerHTML=list.map(o=>{
+    const[cl,lb]=SM[o.status]||['bgr','—'];
+    var meta=orderMetaLines(o);
+    return`<div style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);padding:12px;margin-bottom:6px;display:grid;grid-template-columns:90px 1.2fr 110px auto auto auto;align-items:center;gap:12px;transition:border-color .15s;" onmouseenter="this.style.borderColor='var(--br2)'" onmouseleave="this.style.borderColor='var(--br)'"><div><div style="font-family:var(--fH);font-size:13px;font-weight:800;color:var(--ac);">${o.id}</div><div class="c3 fs11">${o.date}</div></div><div><div class="fw6 fs13" style="margin-bottom:4px;">${o.rest||'Без организации'}</div><div class="c3 fs11" style="margin-bottom:4px;">Поставщик: ${getOrderSupplierName(o)||o.sup||'—'}</div><div class="c3 fs11">${o.items}</div>${meta?`<div class="c3 fs11" style="margin-top:4px;">${meta}</div>`:''}</div><div class="fw7" style="font-size:13px;">₽${o.sum.toLocaleString()}</div><span class="badge ${cl}">${lb}</span><button onclick="openOrderDetails('${o.id}')" style="background:var(--bg3);border:1px solid var(--br);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;color:var(--t2);">Просмотр</button><button onclick="exportOrderExcel('${o.id}')" style="background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;">Excel</button></div>`;
+  }).join('');
 }
 function exportOrders(){
   var esc=function(v){ return '"'+String(v==null?'':v).replace(/"/g,'""')+'"'; };
@@ -2211,118 +1565,82 @@ function renderSuppliers(){
   var favoriteSuppliers=(fav.suppliers||[]);
   var db=dbGet();
   var visibleOrders=getUserVisibleOrders(CU);
-  var turnoverIndex=getSupplierTurnoverIndex(visibleOrders);
 
-  var token = ++_supplierRenderToken;
-  el.innerHTML='<div id="supGridWrap" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;"></div>'
-    +'<div id="supGridHint" style="padding:14px 6px;color:var(--t3);font-size:12px;">Подготавливаем карточки поставщиков…</div>';
-  var wrap=el.querySelector('#supGridWrap');
-  var hint=el.querySelector('#supGridHint');
-  var index=0;
-  var total=visible.length;
-
-  function buildCard(s, i){
-    var supplierToken = encodeURIComponent(String(s.name || ''));
+  var cards=visible.map(function(s){
+    var i=SUPS_DATA.indexOf(s);
     var ratingSummary=getSupplierRatingSummary(s.name);
     var isPersonalHidden=hiddenLocal[s.name]===true;
     var cardStyle=isPersonalHidden?'opacity:0.5;':'';
     var personalBadge=isPersonalHidden?'<span class="badge bgr" style="margin-left:4px;font-size:10px;">Скрыт вами</span>':'';
     var canManageSupplier=canManageSupplierRecord(CU, s, db);
     var orgSummary=getSupplierVisibleOrganizationsForUser(s, CU, db).map(function(rest){ return rest.name; }).join(' · ') || 'Без привязки';
-    var turnover=turnoverIndex[s.name] || { count:0, by30:0, by90:0, all:0, organizations:{} };
-    var turnoverRows=Object.entries(turnover.organizations || {}).sort(function(a,b){ return b[1]-a[1]; }).slice(0,3).map(function(row){
+    var turnover=getSupplierTurnoverSummary(s.name, visibleOrders);
+    var turnoverRows=turnover.organizations.slice(0,3).map(function(row){
       return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--t2);padding:4px 0;border-bottom:1px solid var(--br);"><span>'+row[0]+'</span><b>₽'+Math.round(row[1]).toLocaleString()+'</b></div>';
     }).join('') || '<div style="font-size:11px;color:var(--t3);">Пока нет заказов по этому поставщику.</div>';
 
     var personalBtn='<button onclick="togglePersonalSup(\''+s.name+'\')" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">'
       +(isPersonalHidden?'✅ Работать с ним':'🚫 Не работать')+'</button>';
+
+    // Кнопки загрузки прайса — для всех пользователей
     var priceBtns=canManagePrices?'<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--br);">'
-      +'<button type="button" onclick="supCardAction(this)" data-sup-action="prices" data-supplier-token="'+supplierToken+'" style="flex:1;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;font-weight:600;">Прайсы</button>'
-      +'<button type="button" onclick="supCardAction(this)" data-sup-action="delete-price" data-supplier-token="'+supplierToken+'" style="flex:1;background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;">Удалить прайс</button>'
-      +'<button type="button" onclick="supCardAction(this)" data-sup-action="main-price" data-supplier-token="'+supplierToken+'" style="flex:1;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;font-weight:600;">Основной прайс</button>'
-      +'<button type="button" onclick="supCardAction(this)" data-sup-action="extra-price" data-supplier-token="'+supplierToken+'" style="flex:1;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;">+ Доп.прайс</button>'
+      +'<button onclick="deleteSupPrice(\''+s.name+'\')" style="flex:1;background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;">Удалить прайс</button>'
+      +'<button onclick="openSupPriceUpload(\''+s.name+'\',false)" style="flex:1;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;font-weight:600;">Основной прайс</button>'
+      +'<button onclick="openSupPriceUpload(\''+s.name+'\',true)" style="flex:1;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;">+ Доп.прайс</button>'
       +'</div>':'';
-    var manageBtn=canManageSupplier?('<button onclick="openSupplierModal('+i+')" style="flex:1;background:var(--bg4);border:1px solid var(--br2);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Изменить карточку</button>'):'';
-    var adminBtns=canAdmin?('<button onclick="toggleSupHidden('+i+')" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">'+(s.hidden?'Показать':'Скрыть всем')+'</button>'+'<button onclick="deleteSup('+i+')" style="flex:1;background:var(--rdD);border:1px solid var(--rd);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--rd);">Удалить</button>'):'';
+
+    var manageBtn=canManageSupplier?(
+      '<button onclick="openSupplierModal('+i+')" style="flex:1;background:var(--bg4);border:1px solid var(--br2);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Изменить карточку</button>'
+    ):'';
+
+    var adminBtns=canAdmin?(
+      '<button onclick="toggleSupHidden('+i+')" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">'+(s.hidden?'Показать':'Скрыть всем')+'</button>'
+      +'<button onclick="deleteSup('+i+')" style="flex:1;background:var(--rdD);border:1px solid var(--rd);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--rd);">Удалить</button>'
+    ):'';
+
     var favoriteBtn='<button onclick="toggleFavoriteSupplier(\''+s.name+'\')" style="flex:1;background:'+(favoriteSuppliers.indexOf(s.name)>=0?'var(--aD)':'var(--bg3)')+';border:1px solid '+(favoriteSuppliers.indexOf(s.name)>=0?'var(--ac)':'var(--br)')+';border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:'+(favoriteSuppliers.indexOf(s.name)>=0?'var(--ac)':'var(--t2)')+';">'+(favoriteSuppliers.indexOf(s.name)>=0?'★ В избранном':'☆ В избранное')+'</button>';
+
     return '<div class="sup-card" style="'+cardStyle+'">'
-      +'<div class="sup-hd"><div><div class="sup-name">'+s.name+'</div><div class="sup-type">'+s.type+'</div></div><span class="badge '+sm[s.status||'active']+'" style="margin-left:auto;">'+sl[s.status||'active']+'</span>'+personalBadge+'</div>'
+      +'<div class="sup-hd">'
+      +'<div><div class="sup-name">'+s.name+'</div><div class="sup-type">'+s.type+'</div></div>'
+      +'<span class="badge '+sm[s.status||'active']+'" style="margin-left:auto;">'+sl[s.status||'active']+'</span>'
+      +personalBadge
+      +'</div>'
       +'<div style="font-size:11px;color:var(--t3);margin-bottom:10px;">Юр. лицо: '+(s.legalName||s.name)+'</div>'
       +'<div style="font-size:11px;color:var(--t3);margin-bottom:10px;">Организации: '+orgSummary+'</div>'
-      +'<div class="sup-sg"><div class="ss"><div class="ss-l">Рейтинг</div><div class="ss-v">'+formatSupplierRatingAverage(ratingSummary.average)+' <span style="font-size:10px;color:var(--t3);">('+ratingSummary.count+')</span></div></div><div class="ss"><div class="ss-l">Заказов</div><div class="ss-v">'+s.orders+'</div></div><div class="ss"><div class="ss-l">Доставка</div><div class="ss-v" style="font-size:11px;">'+s.delivery+'</div></div><div class="ss"><div class="ss-l">Мин. заказ</div><div class="ss-v" style="font-size:11px;">'+s.min+'</div></div></div>'
-      +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:8px 10px;border:1px solid var(--br);border-radius:8px;background:var(--bg3);"><div style="font-size:11px;color:var(--t3);">Ваша оценка</div><div style="display:flex;gap:4px;">'+renderSupplierRatingStars(s.name, ratingSummary.mine)+'</div></div>'
-      +'<div style="margin-top:10px;padding:10px;border:1px solid var(--br);border-radius:8px;background:var(--bg3);"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:8px;">Оборот закупки</div><div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:8px;"><div><div style="font-size:10px;color:var(--t3);">30 дней</div><div style="font-size:13px;font-weight:800;">₽'+Math.round(turnover.by30).toLocaleString()+'</div></div><div><div style="font-size:10px;color:var(--t3);">90 дней</div><div style="font-size:13px;font-weight:800;">₽'+Math.round(turnover.by90).toLocaleString()+'</div></div><div><div style="font-size:10px;color:var(--t3);">Всё время</div><div style="font-size:13px;font-weight:800;">₽'+Math.round(turnover.all).toLocaleString()+'</div></div></div><div style="font-size:11px;color:var(--t3);margin-bottom:6px;">По организациям</div>'+turnoverRows+'</div>'
+      +'<div class="sup-sg">'
+      +'<div class="ss"><div class="ss-l">Рейтинг</div><div class="ss-v">'+formatSupplierRatingAverage(ratingSummary.average)+' <span style="font-size:10px;color:var(--t3);">('+ratingSummary.count+')</span></div></div>'
+      +'<div class="ss"><div class="ss-l">Заказов</div><div class="ss-v">'+s.orders+'</div></div>'
+      +'<div class="ss"><div class="ss-l">Доставка</div><div class="ss-v" style="font-size:11px;">'+s.delivery+'</div></div>'
+      +'<div class="ss"><div class="ss-l">Мин. заказ</div><div class="ss-v" style="font-size:11px;">'+s.min+'</div></div>'
+      +'</div>'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:8px 10px;border:1px solid var(--br);border-radius:8px;background:var(--bg3);">'
+      +'<div style="font-size:11px;color:var(--t3);">Ваша оценка</div>'
+      +'<div style="display:flex;gap:4px;">'+renderSupplierRatingStars(s.name, ratingSummary.mine)+'</div>'
+      +'</div>'
+      +'<div style="margin-top:10px;padding:10px;border:1px solid var(--br);border-radius:8px;background:var(--bg3);">'
+      +'<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:8px;">Оборот закупки</div>'
+      +'<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:8px;">'
+      +'<div><div style="font-size:10px;color:var(--t3);">30 дней</div><div style="font-size:13px;font-weight:800;">₽'+Math.round(turnover.by30).toLocaleString()+'</div></div>'
+      +'<div><div style="font-size:10px;color:var(--t3);">90 дней</div><div style="font-size:13px;font-weight:800;">₽'+Math.round(turnover.by90).toLocaleString()+'</div></div>'
+      +'<div><div style="font-size:10px;color:var(--t3);">Всё время</div><div style="font-size:13px;font-weight:800;">₽'+Math.round(turnover.all).toLocaleString()+'</div></div>'
+      +'</div>'
+      +'<div style="font-size:11px;color:var(--t3);margin-bottom:6px;">По организациям</div>'
+      +turnoverRows
+      +'</div>'
       +(s.tags&&s.tags.length?'<div class="sup-tags">'+s.tags.map(function(t){return '<span class="sup-tag">'+t+'</span>';}).join('')+'</div>':'')
-      +'<div style="display:flex;gap:6px;margin-top:12px;border-top:1px solid var(--br);padding-top:10px;">'+personalBtn+favoriteBtn+manageBtn+adminBtns+'</div>'+priceBtns+'</div>';
-  }
+      +'<div style="display:flex;gap:6px;margin-top:12px;border-top:1px solid var(--br);padding-top:10px;">'
+      +personalBtn
+      +favoriteBtn
+      +manageBtn
+      +adminBtns
+      +'</div>'
+      +priceBtns
+      +'</div>';
+  }).join('');
 
-  function appendBatch(){
-    if(token !== _supplierRenderToken || !wrap) return;
-    var frag=document.createDocumentFragment();
-    var end=Math.min(index + 4, total);
-    for(; index<end; index++){
-      var s=visible[index];
-      var card=document.createElement('div');
-      card.innerHTML=buildCard(s, SUPS_DATA.indexOf(s));
-      frag.appendChild(card.firstChild);
-    }
-    wrap.appendChild(frag);
-    if(hint) hint.textContent='Показаны '+index+' из '+total+' поставщиков';
-    if(index < total) requestAnimationFrame(appendBatch);
-    else if(hint) hint.textContent='Показаны все поставщики: '+total;
-    bindSupplierCardActions(el);
-  }
-
-  requestAnimationFrame(appendBatch);
-}
-
-function supCardAction(btn){
-  if(!btn) return;
-  var action = btn.getAttribute('data-sup-action') || '';
-  var supName = '';
-  try{
-    supName = decodeURIComponent(btn.getAttribute('data-supplier-token') || '');
-  }catch(e){
-    supName = btn.getAttribute('data-supplier-token') || '';
-  }
-  if(!supName) return;
-  if(action === 'prices') openSupPriceLists(supName);
-  else if(action === 'delete-price') deleteSupPrice(supName);
-  else if(action === 'main-price') openSupPriceUpload(supName, false);
-  else if(action === 'extra-price') openSupPriceUpload(supName, true);
-}
-
-function bindSupplierCardActions(root){
-  root = root || document.getElementById('supGrid');
-  if(!root) return;
-  if(!window.__supplierCardActionBound){
-    window.__supplierCardActionBound = true;
-    root.addEventListener('click', function(ev){
-      var btn = ev && ev.target ? ev.target.closest('button[data-sup-action]') : null;
-      if(!btn) return;
-      ev.preventDefault();
-      ev.stopPropagation();
-      supCardAction(btn);
-    }, true);
-  }
-  root.querySelectorAll('button[data-sup-action]').forEach(function(btn){
-    btn.onclick = function(ev){
-      if(ev){ ev.preventDefault(); ev.stopPropagation(); }
-      supCardAction(btn);
-    };
-  });
-  window.supCardAction = supCardAction;
-}
-
-if(!window.__supplierCardDocBound){
-  window.__supplierCardDocBound = true;
-  document.addEventListener('click', function(ev){
-    var btn = ev && ev.target ? ev.target.closest('button[data-sup-action]') : null;
-    if(!btn) return;
-    ev.preventDefault();
-    ev.stopPropagation();
-    supCardAction(btn);
-  }, true);
+  var addBtn=canManageSupplierPage?'<div class="sup-card dsh" onclick="openSupplierModal()" style="display:flex;align-items:center;justify-content:center;min-height:170px;"><div style="text-align:center;color:var(--t3);"><div style="font-size:26px;margin-bottom:7px;">➕</div><div style="font-size:13px;font-weight:600;">Добавить поставщика</div></div></div>':'';
+  el.innerHTML=cards+addBtn;
 }
 
 function togglePersonalSup(supName){
@@ -2376,7 +1694,6 @@ function deleteSup(i){
   logAudit(auditActor(), 'Удалил поставщика «'+name+'»','Поставщики');
 }
 function renderAnalytics(){
-  var token = ++_analyticsRenderToken;
   var orders=getAnalyticsOrders();
   var periodValue=getAnalyticsPeriodValue();
   var periodLabel=getAnalyticsPeriodLabel(periodValue);
@@ -2421,16 +1738,13 @@ function renderAnalytics(){
   var bestSupplierName=bestSupplierEntry?bestSupplierEntry[0]:'—';
   var bestSupplierRating=bestSupplierEntry?formatSupplierRatingAverage(getSupplierRatingSummary(bestSupplierName).average):'0.0';
   var topCategoryEntry=Object.entries(categoryTotals).sort(function(a,b){ return b[1]-a[1]; })[0];
-  requestAnimationFrame(function(){
-    if(token !== _analyticsRenderToken) return;
-    renderMiniStatGrid('analyticsSummary',[
-      {cls:'ca',ico:'📊',label:'Ср. чек заказа',value:'₽'+avgCheck.toLocaleString(),note:orders.length?'За '+periodLabel:'Нет данных'},
-      {cls:'cb',ico:'🏭',label:'Поставщиков',value:String(supplierCount),note:supplierCount?'В периоде':'Пока нет'},
-      {cls:'cg',ico:'₽',label:'Общий объём',value:'₽'+Math.round(totalSpend).toLocaleString(),note:'Оборот за '+periodLabel},
-      {cls:'co',ico:'🏆',label:'Ведущий поставщик',value:bestSupplierName,valStyle:'font-size:13px;line-height:1.3;',note:bestSupplierEntry?'Рейтинг '+bestSupplierRating:'Пока нет'},
-      {cls:'cp',ico:'📦',label:'Главная категория',value:topCategoryEntry?topCategoryEntry[0]:'—',valStyle:'font-size:13px;line-height:1.3;',note:topCategoryEntry?'Основной объём закупки':'Нет данных'}
-    ]);
-  });
+  renderMiniStatGrid('analyticsSummary',[
+    {cls:'ca',ico:'📊',label:'Ср. чек заказа',value:'₽'+avgCheck.toLocaleString(),note:orders.length?'За '+periodLabel:'Нет данных'},
+    {cls:'cb',ico:'🏭',label:'Поставщиков',value:String(supplierCount),note:supplierCount?'В периоде':'Пока нет'},
+    {cls:'cg',ico:'₽',label:'Общий объём',value:'₽'+Math.round(totalSpend).toLocaleString(),note:'Оборот за '+periodLabel},
+    {cls:'co',ico:'🏆',label:'Ведущий поставщик',value:bestSupplierName,valStyle:'font-size:13px;line-height:1.3;',note:bestSupplierEntry?'Рейтинг '+bestSupplierRating:'Пока нет'},
+    {cls:'cp',ico:'📦',label:'Главная категория',value:topCategoryEntry?topCategoryEntry[0]:'—',valStyle:'font-size:13px;line-height:1.3;',note:topCategoryEntry?'Основной объём закупки':'Нет данных'}
+  ]);
   if(!orders.length){
     if(aTopP) aTopP.innerHTML='<div style="color:var(--t3);padding:18px 6px;">Нет данных по доступным организациям</div>';
     if(aSupR) aSupR.innerHTML='<div style="color:var(--t3);padding:18px 6px;">Пока нет поставщиков в личной аналитике</div>';
@@ -2440,46 +1754,30 @@ function renderAnalytics(){
   }
   if(aTopP){
     var topList=Object.entries(topProducts).sort(function(a,b){ return b[1].qty-a[1].qty; }).slice(0,6);
-    aTopP.innerHTML='<div style="padding:14px;color:var(--t3);font-size:12px;">Загрузка аналитики…</div>';
-    requestAnimationFrame(function(){
-      if(token !== _analyticsRenderToken) return;
-      aTopP.innerHTML=topList.map(function(row){
-        return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--br);"><div style="font-size:13px;font-weight:700;">'+row[0]+'</div><div style="font-size:12px;color:var(--t3);">'+Math.round(row[1].qty*1000)/1000+' '+(row[1].unit||'')+'</div></div>';
-      }).join('');
-    });
+    aTopP.innerHTML=topList.map(function(row){
+      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--br);"><div style="font-size:13px;font-weight:700;">'+row[0]+'</div><div style="font-size:12px;color:var(--t3);">'+Math.round(row[1].qty*1000)/1000+' '+(row[1].unit||'')+'</div></div>';
+    }).join('');
   }
   if(aSupR){
     var supList=Object.entries(supplierTotals).sort(function(a,b){ return b[1].total-a[1].total; }).slice(0,6);
-    aSupR.innerHTML='<div style="padding:14px;color:var(--t3);font-size:12px;">Загрузка аналитики…</div>';
-    requestAnimationFrame(function(){
-      if(token !== _analyticsRenderToken) return;
-      aSupR.innerHTML=supList.map(function(row){
-        var rating=getSupplierRatingSummary(row[0]);
-        return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--br);"><div><div style="font-size:13px;font-weight:700;">'+row[0]+'</div><div style="font-size:11px;color:var(--t3);">'+row[1].orders+' заказов</div></div><div style="text-align:right;"><div style="font-size:12px;font-weight:700;">₽'+Math.round(row[1].total).toLocaleString()+'</div><div style="font-size:11px;color:var(--t3);">★ '+formatSupplierRatingAverage(rating.average)+'</div></div></div>';
-      }).join('');
-    });
+    aSupR.innerHTML=supList.map(function(row){
+      var rating=getSupplierRatingSummary(row[0]);
+      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--br);"><div><div style="font-size:13px;font-weight:700;">'+row[0]+'</div><div style="font-size:11px;color:var(--t3);">'+row[1].orders+' заказов</div></div><div style="text-align:right;"><div style="font-size:12px;font-weight:700;">₽'+Math.round(row[1].total).toLocaleString()+'</div><div style="font-size:11px;color:var(--t3);">★ '+formatSupplierRatingAverage(rating.average)+'</div></div></div>';
+    }).join('');
   }
   if(aOrgTurnover){
     var orgList=getOrganizationTurnoverRows(orders).slice(0,6);
-    aOrgTurnover.innerHTML='<div style="padding:14px;color:var(--t3);font-size:12px;">Загрузка аналитики…</div>';
-    requestAnimationFrame(function(){
-      if(token !== _analyticsRenderToken) return;
-      aOrgTurnover.innerHTML=orgList.map(function(row){
-        return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--br);"><div style="font-size:13px;font-weight:700;">'+row[0]+'</div><div style="font-size:12px;color:var(--t2);">₽'+Math.round(row[1]).toLocaleString()+'</div></div>';
-      }).join('');
-    });
+    aOrgTurnover.innerHTML=orgList.map(function(row){
+      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--br);"><div style="font-size:13px;font-weight:700;">'+row[0]+'</div><div style="font-size:12px;color:var(--t2);">₽'+Math.round(row[1]).toLocaleString()+'</div></div>';
+    }).join('');
   }
   if(aChart){
     var monthList=Object.entries(monthTotals).sort(function(a,b){ return a[0].localeCompare(b[0],'ru'); }).slice(-6);
     var maxVal=monthList.reduce(function(max,row){ return Math.max(max,row[1]); },0) || 1;
-    aChart.innerHTML='<div style="padding:14px;color:var(--t3);font-size:12px;">Загрузка графика…</div>';
-    requestAnimationFrame(function(){
-      if(token !== _analyticsRenderToken) return;
-      aChart.innerHTML=monthList.map(function(row){
-        var width=Math.max(8, Math.round((row[1]/maxVal)*100));
-        return '<div style="display:grid;grid-template-columns:54px minmax(0,1fr) 72px;gap:10px;align-items:center;margin-bottom:8px;"><div style="font-size:11px;color:var(--t3);">'+row[0]+'</div><div style="height:10px;background:var(--bg3);border-radius:999px;overflow:hidden;"><div style="height:100%;width:'+width+'%;background:linear-gradient(90deg,var(--ac),#7bdff6);border-radius:999px;"></div></div><div style="font-size:11px;color:var(--t2);text-align:right;">₽'+Math.round(row[1]).toLocaleString()+'</div></div>';
-      }).join('');
-    });
+    aChart.innerHTML=monthList.map(function(row){
+      var width=Math.max(8, Math.round((row[1]/maxVal)*100));
+      return '<div style="display:grid;grid-template-columns:54px minmax(0,1fr) 72px;gap:10px;align-items:center;margin-bottom:8px;"><div style="font-size:11px;color:var(--t3);">'+row[0]+'</div><div style="height:10px;background:var(--bg3);border-radius:999px;overflow:hidden;"><div style="height:100%;width:'+width+'%;background:linear-gradient(90deg,var(--ac),#7bdff6);border-radius:999px;"></div></div><div style="font-size:11px;color:var(--t2);text-align:right;">₽'+Math.round(row[1]).toLocaleString()+'</div></div>';
+    }).join('');
   }
 }
 function exportAnalytics(){
@@ -2520,39 +1818,8 @@ function renderTender(){
   var _tdl=document.getElementById('tDateLbl');if(_tdl)_tdl.textContent=tenderLoaded?'Тендер от '+today():'Не загружен';
   const body=document.getElementById('tBody');if(!body)return;
   if(!tenderLoaded){body.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:40px;">Загрузите тендер</td></tr>';return;}
-  var token = ++_tenderRenderToken;
-  var affSig = String(_catalogDataRevision || 0) + '::' + String((TECH_CARDS||[]).length || 0);
-  if(_tenderAffCache.key !== affSig){
-    var byPid = {};
-    TECH_CARDS.forEach(function(tc){
-      (tc.ings||[]).forEach(function(ing){
-        if(!ing || !ing.pid) return;
-        if(!byPid[ing.pid]) byPid[ing.pid]=[];
-        if(byPid[ing.pid].indexOf(tc.name)<0) byPid[ing.pid].push(tc.name);
-      });
-    });
-    _tenderAffCache = { key:affSig, byPid:byPid };
-  }
-  body.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:18px;">Загрузка тендера…</td></tr>';
-  var rows=tenderChanges.slice();
-  var idx=0;
-  var html=[];
-  (function paintTenderRows(){
-    if(token !== _tenderRenderToken) return;
-    var end=Math.min(idx+8, rows.length);
-    for(; idx<end; idx++){
-      var t=rows[idx];
-      var diff=t.newPrice-t.oldPrice,isUp=diff>0,pct=Math.round(Math.abs(diff)/t.oldPrice*100);
-      var prod=PRODUCTS.find(function(p){ return p.id===t.pid; });
-      var alt=prod?prod.suppliers.filter(function(s){ return s.name!==t.sup; }).sort(function(a,b){return a.price-b.price;})[0]:null;
-      var dishes=(_tenderAffCache.byPid[t.pid]||[]);
-      html.push('<tr><td><b>'+t.name+'</b></td><td>'+t.sup+'</td><td>₽'+t.oldPrice.toLocaleString()+'</td><td><b>₽'+t.newPrice.toLocaleString()+'</b></td><td style="color:'+(isUp?'var(--rd)':'var(--gr)')+';font-weight:700;">'+(isUp?'▲ +':'▼ −')+pct+'%<br><small class="c3">₽'+Math.abs(diff).toLocaleString()+'</small></td><td>'+(dishes.length?dishes.map(function(d){return'<span class="badge '+(isUp?'br':'bg')+'" style="margin-right:3px;">'+d+'</span>';}).join(''):'<span class="c3 fs11">—</span>')+'</td><td>'+(isUp&&alt?'<span class="badge bb">💡 '+alt.name+' ₽'+alt.price.toLocaleString()+'</span>':'<span class="c3 fs11">—</span>')+'</td></tr>');
-    }
-    body.innerHTML=html.length ? html.join('') : '<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:18px;">Нет данных</td></tr>';
-    if(idx < rows.length){
-      requestAnimationFrame(paintTenderRows);
-    }
-  })();
+  const affD=pid=>TECH_CARDS.filter(tc=>tc.ings.some(i=>i.pid===pid)).map(tc=>tc.name);
+  body.innerHTML=tenderChanges.map(t=>{const diff=t.newPrice-t.oldPrice,isUp=diff>0,pct=Math.round(Math.abs(diff)/t.oldPrice*100);const prod=PRODUCTS.find(p=>p.id===t.pid);const alt=prod?prod.suppliers.filter(s=>s.name!==t.sup).sort((a,b)=>a.price-b.price)[0]:null;const dishes=affD(t.pid);return`<tr><td><b>${t.name}</b></td><td>${t.sup}</td><td>₽${t.oldPrice.toLocaleString()}</td><td><b>₽${t.newPrice.toLocaleString()}</b></td><td style="color:${isUp?'var(--rd)':'var(--gr)'};font-weight:700;">${isUp?'▲ +':'▼ −'}${pct}%<br><small class="c3">₽${Math.abs(diff).toLocaleString()}</small></td><td>${dishes.map(d=>`<span class="badge ${isUp?'br':'bg'}" style="margin-right:3px;">${d}</span>`).join('')||'<span class="c3 fs11">—</span>'}</td><td>${isUp&&alt?`<span class="badge bb">💡 ${alt.name} ₽${alt.price.toLocaleString()}</span>`:'<span class="c3 fs11">—</span>'}</td></tr>`;}).join('');
 }
 function exportTender(){if(!tenderLoaded){toast('Загрузите тендер','err');return;}dlFile('Продукт,Поставщик,Старая цена,Новая цена\n'+tenderChanges.map(t=>`${t.name},${t.sup},${t.oldPrice},${t.newPrice}`).join('\n'),'text/csv','tender.csv');toast('📥 Тендер экспортирован','ok');}
 function calcTCC(tc,useTender=true){return Math.round(tc.ings.reduce((s,ing)=>{const bP=useTender?curP(ing.pid):(()=>{const p=PRODUCTS.find(x=>x.id===ing.pid);return p?minP(p):0;})();const uP=ing.unit==='мл'?bP/1000:ing.unit==='л'?bP:bP/1000;return s+uP*ing.qty;},0));}
@@ -2574,37 +1841,17 @@ function renderTechCards(){
   const el=document.getElementById('tcGrid');if(!el)return;const list=tcFilter==='all'?TECH_CARDS:TECH_CARDS.filter(t=>t.cat===tcFilter);
   const catM={hot:{e:'🍲',l:'Горячее'},cold:{e:'🥗',l:'Холодное'},dessert:{e:'🍮',l:'Десерт'},drinks:{e:'🍸',l:'Напиток'},alcohol:{e:'🍷',l:'Алкоголь'},coffee:{e:'☕',l:'Кофе/чай'}};
   if(!list.length){el.innerHTML='<div class="empty" style="grid-column:1/-1"><div class="empty-ico">📋</div><div class="empty-txt">Нет тех. карт</div><button class="empty-btn" onclick="openModal(\'newTC\')">Создать</button></div>';return;}
-  var token = ++_techCardsRenderToken;
-  var sig = String(_catalogDataRevision || 0) + '::' + String((TECH_CARDS||[]).length || 0) + '::' + String(tenderLoaded ? 1 : 0) + '::' + String((tenderChanges||[]).length || 0) + '::' + String(tcFilter||'all');
-  if(_techCardsRenderCache.key === sig && _techCardsRenderCache.html){
-    el.innerHTML = _techCardsRenderCache.html;
-    return;
-  }
-  el.innerHTML='<div style="padding:16px;color:var(--t3);font-size:12px;">Загрузка тех. карт…</div>';
-  var idx=0;
-  var html=[];
-  (function paintTechCards(){
-    if(token !== _supplierRenderToken) return;
-    var end=Math.min(idx+4, list.length);
-    for(; idx<end; idx++){
-      var tc=list[idx];
-      var cost=calcTCC(tc,true),oldC=calcTCC(tc,false),diff=cost-oldC;var sell=Math.round(cost*(1+tc.markup/100));
-      var hasC=tenderLoaded&&diff!==0,pct=oldC>0?Math.round(Math.abs(diff)/oldC*100):0;var m=catM[tc.cat]||{e:'',l:tc.cat};
-      html.push('<div class="tc" style="'+(hasC&&diff>0?'border-color:rgba(239,83,80,.3);':'')+'">'
-        +'<div class="tc-hd"><div><div class="tc-name">'+tc.name+'</div><div class="tc-meta">'+m.e+' '+m.l+' · Вход '+tc.inputG+'г → Выход '+tc.yieldG+'г (потери '+tc.lossP+'%)</div></div>'
-        +'<div class="tc-cost"><div class="tc-cost-lbl">Себестоимость</div><div class="tc-cost-val" style="color:'+(hasC&&diff>0?'var(--rd)':hasC&&diff<0?'var(--gr)':'var(--ac)')+';">₽'+cost+'</div>'+(hasC?'<div class="tc-delta" style="color:'+(diff>0?'var(--rd)':'var(--gr)')+';">'+(diff>0?'▲':'▼')+' '+pct+'% ('+(diff>0?'+':'')+'₽'+diff+')</div>':'')+'</div></div>'
-        +'<div class="tc-bd">'+tc.ings.map(function(ing){var pp=curP(ing.pid),ic=Math.round((pp/(ing.unit==='мл'?1000:ing.unit==='л'?1:1000))*ing.qty);var chg=tenderChanges.find(function(t){return t.pid===ing.pid;});var pn=PRODUCTS.find(function(p){return p.id===ing.pid;})?.name||'?';return'<div class="tc-ir"><span class="tc-in">'+pn+'</span><span class="tc-iq">'+ing.qty+ing.unit+'</span><span class="tc-ic" style="'+(chg?(chg.newPrice>chg.oldPrice?'color:var(--rd)':'color:var(--gr)'):'')+'">₽'+ic+'</span></div>';}).join('')+'</div>'
-        +'<div class="tc-ft"><span class="c3">Цена продажи ×'+(tc.markup/100+1).toFixed(1)+'</span><span style="color:var(--ac);font-weight:700;">₽'+sell.toLocaleString()+'</span>'
-          +'<div style="display:flex;gap:5px;"><button onclick="openEditTC('+tc.id+')" style="background:var(--aD);border:1px solid rgba(200,240,80,.2);border-radius:5px;padding:3px 8px;color:var(--ac);font-size:11px;cursor:pointer;font-weight:600;">✏️</button><button onclick="dlTC('+tc.id+')" style="background:var(--blD);border:1px solid rgba(79,195,247,.2);border-radius:5px;padding:3px 8px;color:var(--bl);font-size:11px;cursor:pointer;">📥</button></div>'
-        +'</div></div>');
-    }
-    el.innerHTML=html.join('');
-    if(idx < list.length){
-      requestAnimationFrame(paintTechCards);
-    } else {
-      _techCardsRenderCache = { key:sig, html:html.join('') };
-    }
-  })();
+  el.innerHTML=list.map(tc=>{
+    const cost=calcTCC(tc,true),oldC=calcTCC(tc,false),diff=cost-oldC;const sell=Math.round(cost*(1+tc.markup/100));
+    const hasC=tenderLoaded&&diff!==0,pct=oldC>0?Math.round(Math.abs(diff)/oldC*100):0;const m=catM[tc.cat]||{e:'',l:tc.cat};
+    return`<div class="tc" style="${hasC&&diff>0?'border-color:rgba(239,83,80,.3);':''}">
+      <div class="tc-hd"><div><div class="tc-name">${tc.name}</div><div class="tc-meta">${m.e} ${m.l} · Вход ${tc.inputG}г → Выход ${tc.yieldG}г (потери ${tc.lossP}%)</div></div>
+        <div class="tc-cost"><div class="tc-cost-lbl">Себестоимость</div><div class="tc-cost-val" style="color:${hasC&&diff>0?'var(--rd)':hasC&&diff<0?'var(--gr)':'var(--ac)'};">₽${cost}</div>${hasC?`<div class="tc-delta" style="color:${diff>0?'var(--rd)':'var(--gr)'};">${diff>0?'▲':'▼'} ${pct}% (${diff>0?'+':''}₽${diff})</div>`:''}</div></div>
+      <div class="tc-bd">${tc.ings.map(ing=>{const pp=curP(ing.pid),ic=Math.round((pp/(ing.unit==='мл'?1000:ing.unit==='л'?1:1000))*ing.qty);const chg=tenderChanges.find(t=>t.pid===ing.pid);const pn=PRODUCTS.find(p=>p.id===ing.pid)?.name||'?';return`<div class="tc-ir"><span class="tc-in">${pn}</span><span class="tc-iq">${ing.qty}${ing.unit}</span><span class="tc-ic" style="${chg?(chg.newPrice>chg.oldPrice?'color:var(--rd)':'color:var(--gr)'):''}">₽${ic}</span></div>`;}).join('')}</div>
+      <div class="tc-ft"><span class="c3">Цена продажи ×${(tc.markup/100+1).toFixed(1)}</span><span style="color:var(--ac);font-weight:700;">₽${sell.toLocaleString()}</span>
+        <div style="display:flex;gap:5px;"><button onclick="openEditTC(${tc.id})" style="background:var(--aD);border:1px solid rgba(200,240,80,.2);border-radius:5px;padding:3px 8px;color:var(--ac);font-size:11px;cursor:pointer;font-weight:600;">✏️</button><button onclick="dlTC(${tc.id})" style="background:var(--blD);border:1px solid rgba(79,195,247,.2);border-radius:5px;padding:3px 8px;color:var(--bl);font-size:11px;cursor:pointer;">📥</button></div>
+      </div></div>`;
+  }).join('');
 }
 function addTCRow(){const i=tcRC++;const o=PRODUCTS.map(p=>`<option value="${p.id}">${p.emoji} ${p.name}</option>`).join('');const d=document.createElement('div');d.className='ir-calc';d.innerHTML=`<select class="fS" style="margin:0;font-size:12px;">${o}</select><input class="fI" type="number" value="100" style="margin:0;"><select class="fS" style="margin:0;font-size:12px;"><option>г</option><option>мл</option><option>л</option><option>шт</option></select><div></div><button class="del-btn" onclick="this.closest('.ir-calc').remove()">✕</button>`;document.getElementById('tcRows').appendChild(d);}
 function submitTC(){
@@ -2742,51 +1989,38 @@ function renderSupProducts(){
     el.innerHTML='<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--t3);">Нет товаров. Загрузите прайс кнопкой выше.</td></tr>';
     return;
   }
-  var token = ++_supplierRenderToken;
-  el.innerHTML='<tr><td colspan="9" style="text-align:center;padding:22px;color:var(--t3);">Загрузка товаров…</td></tr>';
-  var rows=SUP_PRODS.filter(function(p){
-    return !(q&&p.name.toLowerCase().indexOf(q)<0&&(p.cat||'').toLowerCase().indexOf(q)<0);
-  });
-  var idx=0;
-  var html=[];
-  (function paintSupProducts(){
-    if(token !== _supplierRenderToken) return;
-    var end=Math.min(idx+12, rows.length);
-    for(; idx<end; idx++){
-      var p=rows[idx];
-      var canSee=canSeePrices(p);
-      var hidStyle=p.hidden?'opacity:0.45;':'';
-      var hidBadge=p.hidden?'<span style="font-size:10px;background:var(--rdD);color:var(--rd);border-radius:3px;padding:1px 5px;margin-left:4px;">скрыт</span>':'';
-      var companies=(p.allowedCompanies&&p.allowedCompanies.length)?p.allowedCompanies.join(', '):'Все';
-      var compBadge=(CU&&(CU.role==='owner'||CU.role==='admin'))?'<div style="font-size:10px;color:var(--t3);">👥 '+companies+'</div>':'';
-      var dash='<span style="color:var(--t4);">—</span>';
-      var supIndex=SUP_PRODS.indexOf(p);
-      function priceCell(val,field){
-        if(!canSee) return dash;
-        return '<input class="pi" type="number" value="'+val+'" onchange="SUP_PRODS['+supIndex+'].'+field+'=parseFloat(this.value)||0;">';
-      }
-      var actionBtns='';
-      if(canSee){
-        actionBtns+=
-          '<button onclick="SUP_PRODS['+supIndex+'].hidden=!SUP_PRODS['+supIndex+'].hidden;renderSupProducts();" style="background:var(--bg3);border:1px solid var(--br);border-radius:5px;padding:3px 8px;font-size:11px;cursor:pointer;color:var(--t2);">'+(p.hidden?'👁':'🙈')+'</button>'
-         +'<button onclick="SUP_PRODS['+supIndex+'].active=!SUP_PRODS['+supIndex+'].active;renderSupProducts();" style="background:'+(p.active?'var(--rdD)':'var(--grD)')+';color:'+(p.active?'var(--rd)':'var(--gr)')+';border:1px solid '+(p.active?'var(--rd)':'var(--gr)')+';border-radius:5px;padding:3px 8px;font-size:11px;cursor:pointer;">'+(p.active?'Откл.':'Вкл.')+'</button>'
-         +'<button onclick="delSupProd('+supIndex+')" style="background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:5px;padding:3px 7px;font-size:11px;cursor:pointer;">✕</button>';
-      }
-      html.push('<tr style="'+hidStyle+'">'
-        +'<td><div style="font-weight:600;">'+p.name+hidBadge+'</div>'+compBadge+'</td>'
-        +'<td><span class="badge bb" style="font-size:11px;">'+p.cat+'</span></td>'
-        +'<td>'+priceCell(p.pKg,'pKg')+'</td>'
-        +'<td>'+priceCell(p.pSh,'pSh')+'</td>'
-        +'<td>'+priceCell(p.pL,'pL')+'</td>'
-        +'<td>'+priceCell(p.pMl,'pMl')+'</td>'
-        +'<td><span style="color:'+(p.stock<50?'var(--rd)':p.stock<100?'var(--ac)':'var(--gr)')+';">'+p.stock+'</span></td>'
-        +'<td><span class="badge '+(p.active?'bg':'bgr')+'">'+(p.active?'Активен':'Скрыт')+'</span></td>'
-        +'<td style="display:flex;gap:4px;justify-content:flex-end;">'+actionBtns+'</td>'
-        +'</tr>');
+  var rows=SUP_PRODS.map(function(p,i){
+    if(q&&p.name.toLowerCase().indexOf(q)<0&&(p.cat||'').toLowerCase().indexOf(q)<0)return '';
+    var canSee=canSeePrices(p);
+    var hidStyle=p.hidden?'opacity:0.45;':'';
+    var hidBadge=p.hidden?'<span style="font-size:10px;background:var(--rdD);color:var(--rd);border-radius:3px;padding:1px 5px;margin-left:4px;">скрыт</span>':'';
+    var companies=(p.allowedCompanies&&p.allowedCompanies.length)?p.allowedCompanies.join(', '):'Все';
+    var compBadge=(CU&&(CU.role==='owner'||CU.role==='admin'))?'<div style="font-size:10px;color:var(--t3);">👥 '+companies+'</div>':'';
+    var dash='<span style="color:var(--t4);">—</span>';
+    function priceCell(val,field){
+      if(!canSee) return dash;
+      return '<input class="pi" type="number" value="'+val+'" onchange="SUP_PRODS['+i+'].'+field+'=parseFloat(this.value)||0;">';
     }
-    el.innerHTML=html.length ? html.join('') : '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--t3);">Ничего не найдено</td></tr>';
-    if(idx < rows.length) requestAnimationFrame(paintSupProducts);
-  })();
+    var actionBtns='';
+    if(canSee){
+      actionBtns+=
+        '<button onclick="SUP_PRODS['+i+'].hidden=!SUP_PRODS['+i+'].hidden;renderSupProducts();" style="background:var(--bg3);border:1px solid var(--br);border-radius:5px;padding:3px 8px;font-size:11px;cursor:pointer;color:var(--t2);">'+(p.hidden?'👁':'🙈')+'</button>'
+       +'<button onclick="SUP_PRODS['+i+'].active=!SUP_PRODS['+i+'].active;renderSupProducts();" style="background:'+(p.active?'var(--rdD)':'var(--grD)')+';color:'+(p.active?'var(--rd)':'var(--gr)')+';border:1px solid '+(p.active?'var(--rd)':'var(--gr)')+';border-radius:5px;padding:3px 8px;font-size:11px;cursor:pointer;">'+(p.active?'Откл.':'Вкл.')+'</button>'
+       +'<button onclick="delSupProd('+i+')" style="background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:5px;padding:3px 7px;font-size:11px;cursor:pointer;">✕</button>';
+    }
+    return '<tr style="'+hidStyle+'">'
+      +'<td><div style="font-weight:600;">'+p.name+hidBadge+'</div>'+compBadge+'</td>'
+      +'<td><span class="badge bb" style="font-size:11px;">'+p.cat+'</span></td>'
+      +'<td>'+priceCell(p.pKg,'pKg')+'</td>'
+      +'<td>'+priceCell(p.pSh,'pSh')+'</td>'
+      +'<td>'+priceCell(p.pL,'pL')+'</td>'
+      +'<td>'+priceCell(p.pMl,'pMl')+'</td>'
+      +'<td><span style="color:'+(p.stock<50?'var(--rd)':p.stock<100?'var(--ac)':'var(--gr)')+';">'+p.stock+'</span></td>'
+      +'<td><span class="badge '+(p.active?'bg':'bgr')+'">'+(p.active?'Активен':'Скрыт')+'</span></td>'
+      +'<td style="display:flex;gap:4px;justify-content:flex-end;">'+actionBtns+'</td>'
+      +'</tr>';
+  }).join('');
+  el.innerHTML=rows||'<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--t3);">Ничего не найдено</td></tr>';
 }
 
 function delSupProd(i){
@@ -2797,22 +2031,7 @@ function delSupProd(i){
 }
 function renderSupOrders(){
   const el=document.getElementById('supOrdBody');if(!el)return;
-  var token = ++_supplierRenderToken;
-  el.innerHTML='<tr><td colspan="8" style="text-align:center;padding:22px;color:var(--t3);">Загрузка заказов…</td></tr>';
-  var rows=ORDERS.slice(0,4);
-  var idx=0;
-  var html=[];
-  (function paintSupOrders(){
-    if(token !== _supplierRenderToken) return;
-    var end=Math.min(idx+4, rows.length);
-    for(; idx<end; idx++){
-      var o=rows[idx];
-      const [cl,lb]=SM[o.status]||['bgr','—'];
-      html.push(`<tr><td><b>${o.id}</b></td><td>${o.sup.split(' ').slice(1).join(' ')}</td><td>${o.items}</td><td style="font-size:11px;color:var(--t2);">${o.comment||'—'}</td><td><b>₽${o.sum.toLocaleString()}</b></td><td>${o.date}</td><td><span class="badge ${cl}">${lb}</span></td><td>${o.status==='processing'?`<button onclick="ORDERS[${ORDERS.indexOf(o)}].status='transit';renderSupOrders();toast('✓ Принято!','ok');" style="background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;font-weight:600;">✓ Принять</button>`:''}</td></tr>`);
-    }
-    el.innerHTML=html.length ? html.join('') : '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--t3);">Нет заказов</td></tr>';
-    if(idx < rows.length) requestAnimationFrame(paintSupOrders);
-  })();
+  el.innerHTML=ORDERS.slice(0,4).map((o,oi)=>{const[cl,lb]=SM[o.status]||['bgr','—'];return`<tr><td><b>${o.id}</b></td><td>${o.sup.split(' ').slice(1).join(' ')}</td><td>${o.items}</td><td style="font-size:11px;color:var(--t2);">${o.comment||'—'}</td><td><b>₽${o.sum.toLocaleString()}</b></td><td>${o.date}</td><td><span class="badge ${cl}">${lb}</span></td><td>${o.status==='processing'?`<button onclick="ORDERS[${oi}].status='transit';renderSupOrders();toast('✓ Принято!','ok');" style="background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;font-weight:600;">✓ Принять</button>`:''}</td></tr>`;}).join('');
   const newOrd=document.getElementById('supNewOrd');
   if(newOrd)newOrd.innerHTML=ORDERS.filter(o=>o.status==='processing').map((o,oi)=>`<div style="background:var(--orD);border:1px solid rgba(255,112,67,.25);border-radius:var(--r2);padding:15px;margin-bottom:9px;"><div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;"><div><div style="font-weight:700;font-size:14px;">${o.id} · ${o.sup.split(' ').slice(1).join(' ')}</div><div style="font-size:11px;color:var(--t3);">${o.date}${o.comment?' · 💬 '+o.comment:''}</div></div><span class="badge bo">Новый</span></div><div style="font-size:13px;color:var(--t2);margin-bottom:12px;">${o.items}</div><div style="display:flex;align-items:center;justify-content:space-between;"><div style="font-family:var(--fH);font-size:17px;font-weight:800;">₽${o.sum.toLocaleString()}</div><div style="display:flex;gap:7px;"><button onclick="ORDERS[${ORDERS.indexOf(o)}].status='transit';renderSupOrders();renderSupDash();toast('✓ Заказ принят!','ok');" style="background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:var(--r);padding:9px 18px;font-weight:700;font-size:13px;cursor:pointer;">✓ Принять</button><button onclick="ORDERS[${ORDERS.indexOf(o)}].status='cancelled';renderSupOrders();renderSupDash();toast('✕ Отклонён','ok');" style="background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:var(--r);padding:9px 18px;font-size:13px;cursor:pointer;">✕ Отклонить</button></div></div></div>`).join('')||'<div class="empty"><div class="empty-ico">✅</div><div class="empty-txt">Нет новых заказов</div></div>';
 }
@@ -2969,17 +2188,8 @@ function normalizeDashboardAccess(user){
 function getUserRestaurantMembershipIds(user, db){
   db=db||dbGet();
   if(!user) return [];
-  var userCompany=_normalizeOrgKey(user.company || '');
   return (db.restaurants||[]).filter(function(rest){
-    if(!rest || rest.id==='r0') return false;
-    if(Array.isArray(rest.members) && rest.members.some(function(member){ return member.userId===user.id; })) return true;
-    if(userCompany){
-      var legalNames=getRestLegalEntities(rest).map(function(name){ return _normalizeOrgKey(name); });
-      var restOrg=_normalizeOrgKey(rest.brandName || rest.legalName || rest.name || '');
-      if(restOrg && restOrg===userCompany) return true;
-      if(legalNames.indexOf(userCompany)>=0) return true;
-    }
-    return false;
+    return rest.id!=='r0' && Array.isArray(rest.members) && rest.members.some(function(member){ return member.userId===user.id; });
   }).map(function(rest){ return rest.id; });
 }
 
@@ -3008,26 +2218,12 @@ function getUserScopedRestaurantIds(user, db){
 function getUserVisibleOrders(user){
   if(!user) return [];
   var db=dbGet();
-  var allowedIds=getUserScopedRestaurantIds(user, db).slice().sort().join('|');
-  var activeId=activeRest && activeRest.id && activeRest.id!=='r0' ? String(activeRest.id) : 'all';
-  var cacheKey=[
-    String(_catalogDataRevision || 0),
-    String(user.id || ''),
-    String(user.role || ''),
-    activeId,
-    allowedIds,
-    String((ORDERS||[]).length || 0)
-  ].join('::');
-  if(_visibleOrdersCache.key===cacheKey && Array.isArray(_visibleOrdersCache.orders)){
-    return _visibleOrdersCache.orders.slice();
-  }
+  var allowedIds=getUserScopedRestaurantIds(user, db);
   if(user.role==='owner') return (ORDERS||[]).slice();
   if(!allowedIds.length) return [];
-  var orders=(ORDERS||[]).filter(function(order){
+  return (ORDERS||[]).filter(function(order){
     return allowedIds.indexOf(String(order.restId||''))>=0;
   });
-  _visibleOrdersCache = { key:cacheKey, orders:orders.slice() };
-  return orders;
 }
 
 function getUserOutgoingOrders(user){
@@ -3076,33 +2272,20 @@ function canManageSupplierRecord(user, supplier, db){
 
 function getUserVisibleSuppliers(user){
   var db=dbGet();
-  var allowedIds=getUserScopedRestaurantIds(user, db);
-  var visibleOrders=getUserVisibleOrders(user);
-  var cacheKey=[
-    String(_catalogDataRevision || 0),
-    String(user && user.id || ''),
-    String(user && user.role || ''),
-    allowedIds.slice().sort().join('|'),
-    String(visibleOrders.length || 0),
-    String((SUP_PRODS||[]).length || 0),
-    String((SUPS_DATA||[]).length || 0)
-  ].join('::');
-  if(_visibleSuppliersCache.key === cacheKey && Array.isArray(_visibleSuppliersCache.items)){
-    return _visibleSuppliersCache.items.slice();
-  }
   var base=(SUPS_DATA||[]).filter(function(s){ return s && !s.hidden; });
   if(!user) return [];
-  if(user.role==='owner'){ _visibleSuppliersCache = { key:cacheKey, items:base.slice() }; return base; }
-  if(user.role==='admin' && normalizeDashboardAccess(user).scope==='all_orgs'){ _visibleSuppliersCache = { key:cacheKey, items:base.slice() }; return base; }
+  if(user.role==='owner') return base;
+  if(user.role==='admin' && normalizeDashboardAccess(user).scope==='all_orgs') return base;
 
   var visibleNames={};
+  var allowedIds=getUserScopedRestaurantIds(user, db);
   base.forEach(function(supplier){
     var orgIds=normalizeSupplierOrganizationIds(supplier, db);
     if(orgIds.some(function(id){ return allowedIds.indexOf(String(id))>=0; })){
       visibleNames[supplier.name]=true;
     }
   });
-  visibleOrders.forEach(function(order){
+  getUserVisibleOrders(user).forEach(function(order){
     var name=getOrderSupplierName(order);
     if(name) visibleNames[name]=true;
   });
@@ -3113,22 +2296,13 @@ function getUserVisibleSuppliers(user){
       if(supName) visibleNames[supName]=true;
     }
   });
-  var items = base.filter(function(s){ return !!visibleNames[s.name]; });
-  _visibleSuppliersCache = { key:cacheKey, items:items.slice() };
-  return items;
+  return base.filter(function(s){ return !!visibleNames[s.name]; });
 }
 
 function isRestaurantParticipant(user, rest){
   if(!user || !rest) return false;
   if(user.role==='owner') return true;
-  if(Array.isArray(rest.members) && rest.members.some(function(member){ return member.userId===user.id; })) return true;
-  var userCompany=_normalizeOrgKey(user.company || '');
-  if(!userCompany) return false;
-  var legalNames=getRestLegalEntities(rest).map(function(name){ return _normalizeOrgKey(name); });
-  var restOrg=_normalizeOrgKey(rest.brandName || rest.legalName || rest.name || '');
-  if(restOrg && restOrg===userCompany) return true;
-  if(legalNames.indexOf(userCompany)>=0) return true;
-  return false;
+  return Array.isArray(rest.members) && rest.members.some(function(member){ return member.userId===user.id; });
 }
 
 function canViewRestaurantSensitiveData(user, rest){
@@ -3243,8 +2417,7 @@ function declineOrgInvite(inviteId){
 
 function userCanSeeDashboard(user){
   if(!user) return false;
-  if(isOwnerUser(user)) return true;
-  if(normalizeUserRole(user.role, user)==='owner') return true;
+  if(user.role==='owner') return true;
   var access=normalizeDashboardAccess(user);
   if(!access.enabled) return false;
   if(access.scope==='all_orgs') return true;
@@ -3253,7 +2426,6 @@ function userCanSeeDashboard(user){
 
 function ensureDashboardRestSelection(){
   if(!CU) return;
-  if(isOwnerUser(CU)) return;
   if(normalizeDashboardAccess(CU).scope==='all_orgs' || CU.role==='owner') return;
   var db=dbGet();
   var allowedIds=getUserDashboardRestaurantIds(CU, db);
@@ -3266,21 +2438,9 @@ function ensureDashboardRestSelection(){
     if(next) activeRest=next;
   }
 }
-function ensureUserRestSelection(user){
-  user=user||CU;
-  if(!user || isOwnerUser(user)) return;
-  var db=dbGet();
-  var allowedIds=getUserScopedRestaurantIds(user, db);
-  if(!allowedIds.length) return;
-  if(!activeRest || activeRest.id==='r0' || allowedIds.indexOf(activeRest.id)<0){
-    var next=(db.restaurants||[]).find(function(rest){ return allowedIds.indexOf(rest.id)>=0; });
-    if(next) activeRest=next;
-  }
-}
 
 function canAccessPage(u, pg){
   if(!u) return false;
-  u = Object.assign({}, u, { role: normalizeUserRole(u && u.role, u), status: (isOwnerUser(u) ? 'active' : (u && u.status) || 'active') });
   if(pg==='dashboard') return userCanSeeDashboard(u);
   var pages=(ROLES[u.role]||{}).pages||[];
   if(pages.indexOf(pg)>=0) return true;
@@ -3384,7 +2544,6 @@ function ownerStatusRow(label,value,tone,sub){
 }
 
 function renderOwner(){
-  if(CU && isOwnerUser(CU)) CU = Object.assign({}, CU, { role:'owner', status:'active' });
   var db=dbGet();
   var companies=ownerDistinctCompanies(db);
   var systemLog=Array.isArray(db.systemLog)?db.systemLog:[];
@@ -3756,9 +2915,6 @@ function submitOrder(){
     itemsDetailed:[{name:item,qty:(parseFloat(qty)||1),unit:unit,zone:'',invoiceGroup:'main',comment:comment}],
     zones:[],
     invoiceGroup:'Основная накладная',
-    deliveryDate:_orderDeliveryDate||'',
-    deliveryFrom:_orderDeliveryFrom||'',
-    deliveryTo:_orderDeliveryTo||'',
     sum:Math.round((parseFloat(qty)||1)*500),
     date:today().slice(5).split('-').reverse().join('.')+'.26',
     status:'processing',comment:comment});
@@ -4484,17 +3640,6 @@ function renderRestaurants(){
 }
 
 function getRestaurantHistory(rest, days){
-  var restId=rest&&rest.id ? String(rest.id) : '';
-  var dayKey=String(days||0);
-  var cacheSig=[
-    String(_catalogDataRevision || 0),
-    restId,
-    dayKey,
-    String((ORDERS||[]).length || 0)
-  ].join('::');
-  if(_restaurantHistoryCache.key === cacheSig && _restaurantHistoryCache.byId && Object.prototype.hasOwnProperty.call(_restaurantHistoryCache.byId, cacheSig)){
-    return _restaurantHistoryCache.byId[cacheSig];
-  }
   var restName=rest&&rest.name?String(rest.name):'';
   var allOrders=(ORDERS||[]).filter(function(order){
     return String(order.rest||'')===restName;
@@ -4522,7 +3667,7 @@ function getRestaurantHistory(rest, days){
       itemCounts[item]=(itemCounts[item]||0)+1;
     });
   });
-  var summary = {
+  return {
     orderCount: orders.length,
     totalSum: totalSum,
     avgOrder: orders.length?totalSum/orders.length:0,
@@ -4539,9 +3684,6 @@ function getRestaurantHistory(rest, days){
     favoriteSuppliers: Object.keys(supplierCounts).sort(function(a,b){ return supplierCounts[b]-supplierCounts[a]; }).slice(0,3),
     frequentItems: Object.keys(itemCounts).sort(function(a,b){ return itemCounts[b]-itemCounts[a]; }).slice(0,5)
   };
-  _restaurantHistoryCache.key = cacheSig;
-  _restaurantHistoryCache.byId[cacheSig] = summary;
-  return summary;
 }
 
 function getRestaurantSmartSuggestions(){
@@ -4962,12 +4104,6 @@ function savePriceData(){
   d.supProds = SUP_PRODS;
   d.supsData = SUPS_DATA;
   d.products = PRODUCTS;
-  d.supplierPriceLists = SUP_PRICE_LISTS;
-  d.supplierPriceListLegals = SUP_PRICE_LIST_LEGALS;
-  d.supplierPriceItems = SUP_PRICE_ITEMS;
-  d.supplierImportTemplates = Array.isArray(window.supplierImportTemplates) ? window.supplierImportTemplates : (Array.isArray(d.supplierImportTemplates) ? d.supplierImportTemplates : []);
-  d.priceImportBatches = Array.isArray(window.priceImportBatches) ? window.priceImportBatches : (Array.isArray(d.priceImportBatches) ? d.priceImportBatches : []);
-  d.priceImportItems = Array.isArray(window.priceImportItems) ? window.priceImportItems : (Array.isArray(d.priceImportItems) ? d.priceImportItems : []);
   dbSet(d);
 }
 
@@ -5360,18 +4496,16 @@ function getCurrentOrderRestaurantMeta(){
 
 function getOrderHeaderRows(restName, date, supName, comment){
   var rest=getCurrentOrderRestaurantMeta();
-  var chosenLegal = _orderLegalEntityNames.length ? _orderLegalEntityNames[0] : '';
-  var deliveryParts = [];
-  if(_orderDeliveryDate) deliveryParts.push(_orderDeliveryDate);
-  if(_orderDeliveryFrom || _orderDeliveryTo){
-    deliveryParts.push((_orderDeliveryFrom || '—')+' – '+(_orderDeliveryTo || '—'));
-  }
   var rows=[
     ['Ресторан / Заведение:', restName||'Не указано']
   ];
   if(rest){
     rows.push(['Бренд:', rest.brandName||rest.name||'Не указан']);
-    rows.push(['Юр. лицо для заказа:', chosenLegal || rest.legalName || 'Не указано']);
+    rows.push(['Основное юр. лицо:', rest.legalName||(_orderLegalEntityNames[0]||'Не указано')]);
+    rows.push(['Юр. лицо для заказа:', _orderLegalEntityNames.length?_orderLegalEntityNames.join(' · '):(rest.legalName||'Не указано')]);
+    if(rest.legalEntities&&rest.legalEntities.length){
+      rows.push(['Юр. лица сети:', rest.legalEntities.join(' · ')]);
+    }
     if(rest.city||rest.addr){
       rows.push(['Адрес / локация:', [rest.city||'',rest.addr||''].filter(Boolean).join(', ')]);
     }
@@ -5386,11 +4520,10 @@ function getOrderHeaderRows(restName, date, supName, comment){
     if(responsibles.buyer) rows.push(['Закупщик:', responsibles.buyer]);
     if(responsibles.accountant) rows.push(['Бухгалтер:', responsibles.accountant]);
     if(responsibles.manager) rows.push(['Управляющий:', responsibles.manager]);
-  } else if(chosenLegal){
-    rows.push(['Юр. лицо для заказа:', chosenLegal]);
+  } else if(_orderLegalEntityNames.length){
+    rows.push(['Юр. лицо для заказа:', _orderLegalEntityNames.join(' · ')]);
   }
   if(supName) rows.push(['Поставщик:', supName]);
-  if(deliveryParts.length) rows.push(['Доставка:', deliveryParts.join(' · ')]);
   rows.push(['Дата заказа:', date]);
   if(comment) rows.push(['Комментарий:', comment]);
   return rows;
@@ -5418,21 +4551,14 @@ function _exportSupCartXLSX(supName, items, total, restName, date, comment){
   wsData.push(['№','Наименование','Ед. изм.','Зона','Накладная','Кол-во','Цена за ед. (₽)','Сумма (₽)']);
 
   // Строки товаров
-  var lastGroup='';
   items.forEach(function(item, i){
-    var groupLabel = item.invoiceGroup==='extra' ? 'Доп. накладная' : 'Основная';
-    if(groupLabel !== lastGroup){
-      if(lastGroup) wsData.push(['']);
-      wsData.push([groupLabel]);
-      lastGroup = groupLabel;
-    }
     var sum=Math.round(item.price*item.qty*100)/100;
     wsData.push([
       i+1,
       item.name,
       item.unit||'шт',
       item.zone||'',
-      groupLabel,
+      item.invoiceGroup==='extra'?'Доп. накладная':'Основная',
       item.qty,
       item.price,
       sum
@@ -5483,16 +4609,10 @@ function _exportSupCartCSV(supName, items, total, restName, date, comment){
   rows.push('');
   rows.push('№,Наименование,Ед.изм.,Зона,Накладная,Кол-во,Цена за ед.,Сумма');
 
-  var lastGroup='';
   items.forEach(function(item,i){
-    var groupLabel = item.invoiceGroup==='extra' ? 'Доп. накладная' : 'Основная';
-    if(groupLabel !== lastGroup){
-      rows.push(groupLabel);
-      lastGroup = groupLabel;
-    }
     var sum=Math.round(item.price*item.qty*100)/100;
     rows.push([i+1, '"'+item.name+'"', item.unit||'шт', '"'+(item.zone||'')+'"',
-               '"'+groupLabel+'"',
+               '"'+(item.invoiceGroup==='extra'?'Доп. накладная':'Основная')+'"',
                item.qty, item.price, sum].join(','));
   });
 
@@ -5651,17 +4771,11 @@ function addFoundToCart(pid, supName){
 function _exportFullCartCSV(restName, date){
   var rows=['\uFEFF№,Наименование,Поставщик,Зона,Накладная,Кол-во,Ед.изм.,Цена/ед.,Сумма,Комментарий'];
   var n=1; var total=0;
-  var lastGroup='';
   cart.forEach(function(item){
-    var groupLabel = item.invoiceGroup==='extra' ? 'Доп. накладная' : 'Основная';
-    if(groupLabel !== lastGroup){
-      rows.push(groupLabel);
-      lastGroup = groupLabel;
-    }
     var sum=Math.round((item.price||0)*item.qty*100)/100;
     total+=sum;
     rows.push([n++,'"'+item.name+'"','"'+item.supplier+'"','"'+(item.zone||'')+'"',
-               '"'+groupLabel+'"',item.qty,item.unit||'шт',
+               '"'+(item.invoiceGroup==='extra'?'Доп. накладная':'Основная')+'"',item.qty,item.unit||'шт',
                item.price||0,sum,'"'+(item.comment||'')+'"'].join(','));
   });
   rows.push(',,,,,,,ИТОГО:,'+Math.round(total*100)/100+',');
@@ -5706,25 +4820,18 @@ function downloadTenderTemplate(){ downloadPriceTemplate(); }
 function downloadCatalogTemplate(){ downloadPriceTemplate(); }
 function downloadSupTemplate(){ downloadPriceTemplate(); }
 
-function _supPriceTemplateStorageKey(supName, orgKey){
-  var supplierKey = String(supName || '').toLowerCase().trim();
-  var org = _normalizeOrgKey(orgKey || getCurrentOrganizationKey(CU) || '');
-  if(org) return 'pv_sup_price_templates_' + org + '_' + supplierKey;
-  return 'pv_sup_price_templates_' + supplierKey;
+function _supPriceTemplateStorageKey(supName){
+  return 'pv_sup_price_templates_' + String(supName || '').toLowerCase().trim();
 }
 
 function _saveSupPriceTemplate(supName, template){
   if(!supName || !template) return;
-  var orgKey = _normalizeOrgKey(template.organizationId || getCurrentOrganizationKey(CU) || '');
-  var key = _supPriceTemplateStorageKey(supName, orgKey);
+  var key = _supPriceTemplateStorageKey(supName);
   var next = Object.assign({}, template, {
     nameCols: Array.isArray(template.nameCols) ? template.nameCols.slice() : (template.nameCol >= 0 ? [template.nameCol] : []),
     unitCols: Array.isArray(template.unitCols) ? template.unitCols.slice() : (template.unitCol >= 0 ? [template.unitCol] : []),
     priceCols: Array.isArray(template.priceCols) ? template.priceCols.slice() : (template.priceCol >= 0 ? [template.priceCol] : []),
     price2Cols: Array.isArray(template.price2Cols) ? template.price2Cols.slice() : (template.priceCol2 >= 0 ? [template.priceCol2] : []),
-    legalEntityIds: Array.isArray(template.legalEntityIds) ? template.legalEntityIds.slice() : [],
-    legalEntityNames: Array.isArray(template.legalEntityNames) ? template.legalEntityNames.slice() : [],
-    organizationId: orgKey,
     headerRow: typeof template.headerRow === 'number' ? template.headerRow : parseInt(template.headerRow, 10) || 0
   });
   try{
@@ -5742,7 +4849,6 @@ function _saveSupPriceTemplate(supName, template){
     var dbNext = Object.assign({}, next, {
       id: key,
       supplierName: supName,
-      organizationId: orgKey,
       updatedAt: new Date().toISOString()
     });
     var idx = db.supplierImportTemplates.findIndex(function(item){ return item && item.id === key; });
@@ -5754,21 +4860,11 @@ function _saveSupPriceTemplate(supName, template){
 
 function _loadSupPriceTemplate(supName){
   if(!supName) return null;
-  var orgKey = _normalizeOrgKey(getCurrentOrganizationKey(CU) || '');
   try{
     var db = dbGet();
     if(db && Array.isArray(db.supplierImportTemplates)){
-      var key = _supPriceTemplateStorageKey(supName, orgKey);
+      var key = _supPriceTemplateStorageKey(supName);
       var found = db.supplierImportTemplates.find(function(item){ return item && item.id === key; });
-      if(!found && orgKey){
-        found = db.supplierImportTemplates.find(function(item){
-          return item && item.supplierName === supName && _normalizeOrgKey(item.organizationId || '') === orgKey;
-        });
-      }
-      if(!found){
-        var legacyKey = _supPriceTemplateStorageKey(supName, '');
-        found = db.supplierImportTemplates.find(function(item){ return item && item.id === legacyKey; });
-      }
       if(found) return {
         sheetName: found.sheetName || '',
         headerRow: parseInt(found.headerRow, 10) || 0,
@@ -5777,16 +4873,13 @@ function _loadSupPriceTemplate(supName){
         unitCols: Array.isArray(found.unitCols) ? found.unitCols.slice() : (found.unitCol >= 0 ? [found.unitCol] : []),
         priceCols: Array.isArray(found.priceCols) ? found.priceCols.slice() : (found.priceCol >= 0 ? [found.priceCol] : []),
         price2Cols: Array.isArray(found.price2Cols) ? found.price2Cols.slice() : (found.priceCol2 >= 0 ? [found.priceCol2] : []),
-        legalEntityIds: Array.isArray(found.legalEntityIds) ? found.legalEntityIds.slice() : [],
-        legalEntityNames: Array.isArray(found.legalEntityNames) ? found.legalEntityNames.slice() : [],
         skipRules: found.skipRules || {},
-        supplierName: found.supplierName || supName,
-        organizationId: found.organizationId || orgKey
+        supplierName: found.supplierName || supName
       };
     }
   }catch(e){}
   try{
-    var raw = localStorage.getItem(_supPriceTemplateStorageKey(supName, orgKey)) || localStorage.getItem(_supPriceTemplateStorageKey(supName, ''));
+    var raw = localStorage.getItem(_supPriceTemplateStorageKey(supName));
     if(!raw) return null;
     var parsed = JSON.parse(raw);
     return {
@@ -5797,11 +4890,8 @@ function _loadSupPriceTemplate(supName){
       unitCols: Array.isArray(parsed.unitCols) ? parsed.unitCols.slice() : (parsed.unitCol >= 0 ? [parsed.unitCol] : []),
       priceCols: Array.isArray(parsed.priceCols) ? parsed.priceCols.slice() : (parsed.priceCol >= 0 ? [parsed.priceCol] : []),
       price2Cols: Array.isArray(parsed.price2Cols) ? parsed.price2Cols.slice() : (parsed.priceCol2 >= 0 ? [parsed.priceCol2] : []),
-      legalEntityIds: Array.isArray(parsed.legalEntityIds) ? parsed.legalEntityIds.slice() : [],
-      legalEntityNames: Array.isArray(parsed.legalEntityNames) ? parsed.legalEntityNames.slice() : [],
       skipRules: parsed.skipRules || {},
-      supplierName: parsed.supplierName || supName,
-      organizationId: parsed.organizationId || orgKey
+      supplierName: parsed.supplierName || supName
     };
   }catch(e){
     return null;
@@ -6006,35 +5096,27 @@ function selectSupPriceSheet(sheetName){
 function openSupPriceUpload(supName, append){
   _currentSupName = supName;
   _supPriceAppend = append;
-  _supplierImportResetState();
-  _supPriceImportState.organizationId = getPriceImportOrganizationKey(CU);
-  openModal('supPriceUpload');
   var titleEl = document.getElementById('supPriceUploadTitle');
   if(titleEl) titleEl.textContent = append ? 'Доп. прайс: '+supName : 'Новый прайс: '+supName;
   var nameEl = document.getElementById('supPriceSupName');
   if(nameEl) nameEl.textContent = supName;
   var priceNameEl = document.getElementById('supPriceName');
   if(priceNameEl) priceNameEl.value = '';
-  var legalOptions = getPriceImportLegalOptions();
+  var db = dbGet();
+  var users = (db.users||[]).filter(function(u){
+    return u.status==='active' && u.role!=='supplier';
+  });
   var listEl = document.getElementById('supPriceCompList');
   if(listEl){
-    var selectedHint = '<div style="font-size:11px;color:var(--t3);margin-bottom:8px;">Выберите одно или несколько юр. лиц для этого прайса.</div>';
-    listEl.innerHTML = legalOptions.length ? legalOptions.map(function(opt){
+    listEl.innerHTML = users.length ? users.map(function(u){
+      var rd=ROLES[u.role]||{label:u.role};
       return '<label style="display:flex;align-items:center;gap:10px;padding:6px 4px;cursor:pointer;">'
-        +'<input type="checkbox" class="sup-price-legal-cb" value="'+opt.id+'" data-name="'+opt.name.replace(/"/g,'&quot;')+'" data-org="'+opt.orgKey+'" checked '
+        +'<input type="checkbox" class="sup-price-comp-cb" value="'+u.id+'" data-company="'+(u.company||'')+'" checked '
         +'style="width:16px;height:16px;cursor:pointer;accent-color:var(--ac);">'
-        +'<div><div style="font-size:13px;font-weight:600;">'+opt.name+'</div>'
-        +'<div style="font-size:11px;color:var(--t3);">'+(opt.orgName||'Организация')+' · '+opt.id+'</div></div></label>';
-    }).join('') : '<div style="color:var(--t3);padding:8px;font-size:12px;">Нет доступных юр. лиц</div>';
-    listEl.insertAdjacentHTML('afterbegin', selectedHint);
-    var tpl = _loadSupPriceTemplate(supName);
-    if(tpl && Array.isArray(tpl.legalEntityIds) && tpl.legalEntityIds.length){
-      listEl.querySelectorAll('.sup-price-legal-cb').forEach(function(cb){
-        cb.checked = tpl.legalEntityIds.indexOf(cb.value) >= 0;
-      });
-    }
+        +'<div><div style="font-size:13px;font-weight:600;">'+u.first+' '+u.last+'</div>'
+        +'<div style="font-size:11px;color:var(--t3);">'+(u.company||'—')+' — '+rd.label+'</div></div></label>';
+    }).join('') : '<div style="color:var(--t3);padding:8px;font-size:12px;">Нет пользователей</div>';
   }
-  _supplierImportCaptureLegalState();
   var fi=document.getElementById('supPriceFile'); if(fi)fi.value='';
   var err=document.getElementById('supPriceErr'); if(err)err.textContent='';
   _supPriceImportBook = null;
@@ -6047,32 +5129,17 @@ function openSupPriceUpload(supName, append){
   _renderPriceRawPreview([]);
   var sec = document.getElementById('pricePreviewSection');
   if(sec) sec.style.display = 'none';
+  openModal('supPriceUpload');
 }
 
 function selectAllSupPriceComps(val){
-  selectAllSupPriceLegals(val);
+  document.querySelectorAll('.sup-price-comp-cb').forEach(function(cb){cb.checked=val;});
 }
 
 
 function canSeePrices(product){
   if(!CU)return false;
   if(CU.role==='owner'||CU.role==='admin'||CU.role==='supplier')return true;
-  if(product && product.priceListActive === false) return false;
-
-  var scope = _getCurrentPriceScope();
-  var prodOrg = _normalizeOrgKey(product && (product.organizationId || product.organization_id || product.organization || ''));
-  if(prodOrg && scope.organizationId && prodOrg !== scope.organizationId && !isOwnerUser(CU) && CU.role !== 'admin'){
-    return false;
-  }
-  var prodLegalIds = _uniqList(product && (product.legalEntityIds || product.legal_entity_ids || product.legalEntities || []));
-  if(prodLegalIds.length){
-    var contextIds = _uniqList(scope.legalEntityIds);
-    if(contextIds.length){
-      var legalMatch = prodLegalIds.some(function(id){ return contextIds.indexOf(id) >= 0; });
-      if(!legalMatch) return false;
-    }
-  }
-
   if(product.allowedUserIds&&product.allowedUserIds.length>0){
     if(product.allowedUserIds.indexOf(CU.id)>=0)return true;
   }
@@ -6238,42 +5305,8 @@ function quickSelect(){}
 function deleteSupPrice(supName) {
   if(!confirm('Удалить все прайсы поставщика «'+supName+'»?'))return;
   var before=SUP_PRODS.length;
-  var scope = _getCurrentPriceScope();
-  var orgKey = _normalizeOrgKey(scope.organizationId || getPriceImportOrganizationKey(CU));
-  var legalIds = _uniqList(scope.legalEntityIds || []);
-  var legalNames = _uniqList(scope.legalEntityNames || []);
-  var removedPriceListIds = (SUP_PRICE_LISTS || []).filter(function(list){
-    if(String(list.supplierName || '').toLowerCase() !== String(supName || '').toLowerCase()) return false;
-    var listOrg = _normalizeOrgKey(list.organizationId || '');
-    var listLegalIds = _uniqList(list.legalEntityIds || []);
-    var listLegalNames = _uniqList(list.legalEntityNames || []);
-    var orgMatch = !listOrg || listOrg === orgKey;
-    var legalMatch = !legalIds.length
-      || !listLegalIds.length && !listLegalNames.length
-      || listLegalIds.some(function(id){ return legalIds.indexOf(id) >= 0; })
-      || listLegalNames.some(function(name){ return legalNames.indexOf(name) >= 0; });
-    return orgMatch || legalMatch;
-  }).map(function(list){ return list.id; });
   SUP_PRODS=SUP_PRODS.filter(function(p){
     return !(p._supplier===supName||p.supplier===supName);
-  });
-  SUP_PRICE_ITEMS = (SUP_PRICE_ITEMS || []).filter(function(item){
-    return removedPriceListIds.indexOf(item.priceListId) < 0;
-  });
-  SUP_PRICE_LIST_LEGALS = (SUP_PRICE_LIST_LEGALS || []).filter(function(row){
-    return removedPriceListIds.indexOf(row.priceListId) < 0;
-  });
-  SUP_PRICE_LISTS = (SUP_PRICE_LISTS || []).filter(function(list){
-    if(String(list.supplierName || '').toLowerCase() !== String(supName || '').toLowerCase()) return true;
-    var listOrg = _normalizeOrgKey(list.organizationId || '');
-    var listLegalIds = _uniqList(list.legalEntityIds || []);
-    var listLegalNames = _uniqList(list.legalEntityNames || []);
-    var orgMatch = !listOrg || listOrg === orgKey;
-    var legalMatch = !legalIds.length
-      || !listLegalIds.length && !listLegalNames.length
-      || listLegalIds.some(function(id){ return legalIds.indexOf(id) >= 0; })
-      || listLegalNames.some(function(name){ return legalNames.indexOf(name) >= 0; });
-    return !(orgMatch || legalMatch);
   });
   // Убрать поставщика из каталога
   PRODUCTS.forEach(function(p){
@@ -6367,31 +5400,24 @@ function _exportFullCartXLSX(){
   var summaryData=[['СВОДНЫЙ ЗАКАЗ']];
   getOrderHeaderRows(restName, date, '', '').forEach(function(row){ summaryData.push(row); });
   summaryData.push([]);
-  summaryData.push(['Поставщик','Наименование','Зона','Накладная','Ед.','Кол-во','Цена','Сумма']);
+	  summaryData.push(['Поставщик','Наименование','Зона','Накладная','Ед.','Кол-во','Цена','Сумма']);
   var grandTotal=0;
   _supOrder.forEach(function(supName){
     var items=cart.filter(function(x){return x.supplier===supName;});
     var supTotal=0;
-    var lastGroup='';
     items.forEach(function(it){
-      var groupLabel = it.invoiceGroup==='extra' ? 'Доп. накладная' : 'Основная';
-      if(groupLabel !== lastGroup){
-        if(lastGroup) summaryData.push([]);
-        summaryData.push([groupLabel]);
-        lastGroup = groupLabel;
-      }
       var sum=Math.round((it.price||0)*it.qty*100)/100;
-      summaryData.push([supName,it.name,it.zone||'',groupLabel,it.unit||'',it.qty,it.price||0,sum]);
-      supTotal+=sum;
-    });
-    summaryData.push(['','','','','','ИТОГО '+supName+':',Math.round(supTotal*100)/100]);
-    summaryData.push([]);
-    grandTotal+=supTotal;
-  });
-  summaryData.push(['','','','','','ИТОГО ВСЕ:',Math.round(grandTotal*100)/100]);
+	      summaryData.push([supName,it.name,it.zone||'',it.invoiceGroup==='extra'?'Доп. накладная':'Основная',it.unit||'',it.qty,it.price||0,sum]);
+	      supTotal+=sum;
+	    });
+	    summaryData.push(['','','','','','ИТОГО '+supName+':',Math.round(supTotal*100)/100]);
+	    summaryData.push([]);
+	    grandTotal+=supTotal;
+	  });
+	  summaryData.push(['','','','','','ИТОГО ВСЕ:',Math.round(grandTotal*100)/100]);
 
-  var ws1=XLSX.utils.aoa_to_sheet(summaryData);
-  ws1['!cols']=[{wch:22},{wch:30},{wch:16},{wch:18},{wch:8},{wch:10},{wch:14},{wch:14}];
+	  var ws1=XLSX.utils.aoa_to_sheet(summaryData);
+	  ws1['!cols']=[{wch:22},{wch:30},{wch:16},{wch:18},{wch:8},{wch:10},{wch:14},{wch:14}];
   XLSX.utils.book_append_sheet(wb,ws1,'Сводный заказ');
 
   // Листы по поставщикам
@@ -6402,18 +5428,11 @@ function _exportFullCartXLSX(){
     var data=[['ЗАКАЗ: '+supName]];
     getOrderHeaderRows(restName, date, supName, cartComments[supName]||'').forEach(function(row){ data.push(row); });
     data.push([]);
-    data.push(['№','Наименование','Ед.','Зона','Накладная','Кол-во','Цена','Сумма','Комментарий']);
-    var lastGroup='';
-    items.forEach(function(it,i){
-      var groupLabel = it.invoiceGroup==='extra' ? 'Доп. накладная' : 'Основная';
-      if(groupLabel !== lastGroup){
-        if(lastGroup) data.push([]);
-        data.push([groupLabel]);
-        lastGroup = groupLabel;
-      }
-      data.push([i+1,it.name,it.unit||'',it.zone||'',groupLabel,it.qty,it.price||0,
-        Math.round((it.price||0)*it.qty*100)/100,it.comment||'']);
-    });
+	    data.push(['№','Наименование','Ед.','Зона','Накладная','Кол-во','Цена','Сумма','Комментарий']);
+	    items.forEach(function(it,i){
+	      data.push([i+1,it.name,it.unit||'',it.zone||'',it.invoiceGroup==='extra'?'Доп. накладная':'Основная',it.qty,it.price||0,
+	        Math.round((it.price||0)*it.qty*100)/100,it.comment||'']);
+	    });
 	    data.push([]);
 	    data.push(['','','','','','ИТОГО:',Math.round(total*100)/100,'','']);
 	    var ws=XLSX.utils.aoa_to_sheet(data);
@@ -6776,16 +5795,10 @@ function renderTenderTable(){
           +'</td>';
       }
 
-      // Определить минимальную цену по строке с учётом текущей замены
-      var displayPrices = sups.map(function(s){
-        var displayItem = _orderDisplayEntry(row.name, s, {
-          item: {name: row.name, unit: unit},
-          price: row.priceMap[s] || 0
-        });
-        return displayItem ? parseFloat(displayItem.price) || 0 : 0;
-      }).filter(Boolean);
-      var minP = displayPrices.length ? Math.min.apply(null, displayPrices) : 0;
-      var isBest = displayPrices.length > 1 && parseFloat(price) === minP;
+      // Определить минимальную цену по строке
+      var allPrices = sups.map(function(s){return row.priceMap[s];}).filter(Boolean);
+      var minP = allPrices.length ? Math.min.apply(null,allPrices) : 0;
+      var isBest = allPrices.length > 1 && price === minP;
 
       var cardBg   = isBest ? 'var(--grD)' : 'var(--bg3)';
       var priceCl  = isBest ? 'var(--gr)'  : 'var(--ac)';
@@ -7256,18 +6269,17 @@ function renderCart(){
 
   // Итоги внизу
   html += '<div style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);padding:14px 16px;margin-top:4px;">'
-    +'<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;">'
-    +'<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end;">'
+    +'<div style="font-size:18px;font-weight:900;color:var(--tx);margin-bottom:14px;">'
+      +'Итог по корзине: '+cart.length+' позиций · ₽'+grandTotal.toLocaleString()
+    +'</div>'
+    +'<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:center;justify-content:space-between;">'
+    +'<div style="display:flex;gap:24px;flex-wrap:wrap;">'
     +'<div><div style="font-size:11px;color:var(--t3);">Поставщиков</div><div style="font-size:20px;font-weight:800;">'+_supOrder.length+'</div></div>'
     +'<div><div style="font-size:11px;color:var(--t3);">Мин. по поставщику</div><div style="font-size:20px;font-weight:800;color:var(--gr);">₽'+minTotal.toLocaleString()+'</div></div>'
     +'<div><div style="font-size:11px;color:var(--t3);">Средний</div><div style="font-size:20px;font-weight:800;color:var(--ac);">₽'+Math.round(avgTotal).toLocaleString()+'</div></div>'
-    +'<div style="text-align:right;min-width:240px;">'
-      +'<div style="font-size:12px;color:var(--t3);">Итоговая информация</div>'
-      +'<div style="font-size:20px;font-weight:900;color:var(--tx);">Итог по корзине: '+cart.length+' позиций</div>'
-      +'<div style="font-size:26px;font-weight:900;color:var(--gr);line-height:1.1;">₽'+grandTotal.toLocaleString()+'</div>'
+    +'<div><div style="font-size:11px;color:var(--t3);">Итого всё</div><div style="font-size:20px;font-weight:800;">₽'+grandTotal.toLocaleString()+'</div></div>'
     +'</div>'
-    +'</div>'
-    +'<button onclick="exportFullCart()" style="background:var(--gr);color:#fff;border:none;border-radius:var(--r);padding:10px 18px;font-weight:800;font-size:13px;cursor:pointer;align-self:flex-end;">Excel — вся корзина</button>'
+    +'<button onclick="exportFullCart()" style="background:var(--gr);color:#fff;border:none;border-radius:var(--r);padding:10px 18px;font-weight:800;font-size:13px;cursor:pointer;">Excel — вся корзина</button>'
     +'</div>'
   +'</div>';
 
@@ -7350,13 +6362,6 @@ function orderRemove(name, supplier, query){
     }
     return !(c.name===name && c.supplier===supplier);
   });
-  var rowNode = document.querySelector('[data-order-row="'+_cssAttrVal(query)+'"][data-order-sup="'+_cssAttrVal(supplier)+'"]');
-  if(rowNode){
-    rowNode.classList.remove('order-in-cart');
-    rowNode.classList.remove('order-in-cart-locked');
-    rowNode.style.background = '';
-    rowNode.style.borderColor = '';
-  }
   updBdg();
   renderCart();
   if(typeof _renderOrderTable === 'function'){
@@ -7823,15 +6828,12 @@ function getCanonicalName(name) {
 // ── ЗАПОМИНАНИЕ СТРУКТУРЫ ПРАЙСА ─────────────────────────────
 
 function rememberPriceLayout(supName, layout) {
-  var orgKey = _normalizeOrgKey((layout && layout.organizationId) || getCurrentOrganizationKey(CU) || '');
-  var memoryKey = orgKey ? (orgKey + '::' + String(supName || '').toLowerCase().trim()) : String(supName || '').toLowerCase().trim();
-  _priceLayoutMemory[memoryKey] = {
+  _priceLayoutMemory[supName] = {
     nameCols:  Array.isArray(layout.nameCols) ? layout.nameCols.slice() : (layout.nameCol >= 0 ? [layout.nameCol] : []),
     unitCols:  Array.isArray(layout.unitCols) ? layout.unitCols.slice() : (layout.unitCol >= 0 ? [layout.unitCol] : []),
     priceCols: Array.isArray(layout.priceCols) ? layout.priceCols.slice() : (layout.priceCol >= 0 ? [layout.priceCol] : []),
     price2Cols:Array.isArray(layout.price2Cols) ? layout.price2Cols.slice() : (layout.priceCol2 >= 0 ? [layout.priceCol2] : []),
     headerRow: layout.headerRow,
-    organizationId: orgKey,
     savedAt:   new Date().toISOString()
   };
   // Сохранить в localStorage
@@ -7841,10 +6843,7 @@ function rememberPriceLayout(supName, layout) {
 }
 
 function recallPriceLayout(supName) {
-  var orgKey = _normalizeOrgKey(getCurrentOrganizationKey(CU) || '');
-  var memoryKey = orgKey ? (orgKey + '::' + String(supName || '').toLowerCase().trim()) : String(supName || '').toLowerCase().trim();
   // Попробовать из памяти
-  if(_priceLayoutMemory[memoryKey]) return _priceLayoutMemory[memoryKey];
   if(_priceLayoutMemory[supName]) return _priceLayoutMemory[supName];
   // Попробовать из localStorage
   try {
@@ -7852,7 +6851,6 @@ function recallPriceLayout(supName) {
     if(stored) {
       var parsed = JSON.parse(stored);
       _priceLayoutMemory = parsed;
-      if(parsed[memoryKey]) return parsed[memoryKey];
       if(parsed[supName]) return parsed[supName];
     }
   } catch(e) {}
@@ -8349,19 +7347,8 @@ function _scoreMatch(productName, keyword) {
 
 // Найти лучший товар поставщика для ключевого слова (учитывая синонимы)
 function _findBestForSupplier(keyword, supName) {
-  var cacheSig = [
-    String(_catalogDataRevision || 0),
-    String(keyword || ''),
-    String(supName || ''),
-    String((SUP_PRODS||[]).length || 0),
-    String((PRODUCTS||[]).length || 0)
-  ].join('::');
-  if(_orderBestMatchCache.key === cacheSig && Object.prototype.hasOwnProperty.call(_orderBestMatchCache.byKey, cacheSig)){
-    return _orderBestMatchCache.byKey[cacheSig];
-  }
   var best = {item: null, score: 0};
   var keywords = [keyword];
-  var scopedCandidates = [];
 
   // Добавить синонимы
   if(typeof PRODUCT_SYNONYMS !== 'undefined') {
@@ -8394,28 +7381,13 @@ function _findBestForSupplier(keyword, supName) {
     if(maxScore > best.score) {
       best = { item: p, score: maxScore, price: price };
     }
-    scopedCandidates.push(p);
   });
-
-  if(scopedCandidates.length){
-    var scopedResult = best.score > 0 ? best : null;
-    _orderBestMatchCache.byKey[cacheSig] = scopedResult;
-    _orderBestMatchCache.key = cacheSig;
-    return scopedResult;
-  }
 
   // Поиск по PRODUCTS этого поставщика
   PRODUCTS.forEach(function(p) {
     var sup = (p.suppliers||[]).find(function(s){ return s.name===supName; });
     if(!sup || !sup.price) return;
-    if(!canSeePrices({
-      organizationId: sup.organizationId || p.organizationId,
-      legalEntityIds: sup.legalEntityIds || p.legalEntityIds,
-      legalEntityNames: sup.legalEntityNames || p.legalEntityNames,
-      priceListActive: sup.priceListActive !== false ? (p.priceListActive !== false) : false,
-      allowedCompanies:sup.allowedCompanies || p.allowedCompanies,
-      allowedUserIds:sup.allowedUserIds || p.allowedUserIds
-    })) return;
+    if(!canSeePrices({allowedCompanies:p.allowedCompanies,allowedUserIds:p.allowedUserIds})) return;
 
     var maxScore = 0;
     keywords.forEach(function(kw) {
@@ -8433,10 +7405,7 @@ function _findBestForSupplier(keyword, supName) {
     }
   });
 
-  var finalResult = best.score > 0 ? best : null;
-  _orderBestMatchCache.byKey[cacheSig] = finalResult;
-  _orderBestMatchCache.key = cacheSig;
-  return finalResult;
+  return best.score > 0 ? best : null;
 }
 
 // Извлечь ключевое слово — первое слово строки
@@ -8566,21 +7535,14 @@ function orderSearchMulti(val) {
       var currentOrderItem = _orderDisplayEntry(row.line, sup, cell);
       var currentCartItem = _orderCartEntryByQuery(row.line, sup);
       var inCart = !!currentCartItem;
-      var hasDraft = !!_orderDraftEntryByQuery(row.line, sup);
       var replacedFrom = currentOrderItem && currentOrderItem.replacedFrom ? currentOrderItem.replacedFrom : '';
-      var activeBorder = inCart ? 'var(--ac)' : (hasDraft ? 'var(--or)' : (isBest ? 'var(--gr)' : 'var(--br)'));
-      var activeBg = inCart ? 'rgba(91,163,245,.11)' : (hasDraft ? 'rgba(224,123,42,.07)' : cellBg);
 
-      html += '<td style="padding:6px 8px;border:1px solid '+activeBorder+';'
-            + 'background:'+activeBg+';vertical-align:top;position:relative;">';
+      html += '<td style="padding:6px 8px;border:1px solid '+(isBest?'var(--gr)':'var(--br)')+';'
+            + 'background:'+cellBg+';vertical-align:top;position:relative;">';
 
       if(isBest) {
         html += '<div style="position:absolute;top:0;right:0;background:var(--gr);color:#fff;'
               + 'font-size:9px;font-weight:700;padding:2px 6px;border-radius:0 0 0 4px;">лучшая</div>';
-      }
-      if(hasDraft && !inCart) {
-        html += '<div style="position:absolute;top:0;left:0;background:var(--or);color:#fff;'
-              + 'font-size:9px;font-weight:700;padding:2px 6px;border-radius:0 0 4px 0;">выбрано</div>';
       }
 
       // Название товара
@@ -8615,17 +7577,13 @@ function orderSearchMulti(val) {
               + ' title="Поиск товара в прайсе '+_esc(sup)+'"'
               + ' style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);'
                 + 'padding:4px 8px;font-size:13px;cursor:pointer;flex-shrink:0;">🔍</button>'
-            + '<button onclick="_orderToggleInvoiceGroup(\''+_esc(row.line)+'\',\''+_esc(sup)+'\')"'
-              + ' title="Переключить на доп. накладную"'
-              + ' style="background:'+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--orD)':'var(--bg2)')+';color:'+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--or)':'var(--t2)')+';border:1px solid '+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--or)':'var(--br)')+';border-radius:var(--r);'
-                + 'padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">'+((currentOrderItem && currentOrderItem.invoiceGroup==='extra')?'Доп. накладная':'Основная')+'</button>'
             + (inCart
               ? '<button onclick="orderRemove(\''+_esc(currentCartItem.name)+'\',\''+_esc(sup)+'\',\''+_esc(row.line)+'\')"'
                 + ' style="flex:1;background:var(--ac);color:#fff;border:none;border-radius:var(--r);'
-                  + 'padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">✓ В заказе</button>'
+                  + 'padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">✓</button>'
               : '<button onclick="orderAddFromTable(\''+_esc(row.line)+'\',\''+_esc(currentOrderItem.name)+'\',\''+_esc(sup)+'\','+currentOrderItem.price+',\''+_esc(currentOrderItem.unit)+'\',\''+qtyId+'\')"'
                 + ' style="flex:1;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:var(--r);'
-                  + 'padding:4px 8px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;">🛒 В заказ</button>')
+                  + 'padding:4px 8px;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;">🛒</button>')
             + '</div>';
 
       html += '</td>';
@@ -8696,9 +7654,6 @@ var _orderDraft    = {};   // {query:supplier -> выбранный вариан
 var _ossRowQuery   = '';   // поиск в прайсе: текущий запрос
 var _ossSup        = '';   // поиск в прайсе: поставщик
 var _pendingOrderTemplate = null;
-var _orderDeliveryDate = '';
-var _orderDeliveryFrom = '';
-var _orderDeliveryTo   = '';
 
 function getRestLegalEntities(rest){
   if(!rest) return [];
@@ -8843,106 +7798,6 @@ function selectAllOrderSups(val){
   document.querySelectorAll('.co-sup-cb').forEach(function(cb){ cb.checked = val; });
 }
 
-function getPriceImportLegalOptions(){
-  var db = dbGet();
-  var scopeKey = getPriceImportOrganizationKey(CU);
-  var map = {};
-  var legalByName = [];
-  (db.restaurants || []).forEach(function(rest){
-    if(!rest || rest.id === 'r0') return;
-    if(CU && CU.role !== 'owner' && CU.role !== 'admin'){
-      var allowedIds = getUserScopedRestaurantIds(CU, db);
-      if(allowedIds.indexOf(rest.id) < 0) return;
-    }
-    var legalNames = getRestLegalEntities(rest);
-    legalNames.forEach(function(name){
-      var key = _legalEntityId(scopeKey, name);
-      if(!map[key]){
-        map[key] = true;
-        legalByName.push({
-          id: key,
-          name: name,
-          orgKey: scopeKey,
-          orgName: rest.brandName || rest.legalName || rest.name || ''
-        });
-      }
-    });
-  });
-  return legalByName;
-}
-
-function getSelectedSupPriceLegalIds(){
-  var ids = [];
-  document.querySelectorAll('.sup-price-legal-cb:checked').forEach(function(cb){
-    if(cb.value && ids.indexOf(cb.value) < 0) ids.push(cb.value);
-  });
-  return ids;
-}
-
-function getSelectedSupPriceLegalNames(){
-  var names = [];
-  document.querySelectorAll('.sup-price-legal-cb:checked').forEach(function(cb){
-    var name = cb.dataset.name || cb.value || '';
-    if(name && names.indexOf(name) < 0) names.push(name);
-  });
-  return names;
-}
-
-function selectAllSupPriceLegals(val){
-  document.querySelectorAll('.sup-price-legal-cb').forEach(function(cb){ cb.checked = val; });
-  _supplierImportCaptureLegalState();
-}
-
-function openSupPriceLists(supName){
-  openModal('supplierPriceLists');
-  var scope = _getCurrentPriceScope();
-  var orgKey = _normalizeOrgKey(scope.organizationId || getPriceImportOrganizationKey(CU));
-  var legalIds = _uniqList(scope.legalEntityIds || []);
-  var legalNames = _uniqList(scope.legalEntityNames || []);
-  var lists = (SUP_PRICE_LISTS || []).filter(function(list){
-    if(!list) return false;
-    if(String(list.supplierName || '').toLowerCase() !== String(supName || '').toLowerCase()) return false;
-    var listOrg = _normalizeOrgKey(list.organizationId || '');
-    var listLegalIds = _uniqList(list.legalEntityIds || []);
-    var listLegalNames = _uniqList(list.legalEntityNames || []);
-    var orgMatch = !listOrg || !orgKey || listOrg === orgKey;
-    var legalMatch = !legalIds.length
-      || !listLegalIds.length && !listLegalNames.length
-      || listLegalIds.some(function(id){ return legalIds.indexOf(id) >= 0; })
-      || listLegalNames.some(function(name){ return legalNames.indexOf(name) >= 0; });
-    return orgMatch && legalMatch;
-  });
-  var body = document.getElementById('supplierPriceListsBody');
-  var title = document.getElementById('supplierPriceListsTitle');
-  var hint = document.getElementById('supplierPriceListsHint');
-  if(title) title.textContent = 'Прайсы поставщика: ' + supName;
-  if(hint) hint.textContent = 'Организация: ' + (orgKey || 'default') + ' · прайсы текущей организации и её юр. лиц';
-  if(body){
-    if(!lists.length){
-      body.innerHTML = '<div style="padding:16px;color:var(--t3);font-size:12px;">Для этого поставщика пока нет сохранённых прайсов.</div>';
-    }else{
-      body.innerHTML = '<div style="overflow:auto;max-height:360px;"><table style="width:100%;border-collapse:collapse;">'
-        + '<thead><tr style="background:var(--bg3);">'
-        + '<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Прайс</th>'
-        + '<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Юр. лица</th>'
-        + '<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Дата</th>'
-        + '<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Статус</th>'
-        + '</tr></thead><tbody>'
-        + lists.map(function(list){
-          var legalText = _uniqList(list.legalEntityNames || []).join(' · ') || '—';
-          var status = list.active ? '<span class="badge bg">Активен</span>' : '<span class="badge bgr">Архив</span>';
-          return '<tr>'
-            + '<td style="padding:10px 12px;border-bottom:1px solid var(--br);"><b>'+_esc(list.priceName || 'Прайс')+'</b><div style="font-size:11px;color:var(--t3);margin-top:3px;">'+_esc(list.sourceFile || '')+'</div></td>'
-            + '<td style="padding:10px 12px;border-bottom:1px solid var(--br);font-size:12px;color:var(--t2);">'+_esc(legalText)+'</td>'
-            + '<td style="padding:10px 12px;border-bottom:1px solid var(--br);font-size:12px;color:var(--t2);">'+_esc(String(list.uploadedAt || '').replace('T', ' ').slice(0, 16))+'</td>'
-            + '<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+status+'</td>'
-          + '</tr>';
-        }).join('')
-        + '</tbody></table></div>';
-    }
-  }
-}
-
 // ─────────────────────────────────────────────────────────────
 // 2. ПОДТВЕРЖДЕНИЕ СОЗДАНИЯ ЗАКАЗА
 // ─────────────────────────────────────────────────────────────
@@ -8969,9 +7824,6 @@ function submitCreateOrder(){
   _orderSups     = sels;
   _orderHidden   = {};
   _orderDraft    = {};
-  _orderDeliveryDate = (document.getElementById('co-delivery-date')||{value:''}).value || '';
-  _orderDeliveryFrom = (document.getElementById('co-delivery-from')||{value:''}).value || '';
-  _orderDeliveryTo   = (document.getElementById('co-delivery-to')||{value:''}).value || '';
 
   // Обновить активный ресторан
   if(rest){ activeRest = {id:rest.id, name:rest.name, emoji:rest.emoji||'🍽️'}; }
@@ -9027,103 +7879,88 @@ function _renderOrderTable(filter){
       +'color:var(--t3);padding:40px;">'+(q?'Ничего не найдено по «'+q+'»':'Введите товары в поиске выше')+'</td></tr>';
     return;
   }
-  var token = ++_ordersRenderToken;
-  tbody.innerHTML='<tr><td colspan="'+(sups.length+1)+'" style="text-align:center;color:var(--t3);padding:24px;">Загрузка таблицы…</td></tr>';
-  var idx=0;
-  var batch=6;
-  var html=[];
-  thead.innerHTML = '<tr style="background:var(--bg3);">'
-    +'<th style="padding:10px 14px;text-align:left;font-size:12px;font-weight:700;'
-    +'border:1px solid var(--br);min-width:160px;position:sticky;left:0;background:var(--bg3);z-index:2;">Наименование</th>'
-    + sups.map(function(s){
-        return '<th style="padding:10px 12px;text-align:center;font-size:12px;font-weight:700;'
-          +'border:1px solid var(--br);min-width:180px;">'+s+'</th>';
-      }).join('')
-    +'</tr>';
-  (function paintOrderRows(){
-    if(token !== _ordersRenderToken) return;
-    var end=Math.min(idx+batch, rows.length);
-    for(; idx<end; idx++){
-      var row=rows[idx];
-      var displayItems = sups.map(function(sup){
-        var baseCell = row.cells[sup];
-        return baseCell ? _orderDisplayEntry(row.query, sup, baseCell) : null;
-      });
-      var allPrices = displayItems.map(function(item){ return item ? parseFloat(item.price) || 0 : 0; }).filter(Boolean);
-      var minP = allPrices.length ? Math.min.apply(null, allPrices) : 0;
-      var rowBg = idx%2===0 ? 'var(--bg2)' : 'var(--bg)';
-      var cells = sups.map(function(sup){
-        var hKey = row.query+':'+sup;
-        if(_orderHidden[hKey]){
-          return '<td style="border:1px solid var(--br);padding:6px;background:'+rowBg+';">'
-            +'<div style="text-align:center;">'
-            +'<button onclick="orderShowCell(\''+_esc(row.query)+'\',\''+_esc(sup)+'\')"'
-            +' style="font-size:10px;color:var(--t4);background:none;border:none;cursor:pointer;padding:4px;">показать</button>'
-            +'</div></td>';
-        }
-        var cell = row.cells[sup];
-        if(!cell){
-          return '<td style="border:1px solid var(--br);padding:8px;text-align:center;'
-            +'color:var(--t4);font-size:12px;background:'+rowBg+';">—</td>';
-        }
-        var currentOrderItem = _orderDisplayEntry(row.query, sup, cell);
-        var currentPrice = parseFloat(currentOrderItem ? currentOrderItem.price : cell.price) || 0;
-        var isBest = currentPrice && currentPrice===minP && allPrices.length>1;
-        var cellBg = isBest ? 'var(--grD)' : rowBg;
-        var currentCartItem = _orderCartEntryByQuery(row.query, sup);
-        var inCart = !!currentCartItem;
-        var replacedFrom = currentOrderItem && currentOrderItem.replacedFrom ? currentOrderItem.replacedFrom : '';
-        var activeBorder = inCart ? 'var(--ac)' : (isBest ? 'var(--gr)' : 'var(--br)');
-        var activeBg = inCart ? 'rgba(91,163,245,.11)' : cellBg;
-        return '<td data-order-row="'+_cssAttrVal(row.query)+'" data-order-sup="'+_cssAttrVal(sup)+'" style="padding:6px 8px;border:1px solid '+activeBorder+';'
-          +'background:'+activeBg+';vertical-align:top;position:relative;">'
-          +(isBest?'<div style="position:absolute;top:0;right:0;background:var(--gr);color:#fff;'
-            +'font-size:9px;font-weight:700;padding:2px 6px;border-radius:0 0 0 4px;">лучшая</div>':'')
-          +(inCart?'<div style="position:absolute;top:0;left:0;background:var(--ac);color:#fff;'
-            +'font-size:9px;font-weight:700;padding:2px 6px;border-radius:0 0 4px 0;">в корзине</div>':'')
-          +'<div style="font-size:11px;color:var(--t3);margin-bottom:2px;padding-right:'+(isBest?'36':'0')+'px;'
-            +(inCart?'font-weight:700;color:var(--ac);':'')+'">'
-            +(replacedFrom
-              ? '<span style="display:inline-block;padding:2px 6px;margin-right:6px;border-radius:999px;background:var(--orD);color:var(--or);font-size:9px;font-weight:800;">замена</span>'
-              : '')
-            +(currentOrderItem ? currentOrderItem.name : cell.item.name)
-          +'</div>'
+
+  tbody.innerHTML = rows.map(function(row, ri){
+    var allPrices = sups.map(function(s){ return row.cells[s] ? row.cells[s].price : 0; }).filter(Boolean);
+    var minP = allPrices.length ? Math.min.apply(null, allPrices) : 0;
+    var rowBg = ri%2===0 ? 'var(--bg2)' : 'var(--bg)';
+
+    var cells = sups.map(function(sup){
+      var hKey = row.query+':'+sup;
+      if(_orderHidden[hKey]){
+        return '<td style="border:1px solid var(--br);padding:6px;background:'+rowBg+';">'
+          +'<div style="text-align:center;">'
+          +'<button onclick="orderShowCell(\''+_esc(row.query)+'\',\''+_esc(sup)+'\')"'
+          +' style="font-size:10px;color:var(--t4);background:none;border:none;cursor:pointer;padding:4px;">показать</button>'
+          +'</div></td>';
+      }
+
+      var cell = row.cells[sup];
+      if(!cell){
+        return '<td style="border:1px solid var(--br);padding:8px;text-align:center;'
+          +'color:var(--t4);font-size:12px;background:'+rowBg+';">—</td>';
+      }
+
+      var isBest = cell.price && cell.price===minP && allPrices.length>1;
+      var cellBg = isBest ? 'var(--grD)' : rowBg;
+      var currentOrderItem = _orderDisplayEntry(row.query, sup, cell);
+      var currentCartItem = _orderCartEntryByQuery(row.query, sup);
+      var inCart = !!currentCartItem;
+      var replacedFrom = currentOrderItem && currentOrderItem.replacedFrom ? currentOrderItem.replacedFrom : '';
+
+      return '<td data-order-row="'+_cssAttrVal(row.query)+'" data-order-sup="'+_cssAttrVal(sup)+'" style="padding:6px 8px;border:1px solid '+(isBest?'var(--gr)':'var(--br)')+';'
+        +'background:'+cellBg+';vertical-align:top;position:relative;">'
+        // Метка лучшей цены
+        +(isBest?'<div style="position:absolute;top:0;right:0;background:var(--gr);color:#fff;'
+          +'font-size:9px;font-weight:700;padding:2px 6px;border-radius:0 0 0 4px;">лучшая</div>':'')
+        // Карточка товара
+        +'<div style="font-size:11px;color:var(--t3);margin-bottom:2px;padding-right:'+(isBest?'36':'0')+'px;">'
           +(replacedFrom
-            ? '<div style="font-size:10px;color:var(--or);font-weight:800;margin-bottom:3px;line-height:1.35;">'
-              +'было: '+_esc(replacedFrom)+'<br>стало: '+_esc(currentOrderItem.name)
-              +'</div>'
+            ? '<span style="display:inline-block;padding:2px 6px;margin-right:6px;border-radius:999px;background:var(--orD);color:var(--or);font-size:9px;font-weight:800;">замена</span>'
             : '')
-          +'<div style="font-size:15px;font-weight:800;color:'+(isBest?'var(--gr)':'var(--ac)')+';margin-bottom:6px;">'
-            +'₽'+_fmtPrice(currentPrice)
-            +'<span style="font-size:11px;font-weight:400;color:var(--t3);"> / '+(currentOrderItem ? currentOrderItem.unit : cell.item.unit)+'</span>'
-          +'</div>'
-          +'<div style="display:flex;gap:4px;align-items:center;">'
-            +'<button onclick="openOrderSupSearch(\''+_esc(row.query)+'\',\''+_esc(sup)+'\')"'
-              +' title="Поиск в прайсе '+sup+'"'
-              +' style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);padding:4px 7px;font-size:13px;cursor:pointer;">🔍</button>'
-            +'<button onclick="_orderToggleInvoiceGroup(\''+_esc(row.query)+'\',\''+_esc(sup)+'\')"'
-              +' title="Переключить на доп. накладную"'
-              +' style="background:'+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--orD)':'var(--bg2)')+';color:'+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--or)':'var(--t2)')+';'
-                +'border:1px solid '+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--or)':'var(--br)')+';border-radius:var(--r);padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">'
-              +((currentOrderItem && currentOrderItem.invoiceGroup==='extra')?'Доп. накладная':'Основная')
-            +'</button>'
-            +(inCart
-              ?'<button onclick="orderRemove(\''+_esc(currentCartItem.name)+'\',\''+_esc(sup)+'\',\''+_esc(row.query)+'\')" style="flex:1;background:var(--ac);color:#fff;border:none;border-radius:var(--r);padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">✓ В заказе</button>'
-              :'<button onclick="orderAddFromTable(\''+_esc(row.query)+'\',\''+_esc(currentOrderItem.name)+'\',\''+_esc(sup)+'\','+currentOrderItem.price+',\''+_esc(currentOrderItem.unit)+'\')" style="flex:1;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:var(--r);padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;" title="+ В заказ">🛒 В заказ</button>')
-            +'<button onclick="orderHideCell(\''+_esc(row.query)+'\',\''+_esc(sup)+'\')" title="Скрыть от закупщика" style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);padding:4px 6px;font-size:11px;cursor:pointer;color:var(--t4);">✕</button>'
-          +'</div>'
-        +'</td>';
-      }).join('');
-      html.push('<tr data-query="'+_esc(row.query)+'">'
-        +'<td style="border:1px solid var(--br);padding:10px 14px;font-size:13px;font-weight:700;position:sticky;left:0;background:'+rowBg+';z-index:1;vertical-align:middle;">'
+          +(currentOrderItem ? currentOrderItem.name : cell.item.name)
+        +'</div>'
+        +(replacedFrom
+          ? '<div style="font-size:10px;color:var(--or);font-weight:800;margin-bottom:3px;line-height:1.35;">'
+            +'было: '+_esc(replacedFrom)+'<br>стало: '+_esc(currentOrderItem.name)
+            +'</div>'
+          : '')
+        +'<div style="font-size:15px;font-weight:800;color:'+(isBest?'var(--gr)':'var(--ac)')+';margin-bottom:6px;">'
+          +'₽'+_fmtPrice(currentOrderItem ? currentOrderItem.price : cell.price)
+          +'<span style="font-size:11px;font-weight:400;color:var(--t3);"> / '+(currentOrderItem ? currentOrderItem.unit : cell.item.unit)+'</span>'
+        +'</div>'
+        // Кнопки
+        +'<div style="display:flex;gap:4px;align-items:center;">'
+          // Лупа
+          +'<button onclick="openOrderSupSearch(\''+_esc(row.query)+'\',\''+_esc(sup)+'\')"'
+            +' title="Поиск в прайсе '+sup+'"'
+            +' style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);'
+              +'padding:4px 7px;font-size:13px;cursor:pointer;">🔍</button>'
+          // В корзину / В корзине
+          +(inCart
+            ?'<button onclick="orderRemove(\''+_esc(currentCartItem.name)+'\',\''+_esc(sup)+'\',\''+_esc(row.query)+'\')"'
+               +' style="flex:1;background:var(--ac);color:#fff;border:none;border-radius:var(--r);'
+                 +'padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">✓ В заказе</button>'
+            :'<button onclick="orderAddFromTable(\''+_esc(row.query)+'\',\''+_esc(currentOrderItem.name)+'\',\''+_esc(sup)+'\','+currentOrderItem.price+',\''+_esc(currentOrderItem.unit)+'\')"'
+               +' style="flex:1;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:var(--r);'
+                 +'padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;" title="+ В заказ">🛒 В заказ</button>')
+          // Скрыть
+          +'<button onclick="orderHideCell(\''+_esc(row.query)+'\',\''+_esc(sup)+'\')"'
+            +' title="Скрыть от закупщика"'
+            +' style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);'
+              +'padding:4px 6px;font-size:11px;cursor:pointer;color:var(--t4);">✕</button>'
+        +'</div>'
+      +'</td>';
+    }).join('');
+
+    return '<tr data-query="'+_esc(row.query)+'">'
+      +'<td style="border:1px solid var(--br);padding:10px 14px;font-size:13px;font-weight:700;'
+        +'position:sticky;left:0;background:'+rowBg+';z-index:1;vertical-align:middle;">'
         +row.query
-        +'</td>'
-        +cells
-        +'</tr>');
-    }
-    tbody.innerHTML = html.join('');
-    if(idx < rows.length) requestAnimationFrame(paintOrderRows);
-  })();
+      +'</td>'
+      +cells
+      +'</tr>';
+  }).join('');
 }
 
 // Собрать строки для таблицы
@@ -9212,24 +8049,8 @@ function _orderDisplayEntry(query, sup, fallback){
       price: fallback.price,
       unit: fallback.item.unit,
       _type: fallback.item._type || 'main',
-      invoiceGroup: fallback.item.invoiceGroup || 'main',
       replacedFrom: ''
     };
-}
-
-function refreshOrderWorkspaceImmediate(){
-  try{
-    updBdg();
-    renderCart();
-    _renderOrderTable((document.getElementById('orderTableSearch')||{value:''}).value);
-    var searchInp = document.getElementById('orderSearchInput');
-    if(searchInp && searchInp.value) orderSearch(searchInp.value);
-    var searchResults = document.getElementById('orderSearchResults');
-    if(searchResults && searchResults.style.display !== 'none'){
-      orderSearchMulti(searchInp ? searchInp.value : '');
-    }
-  }catch(err){}
-  flashCartUI();
 }
 
 function _orderUpsertItem(query, name, sup, price, unit, itemType, qty){
@@ -9238,7 +8059,6 @@ function _orderUpsertItem(query, name, sup, price, unit, itemType, qty){
   var normalizedQty=Math.max(0.001, parseFloat(qty)||1);
   var selected = _orderDraftEntryByQuery(q, sup);
   var replacementLabel = selected && selected.name===name ? (selected.replacedFrom || '') : '';
-  var selectedInvoice = selected && selected.invoiceGroup ? selected.invoiceGroup : 'main';
   var existing = cart.findIndex(function(c){
     return c.supplier===sup && (c._orderQuery||'')===q;
   });
@@ -9253,11 +8073,9 @@ function _orderUpsertItem(query, name, sup, price, unit, itemType, qty){
       qty: normalizedQty,
       unit: unit || cart[existing].unit || 'кг',
       _type: itemType || cart[existing]._type || 'main',
-      invoiceGroup: selectedInvoice || cart[existing].invoiceGroup || 'main',
       _orderQuery: q,
       replacedFrom: replacementLabel || cart[existing].replacedFrom || ''
     });
-    refreshOrderWorkspaceImmediate();
     return 'replaced';
   }
 
@@ -9271,39 +8089,10 @@ function _orderUpsertItem(query, name, sup, price, unit, itemType, qty){
     unit: unit || 'кг',
     comment: '',
     _type: itemType || 'main',
-    invoiceGroup: selectedInvoice,
     _orderQuery: q,
     replacedFrom: replacementLabel
   });
-  refreshOrderWorkspaceImmediate();
   return 'added';
-}
-
-function _orderToggleInvoiceGroup(query, sup){
-  var existingCart = _orderCartEntryByQuery(query, sup);
-  var existingDraft = _orderDraftEntryByQuery(query, sup);
-  var current = existingCart || existingDraft || null;
-  var nextGroup = current && current.invoiceGroup === 'extra' ? 'main' : 'extra';
-  var currentName = current ? current.name : query;
-  var currentPrice = current ? current.price : 0;
-  var currentUnit = current ? current.unit : 'кг';
-  var currentType = current ? current._type : 'main';
-  var currentReplacedFrom = current && current.replacedFrom ? current.replacedFrom : '';
-
-  if(existingCart){
-    existingCart.invoiceGroup = nextGroup;
-  } else {
-    _orderSetDraftEntry(query, sup, {
-      name: currentName,
-      price: currentPrice,
-      unit: currentUnit,
-      _type: currentType,
-      invoiceGroup: nextGroup,
-      replacedFrom: currentReplacedFrom
-    });
-  }
-
-  refreshOrderWorkspaceImmediate();
 }
 
 // Добавить в корзину из таблицы заказа
@@ -9316,13 +8105,10 @@ function orderAddFromTable(query, name, sup, price, unit, qtyInputId){
   var qtyEl = qtyInputId ? document.getElementById(qtyInputId) : null;
   var finalQty = qtyEl ? Math.max(0.001, parseFloat(qtyEl.value)||1) : 1;
   var mode = _orderUpsertItem(query, finalName, sup, finalPrice, finalUnit, finalType, finalQty);
-  var rowNode = document.querySelector('[data-order-row="'+_cssAttrVal(query)+'"][data-order-sup="'+_cssAttrVal(sup)+'"]');
-  if(rowNode){
-    rowNode.classList.add('order-in-cart');
-    rowNode.classList.add('order-in-cart-locked');
-    rowNode.style.background = 'rgba(91,163,245,.11)';
-    rowNode.style.borderColor = 'var(--ac)';
-  }
+  updBdg();
+  renderCart();
+  _renderOrderTable((document.getElementById('orderTableSearch')||{value:''}).value);
+  flashCartUI();
   toast(mode==='replaced'
     ? '«'+finalName+'» → '+sup+' обновлён в корзине'
     : '«'+finalName+'» → '+sup+' добавлен в корзину','ok');
@@ -9412,17 +8198,21 @@ function ossSelect(itemName, price, unit, itemType){
     price: price,
     unit: unit || 'кг',
     _type: itype,
-    invoiceGroup: current && current.invoiceGroup ? current.invoiceGroup : 'main',
     replacedFrom: current && current.name !== itemName ? current.name : ''
   });
   var rowNode = document.querySelector('[data-order-row="'+_cssAttrVal(_ossRowQuery)+'"][data-order-sup="'+_cssAttrVal(sup)+'"]');
   if(rowNode){
-  rowNode.classList.add('order-replaced');
-  rowNode.style.background = 'rgba(224,123,42,.08)';
-  rowNode.style.borderColor = 'var(--or)';
+    rowNode.classList.add('order-replaced');
+    setTimeout(function(){ rowNode.classList.remove('order-replaced'); }, 1500);
   }
-  refreshOrderWorkspaceImmediate();
+  flashCartUI();
   closeModal('orderSupSearch');
+  if(_orderSups.length > 0 && _orderSups.indexOf(sup) >= 0){
+    _renderOrderTable((document.getElementById('orderTableSearch')||{value:''}).value);
+  } else {
+    var inp = document.getElementById('orderSearchInput');
+    if(inp && inp.value) orderSearch(inp.value);
+  }
   toast('Вариант заменён: «'+itemName+'» → '+sup+(itype==='additional'?' (доп)':'')+'. Для добавления нажмите 🛒.','ok');
 }
 
@@ -9695,12 +8485,7 @@ var _supPriceImportState = {
   dataStartRow: 1,
   mapping: { name: [], unit: [], price: [], price2: [] },
   parsedRows: [],
-  template: null,
-  organizationId: '',
-  legalEntityIds: [],
-  legalEntityNames: [],
-  priceListId: '',
-  priceListName: ''
+  template: null
 };
 
 function _excelColLabel(idx){
@@ -9725,12 +8510,7 @@ function _supplierImportResetState(){
     dataStartRow: 1,
     mapping: { name: [], unit: [], price: [], price2: [] },
     parsedRows: [],
-    template: null,
-    organizationId: '',
-    legalEntityIds: [],
-    legalEntityNames: [],
-    priceListId: '',
-    priceListName: ''
+    template: null
   };
   _mcmRows = [];
   _mcmLayout = null;
@@ -10130,16 +8910,10 @@ function applyManualColumnMapAndSave(){
 }
 
 function saveCurrentSupPriceTemplate(){
-  _supplierImportCaptureLegalState();
   var mapping = syncMcmRolesFromPreview() || _supPriceImportState.mapping || { name: [], unit: [], price: [], price2: [] };
   if(!mapping.name.length || !mapping.price.length){
     var err = document.getElementById('mcm-err');
     if(err) err.textContent = 'Сначала назначьте обязательные колонки: наименование и цена.';
-    return;
-  }
-  if(!_supplierImportHasLegalSelection()){
-    var err2 = document.getElementById('mcm-err');
-    if(err2) err2.textContent = 'Выберите хотя бы одно юр. лицо для этого прайса.';
     return;
   }
   _saveSupPriceTemplate(_currentSupName, {
@@ -10150,8 +8924,6 @@ function saveCurrentSupPriceTemplate(){
     unitCols: (mapping.unit || []).slice(),
     priceCols: (mapping.price || []).slice(),
     price2Cols: (mapping.price2 || []).slice(),
-    legalEntityIds: (_supPriceImportState.legalEntityIds || []).slice(),
-    legalEntityNames: (_supPriceImportState.legalEntityNames || []).slice(),
     skipRules: { dropEmpty: true, requirePrice: true }
   });
   toast('Шаблон импорта сохранён', 'ok');
@@ -10250,11 +9022,6 @@ function priceAddRow(){
 }
 
 function processSupPriceRows(rows, cols, supName, append, priceName, allowedUserIds){
-  var priceScope = _supplierImportCaptureLegalState();
-  if(!_supplierImportHasLegalSelection()){
-    toast('Выберите хотя бы одно юр. лицо для прайса','err');
-    return { added: 0, updated: 0, skipped: Array.isArray(rows) ? rows.length : 0, needsReview: 0, error: 'legal_entities_required' };
-  }
   var allowedCompanies = [];
   document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
     var co = cb.dataset.company;
@@ -10272,16 +9039,6 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
       return !(p._supplier === supName && (p._priceName === priceName || !p._priceName));
     });
   }
-  var priceList = _supplierImportCreateOrUpdateList(
-    _supplierImportPriceListId(supName, priceName, priceScope.organizationId),
-    {
-      sourceFile: _supPriceImportState.fileName || '',
-      active: true
-    }
-  );
-  _supPriceImportState.priceListId = priceList.id;
-  _supPriceImportState.priceListName = priceList.priceName;
-  _supplierImportSyncPriceListLegals(priceList.id, priceList.organizationId, priceList.legalEntityIds, priceList.legalEntityNames);
 
   var items = Array.isArray(rows) ? rows : [];
   var added = 0, updated = 0, skipped = 0, needsReview = [];
@@ -10337,13 +9094,6 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
       supplier: supName,
       _supplier: supName,
       _priceName: priceName,
-      organizationId: priceScope.organizationId,
-      priceListId: priceList.id,
-      priceListName: priceList.priceName,
-      priceListActive: true,
-      legalEntityIds: priceList.legalEntityIds.slice(),
-      legalEntityNames: priceList.legalEntityNames.slice(),
-      sourceFile: _supPriceImportState.fileName || '',
       pKg: pKg,
       pSh: pSh,
       pL: pL,
@@ -10365,19 +9115,8 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
     });
     if(prodIdx >= 0){
       var spIdx = PRODUCTS[prodIdx].suppliers.findIndex(function(s){ return s.name === supName; });
-      var supObj = {
-        name: supName,
-        price: price,
-        organizationId: priceScope.organizationId,
-        priceListId: priceList.id,
-        priceListName: priceList.priceName,
-        legalEntityIds: priceList.legalEntityIds.slice(),
-        legalEntityNames: priceList.legalEntityNames.slice(),
-        sourceFile: _supPriceImportState.fileName || '',
-        active: true
-      };
-      if(spIdx >= 0) PRODUCTS[prodIdx].suppliers[spIdx] = Object.assign({}, PRODUCTS[prodIdx].suppliers[spIdx], supObj);
-      else PRODUCTS[prodIdx].suppliers.push(supObj);
+      if(spIdx >= 0) PRODUCTS[prodIdx].suppliers[spIdx].price = price;
+      else PRODUCTS[prodIdx].suppliers.push({ name: supName, price: price });
       PRODUCTS[prodIdx].unit = PRODUCTS[prodIdx].unit || normUnit;
     } else {
       PRODUCTS.push({
@@ -10398,17 +9137,6 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
       if(ALL_SUPS.indexOf(supName) < 0) ALL_SUPS.push(supName);
     }
   });
-
-  _supplierImportSyncPriceItems(priceList.id, priceScope.organizationId, items.map(function(row, idx){
-    return {
-      sourceRow: row && row.sourceRow ? row.sourceRow : (idx + 1),
-      name: row && row.name ? String(row.name).trim() : '',
-      unit: row && row.unit ? String(row.unit).trim() : '',
-      price1: row && row.price1 ? row.price1 : 0,
-      price2: row && row.price2 ? row.price2 : 0,
-      rawRow: row && row.rawRow ? row.rawRow : []
-    };
-  }));
 
   rememberPriceLayout(supName, {
     headerRow: Math.max(0, (_supPriceImportState.dataStartRow || 1) - 1),
@@ -10438,11 +9166,6 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
 }
 
 function _saveSupplierImportRowsDirect(rows, supName, append, priceName, allowedUserIds){
-  var priceScope = _supplierImportCaptureLegalState();
-  if(!_supplierImportHasLegalSelection()){
-    toast('Выберите хотя бы одно юр. лицо для прайса','err');
-    return { added: 0, updated: 0, skipped: Array.isArray(rows) ? rows.length : 0, needsReview: 0, error: 'legal_entities_required' };
-  }
   var allowedCompanies = [];
   document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
     var co = cb.dataset.company;
@@ -10460,16 +9183,6 @@ function _saveSupplierImportRowsDirect(rows, supName, append, priceName, allowed
       return !(p._supplier === supName && (p._priceName === priceName || !p._priceName));
     });
   }
-  var priceList = _supplierImportCreateOrUpdateList(
-    _supplierImportPriceListId(supName, priceName, priceScope.organizationId),
-    {
-      sourceFile: _supPriceImportState.fileName || '',
-      active: true
-    }
-  );
-  _supPriceImportState.priceListId = priceList.id;
-  _supPriceImportState.priceListName = priceList.priceName;
-  _supplierImportSyncPriceListLegals(priceList.id, priceList.organizationId, priceList.legalEntityIds, priceList.legalEntityNames);
 
   var added = 0;
   var updated = 0;
@@ -10507,13 +9220,6 @@ function _saveSupplierImportRowsDirect(rows, supName, append, priceName, allowed
       supplier: supName,
       _supplier: supName,
       _priceName: priceName,
-      organizationId: priceScope.organizationId,
-      priceListId: priceList.id,
-      priceListName: priceList.priceName,
-      priceListActive: true,
-      legalEntityIds: priceList.legalEntityIds.slice(),
-      legalEntityNames: priceList.legalEntityNames.slice(),
-      sourceFile: _supPriceImportState.fileName || '',
       pKg: pKg,
       pSh: pSh,
       pL: pL,
@@ -10535,19 +9241,8 @@ function _saveSupplierImportRowsDirect(rows, supName, append, priceName, allowed
     });
     if(prodIdx >= 0){
       var spIdx = PRODUCTS[prodIdx].suppliers.findIndex(function(s){ return s.name === supName; });
-      var supObj = {
-        name: supName,
-        price: price,
-        organizationId: priceScope.organizationId,
-        priceListId: priceList.id,
-        priceListName: priceList.priceName,
-        legalEntityIds: priceList.legalEntityIds.slice(),
-        legalEntityNames: priceList.legalEntityNames.slice(),
-        sourceFile: _supPriceImportState.fileName || '',
-        active: true
-      };
-      if(spIdx >= 0) PRODUCTS[prodIdx].suppliers[spIdx] = Object.assign({}, PRODUCTS[prodIdx].suppliers[spIdx], supObj);
-      else PRODUCTS[prodIdx].suppliers.push(supObj);
+      if(spIdx >= 0) PRODUCTS[prodIdx].suppliers[spIdx].price = price;
+      else PRODUCTS[prodIdx].suppliers.push({ name: supName, price: price });
       PRODUCTS[prodIdx].unit = PRODUCTS[prodIdx].unit || normUnit;
     } else {
       PRODUCTS.push({
@@ -10569,17 +9264,6 @@ function _saveSupplierImportRowsDirect(rows, supName, append, priceName, allowed
     }
   });
 
-  _supplierImportSyncPriceItems(priceList.id, priceScope.organizationId, items.map(function(row, idx){
-    return {
-      sourceRow: row && row.sourceRow ? row.sourceRow : (idx + 1),
-      name: row && row.name ? String(row.name).trim() : '',
-      unit: row && row.unit ? String(row.unit).trim() : '',
-      price1: row && row.price1 ? row.price1 : 0,
-      price2: row && row.price2 ? row.price2 : 0,
-      rawRow: row && row.rawRow ? row.rawRow : []
-    };
-  }));
-
   if(added > 0 || updated > 0){
     savePriceData();
     renderSupProducts();
@@ -10595,7 +9279,6 @@ function priceSaveEdited(){
   var startRowInput = document.getElementById('mcm-start-row');
   _supPriceImportState.dataStartRow = Math.max(1, parseInt((startRowInput || { value: '1' }).value, 10) || 1);
   syncMcmRolesFromPreview();
-  _supplierImportCaptureLegalState();
   _supplierImportRenderParsedPreview();
 
   var validRows = _priceEditRows.filter(function(r){
@@ -10625,12 +9308,6 @@ function priceSaveEdited(){
     return;
   }
   try{
-    if(!_supplierImportHasLegalSelection()){
-      toast('Выберите хотя бы одно юр. лицо для прайса','err');
-      var legalErr = document.getElementById('mcm-err');
-      if(legalErr) legalErr.textContent = 'Выберите хотя бы одно юр. лицо для прайса.';
-      return;
-    }
     _saveSupPriceTemplate(ctx.supName, {
       sheetName: _supPriceImportState.sheetName || '',
       headerRow: Math.max(0, (_supPriceImportState.dataStartRow || 1) - 1),
@@ -10639,8 +9316,6 @@ function priceSaveEdited(){
       unitCols: (_supPriceImportState.mapping.unit || []).slice(),
       priceCols: (_supPriceImportState.mapping.price || []).slice(),
       price2Cols: (_supPriceImportState.mapping.price2 || []).slice(),
-      legalEntityIds: (_supPriceImportState.legalEntityIds || []).slice(),
-      legalEntityNames: (_supPriceImportState.legalEntityNames || []).slice(),
       skipRules: { dropEmpty: true, requirePrice: true }
     });
 
@@ -10750,13 +9425,7 @@ document.addEventListener('DOMContentLoaded',function(){
   function finalizeBoot(){
     var ld=document.getElementById('pvLoad');if(ld)ld.remove();
     try{renderDemoG();}catch(e){console.error('renderDemoG failed during boot:',e);}
-    try{
-      if(typeof CU!=='undefined' && CU){
-        scSw('APP');
-      } else {
-        scSw('Login');
-      }
-    }catch(e){console.error('scSw failed during boot:',e);}
+    try{scSw('Login');}catch(e){console.error('scSw failed during boot:',e);}
     try{
       document.querySelectorAll('.ov').forEach(function(ov){
         ov.addEventListener('mousedown',function(e){if(e.target===ov)ov.classList.remove('on');});

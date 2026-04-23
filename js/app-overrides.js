@@ -20,14 +20,6 @@
   var loggingOut = false;
   var authBound = false;
   var restoreInFlight = false;
-  var OWNER_EMAILS = [
-    'owner@provision.ru',
-    'michaelkeepcalm@gmail.com',
-    'keepcalm3300@gmail.com',
-    'keepcalm3300gmail.com',
-    'michaelkeepcalm3300gmail.com',
-    'keepcalm3300gmail.com@MacBook-Air-Mihail.local'
-  ];
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -46,14 +38,9 @@
     if (!Array.isArray(base.supProds)) base.supProds = [];
     if (!Array.isArray(base.supsData)) base.supsData = [];
     if (!Array.isArray(base.products)) base.products = [];
-    if (!Array.isArray(base.supplierPriceLists)) base.supplierPriceLists = [];
-    if (!Array.isArray(base.supplierPriceListLegals)) base.supplierPriceListLegals = [];
-    if (!Array.isArray(base.supplierPriceItems)) base.supplierPriceItems = [];
     if (!Array.isArray(base.orders)) base.orders = [];
     if (!Array.isArray(base.techCards)) base.techCards = [];
     if (!Array.isArray(base.supplierImportTemplates)) base.supplierImportTemplates = [];
-    if (!Array.isArray(base.priceImportBatches)) base.priceImportBatches = [];
-    if (!Array.isArray(base.priceImportItems)) base.priceImportItems = [];
     return base;
   }
 
@@ -66,11 +53,6 @@
       normalized.supProds.length ||
       normalized.supsData.length ||
       normalized.products.length ||
-      normalized.supplierPriceLists.length ||
-      normalized.supplierPriceListLegals.length ||
-      normalized.supplierPriceItems.length ||
-      normalized.priceImportBatches.length ||
-      normalized.priceImportItems.length ||
       normalized.orders.length ||
       normalized.techCards.length ||
       normalized.supplierImportTemplates.length
@@ -83,12 +65,6 @@
     try { SUP_PRODS = normalized.supProds.slice(); } catch (error) {}
     try { SUPS_DATA = normalized.supsData.slice(); } catch (error) {}
     try { PRODUCTS = normalized.products.slice(); } catch (error) {}
-    try { SUP_PRICE_LISTS = normalized.supplierPriceLists.slice(); } catch (error) {}
-    try { SUP_PRICE_LIST_LEGALS = normalized.supplierPriceListLegals.slice(); } catch (error) {}
-    try { SUP_PRICE_ITEMS = normalized.supplierPriceItems.slice(); } catch (error) {}
-    try { window.priceImportBatches = normalized.priceImportBatches.slice(); } catch (error) {}
-    try { window.priceImportItems = normalized.priceImportItems.slice(); } catch (error) {}
-    try { window.supplierImportTemplates = normalized.supplierImportTemplates.slice(); } catch (error) {}
     try { ORDERS = normalized.orders.slice(); } catch (error) {}
     try { TECH_CARDS = normalized.techCards.slice(); } catch (error) {}
     try {
@@ -138,48 +114,10 @@
     } catch (error) {}
   }
 
-  function readLastUser() {
-    try {
-      var raw = localStorage.getItem(LAST_USER_KEY);
-      return raw ? JSON.parse(raw) : null;
-    } catch (error) {
-      return null;
-    }
-  }
-
-  function withTimeout(promise, ms, fallback) {
-    var timer;
-    return Promise.race([
-      promise,
-      new Promise(function (resolve) {
-        timer = setTimeout(function () { resolve(fallback); }, ms);
-      })
-    ]).finally(function () {
-      if (timer) clearTimeout(timer);
-    });
-  }
-
   function clearLastUser() {
     try {
       localStorage.removeItem(LAST_USER_KEY);
     } catch (error) {}
-  }
-
-  function isOwnerIdentity(email, profile, meta) {
-    var raw = String(email || '').toLowerCase().trim();
-    if (meta && meta.role === 'owner') return true;
-    if (profile && profile.role === 'owner') return true;
-    if (!raw) return false;
-    return OWNER_EMAILS.some(function (item) {
-      return raw === item || raw.indexOf(item) >= 0 || item.indexOf(raw) >= 0;
-    });
-  }
-
-  function normalizeRole(role, user) {
-    if (window.normalizeUserRole) return window.normalizeUserRole(role, user);
-    if (isOwnerIdentity(user && user.email, null, { role: role })) return 'owner';
-    var key = String(role || '').trim().toLowerCase();
-    return window.ROLES && window.ROLES[key] ? key : 'manager';
   }
 
   async function loadStateFromSupabase() {
@@ -245,9 +183,6 @@
 
   function upsertUserInDb(user) {
     var db = ensureArrays(window._dbCache || readLocalState() || getDefaults());
-    if (isOwnerIdentity(user && user.email, null, { role: user && user.role })) {
-      user = Object.assign({}, user, { role: 'owner', status: 'active' });
-    }
     var index = db.users.findIndex(function (item) {
       return item && item.email && item.email.toLowerCase() === user.email.toLowerCase();
     });
@@ -294,10 +229,8 @@
     var first = (existing && existing.first) || (profile && (profile.first_name || profile.first)) || meta.first_name || meta.first || 'Пользователь';
     var last = (existing && existing.last) || (profile && (profile.last_name || profile.last)) || meta.last_name || meta.last || '';
     var company = (existing && existing.company) || (profile && profile.company) || meta.company || 'КальКа';
-    var ownerIdentity = isOwnerIdentity(authUser.email, profile, meta) || (existing && existing.role === 'owner') || (profile && profile.role === 'owner');
-    var role = ownerIdentity ? 'owner' : normalizeRole((existing && existing.role) || (profile && profile.role) || meta.role || meta.app_role || 'manager', { email: authUser.email, role: existing && existing.role });
-    var status = ownerIdentity ? 'active' : ((existing && existing.status) || (profile && profile.status) || 'active');
-    if (status !== 'active' && status !== 'blocked' && status !== 'pending' && status !== 'rejected') status = 'active';
+    var role = (existing && existing.role) || (profile && profile.role) || meta.role || meta.app_role || 'manager';
+    var status = (existing && existing.status) || (profile && profile.status) || 'active';
 
     var user = Object.assign({}, existing || {}, {
       id: authUser.id,
@@ -313,35 +246,6 @@
 
     upsertUserInDb(user);
     return user;
-  }
-
-  function buildFastAuthUser(authUser) {
-    var db = ensureArrays(window._dbCache || readLocalState() || getDefaults());
-    var existing = db.users.find(function (item) {
-      return item && item.email && item.email.toLowerCase() === String(authUser.email || '').toLowerCase();
-    }) || readLastUser() || null;
-    var meta = authUser.user_metadata || {};
-    var first = (existing && existing.first) || meta.first_name || meta.first || 'Пользователь';
-    var last = (existing && existing.last) || meta.last_name || meta.last || '';
-    var company = (existing && existing.company) || meta.company || 'КальКа';
-    var role = normalizeRole((existing && existing.role) || meta.role || meta.app_role || 'manager', { email: authUser.email, role: existing && existing.role });
-    if (isOwnerIdentity(authUser.email, null, { role: role })) {
-      role = 'owner';
-    }
-    var status = (existing && existing.status) || 'active';
-    if (status !== 'active' && status !== 'blocked' && status !== 'pending' && status !== 'rejected') status = 'active';
-    if (isOwnerIdentity(authUser.email, null, { role: role })) status = 'active';
-    return {
-      id: authUser.id,
-      first: first,
-      last: last,
-      company: company,
-      email: String(authUser.email || '').toLowerCase(),
-      role: role,
-      status: status,
-      ev: existing && typeof existing.ev !== 'undefined' ? existing.ev : true,
-      created: (existing && existing.created) || new Date().toISOString().slice(0, 10)
-    };
   }
 
   function bindAuthListener() {
@@ -384,12 +288,6 @@
   window.dbSet = function (db) {
     var currentState = ensureArrays(window._dbCache || readLocalState() || (legacy.dbGet ? legacy.dbGet() : null) || getDefaults());
     var normalized = syncRuntime(db);
-    normalized.users = (normalized.users || []).map(function (u) {
-      if (!u || !u.email) return u;
-      return isOwnerIdentity(u.email, null, { role: u.role })
-        ? Object.assign({}, u, { role: 'owner', status: 'active' })
-        : u;
-    });
     if (!hasMeaningfulState(normalized) && hasMeaningfulState(currentState)) {
       console.warn('dbSet skipped empty overwrite because meaningful state already exists');
       syncRuntime(currentState);
@@ -448,12 +346,6 @@
               var fallbackState = window._dbCache || (legacy.dbGet ? legacy.dbGet() : null) || getDefaults();
               var mergedFallback = await loadBusinessDataFromSupabase(fallbackState);
               var normalizedFallback = syncRuntime(mergedFallback);
-              normalizedFallback.users = (normalizedFallback.users || []).map(function (u) {
-                if (!u || !u.email) return u;
-                return isOwnerIdentity(u.email, null, { role: u.role })
-                  ? Object.assign({}, u, { role: 'owner', status: 'active' })
-                  : u;
-              });
               if (hasMeaningfulState(normalizedFallback)) {
                 saveBusinessDataSnapshot(normalizedFallback);
                 saveStateToSupabase(normalizedFallback).catch(function () {});
@@ -473,12 +365,6 @@
 
         var mergedLocalState = await loadBusinessDataFromSupabase(readLocalState() || getDefaults());
         var localState = syncRuntime(mergedLocalState);
-        localState.users = (localState.users || []).map(function (u) {
-          if (!u || !u.email) return u;
-          return isOwnerIdentity(u.email, null, { role: u.role })
-            ? Object.assign({}, u, { role: 'owner', status: 'active' })
-            : u;
-        });
         if (hasMeaningfulState(localState)) {
           saveBusinessDataSnapshot(localState);
           saveStateToSupabase(localState).catch(function () {});
@@ -525,17 +411,8 @@
         throw response.error;
       }
 
-      var authUser = response.data.user || (response.data.session && response.data.session.user);
-      if (!authUser) throw new Error('Не удалось получить данные пользователя после входа');
-      var user = buildFastAuthUser(authUser);
-      user.role = normalizeRole(user.role, user);
-      if (isOwnerIdentity(user.email, null, { role: user.role })) {
-        user.role = 'owner';
-        user.status = 'active';
-      }
-      if (user.status !== 'active' && user.status !== 'blocked' && user.status !== 'pending' && user.status !== 'rejected') {
-        user.status = 'active';
-      }
+      await hydrateStateFromSupabase();
+      var user = await resolveAppUser(response.data.user);
       if (user.status === 'blocked') {
         await client.auth.signOut();
         if (errEl) errEl.textContent = 'Аккаунт заблокирован';
@@ -552,19 +429,6 @@
         return;
       }
       if (typeof window.enterApp === 'function') window.enterApp(user);
-      setTimeout(function () {
-        hydrateStateFromSupabase().catch(function (error) {
-          console.error('async hydrate after login failed:', error);
-        });
-        resolveAppUser(authUser).then(function (resolved) {
-          if (!resolved) return;
-          if (window.CU && window.CU.id === resolved.id) {
-            if (typeof window.enterApp === 'function') window.enterApp(resolved);
-          }
-        }).catch(function (error) {
-          console.error('async profile resolve after login failed:', error);
-        });
-      }, 0);
     } catch (error) {
       if (errEl) errEl.textContent = error && error.message ? error.message : 'Ошибка входа';
     } finally {
@@ -781,12 +645,8 @@
           first_name: first,
           last_name: last,
           company: company,
-          role: isOwnerIdentity(currentEmail, null, { role: db.users[idx].role || (currentUser && currentUser.role) })
-            ? 'owner'
-            : (db.users[idx].role || (currentUser && currentUser.role) || 'manager'),
-          status: isOwnerIdentity(currentEmail, null, { role: db.users[idx].role || (currentUser && currentUser.role) })
-            ? 'active'
-            : (db.users[idx].status || (currentUser && currentUser.status) || 'active')
+          role: db.users[idx].role || (currentUser && currentUser.role) || 'manager',
+          status: db.users[idx].status || (currentUser && currentUser.status) || 'active'
         }
       };
       if (newEmail !== currentEmail) payload.email = newEmail;
@@ -842,33 +702,13 @@
         return false;
       }
 
-      var user = buildFastAuthUser(response.data.session.user);
-      user.role = normalizeRole(user.role, user);
-      if (isOwnerIdentity(user.email, null, { role: user.role })) {
-        user.role = 'owner';
-        user.status = 'active';
-      }
-      if (user.status !== 'active' && user.status !== 'blocked' && user.status !== 'pending' && user.status !== 'rejected') {
-        user.status = 'active';
-      }
+      await hydrateStateFromSupabase();
+      var user = await resolveAppUser(response.data.session.user);
       var currentUser = null;
       try { currentUser = CU; } catch (error) { currentUser = window.CU || null; }
       if (typeof window.enterApp === 'function' && (!currentUser || currentUser.id !== user.id)) {
         window.enterApp(user);
       }
-      setTimeout(function () {
-        hydrateStateFromSupabase().catch(function (error) {
-          console.error('async hydrate during restoreSession failed:', error);
-        });
-        resolveAppUser(response.data.session.user).then(function (resolved) {
-          if (!resolved) return;
-          if (window.CU && window.CU.id === resolved.id) {
-            if (typeof window.enterApp === 'function') window.enterApp(resolved);
-          }
-        }).catch(function (error) {
-          console.error('async profile resolve during restoreSession failed:', error);
-        });
-      }, 0);
       restoreInFlight = false;
       return true;
     }
