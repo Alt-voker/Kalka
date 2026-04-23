@@ -2551,8 +2551,17 @@ function normalizeDashboardAccess(user){
 function getUserRestaurantMembershipIds(user, db){
   db=db||dbGet();
   if(!user) return [];
+  var userCompany=_normalizeOrgKey(user.company || '');
   return (db.restaurants||[]).filter(function(rest){
-    return rest.id!=='r0' && Array.isArray(rest.members) && rest.members.some(function(member){ return member.userId===user.id; });
+    if(!rest || rest.id==='r0') return false;
+    if(Array.isArray(rest.members) && rest.members.some(function(member){ return member.userId===user.id; })) return true;
+    if(userCompany){
+      var legalNames=getRestLegalEntities(rest).map(function(name){ return _normalizeOrgKey(name); });
+      var restOrg=_normalizeOrgKey(rest.brandName || rest.legalName || rest.name || '');
+      if(restOrg && restOrg===userCompany) return true;
+      if(legalNames.indexOf(userCompany)>=0) return true;
+    }
+    return false;
   }).map(function(rest){ return rest.id; });
 }
 
@@ -2665,7 +2674,14 @@ function getUserVisibleSuppliers(user){
 function isRestaurantParticipant(user, rest){
   if(!user || !rest) return false;
   if(user.role==='owner') return true;
-  return Array.isArray(rest.members) && rest.members.some(function(member){ return member.userId===user.id; });
+  if(Array.isArray(rest.members) && rest.members.some(function(member){ return member.userId===user.id; })) return true;
+  var userCompany=_normalizeOrgKey(user.company || '');
+  if(!userCompany) return false;
+  var legalNames=getRestLegalEntities(rest).map(function(name){ return _normalizeOrgKey(name); });
+  var restOrg=_normalizeOrgKey(rest.brandName || rest.legalName || rest.name || '');
+  if(restOrg && restOrg===userCompany) return true;
+  if(legalNames.indexOf(userCompany)>=0) return true;
+  return false;
 }
 
 function canViewRestaurantSensitiveData(user, rest){
