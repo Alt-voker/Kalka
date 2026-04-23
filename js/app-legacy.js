@@ -508,7 +508,9 @@ function syncRolePagesFromDb(db){
     : null;
   Object.keys(ROLES).forEach(function(roleKey){
     var fallback=(ROLE_DEFAULT_PAGES[roleKey]||[]).slice();
-    var saved=stored&&Array.isArray(stored[roleKey]) ? stored[roleKey].filter(Boolean) : null;
+    var saved=stored&&Array.isArray(stored[roleKey]) ? stored[roleKey].filter(function(pg){
+      return !!pg && !!PM[pg] && pg !== 'cart';
+    }) : null;
     ROLES[roleKey].pages=(saved&&saved.length ? saved : fallback).slice();
   });
 }
