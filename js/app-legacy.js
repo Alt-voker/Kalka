@@ -922,7 +922,22 @@ function setupUI(u){
   var navFirst=document.querySelector('#sbNav .sb-item[data-page]');
   var firstPage=navFirst ? navFirst.getAttribute('data-page') : (((ROLES[u.role]||{}).pages||[]).find(function(pg){ return canAccessPage(u, pg); })||'orders');
   if(!firstPage) firstPage='orders';
-  goPage(firstPage);
+  var shellPage=document.getElementById('pg-'+firstPage);
+  if(shellPage){
+    document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('on'); });
+    document.querySelectorAll('.sb-item').forEach(function(i){ i.classList.remove('on'); });
+    shellPage.classList.add('on');
+    document.querySelectorAll('[data-page="'+firstPage+'"]').forEach(function(i){ i.classList.add('on'); });
+    var titleEl=document.getElementById('topTitle');
+    if(titleEl) titleEl.textContent=PT[firstPage]||firstPage;
+    setTimeout(function(){
+      window.requestAnimationFrame(function(){
+        try{ goPage(firstPage); }catch(e){ console.error('deferred initial page failed', e); }
+      });
+    }, 0);
+  } else {
+    goPage(firstPage);
+  }
   renderDemoG();
 }
 function doLogout(){
