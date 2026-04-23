@@ -970,14 +970,16 @@ function goPage(pg){
   var renderMap={order:renderOrder,dashboard:renderDash,catalog:renderCatalog,cart:renderCart,favorites:renderFavorites,orders:renderOrders,suppliers:renderSuppliers,analytics:renderAnalytics,tender:renderTender,techcards:renderTechCards,'chef-calc':initCalc,'sup-products':renderSupProducts,'sup-orders':renderSupOrders,'sup-analytics':renderSupAnalytics,'sup-dashboard':renderSupDash,admin:renderAdmin,restaurants:renderRestaurants,owner:renderOwner};
   var renderFn=renderMap[pg];
   if(!renderFn) return;
-  window.requestAnimationFrame(function(){
-    try{
-      renderFn();
-    }catch(e){
-      console.error('goPage render failed for '+pg+':', e);
-      toast('Страница открылась с ошибкой. Мы уже исправляем её.','err');
-    }
-  });
+  setTimeout(function(){
+    window.requestAnimationFrame(function(){
+      try{
+        renderFn();
+      }catch(e){
+        console.error('goPage render failed for '+pg+':', e);
+        toast('Страница открылась с ошибкой. Мы уже исправляем её.','err');
+      }
+    });
+  }, 0);
 }
 function getDashboardOrders(){
   ensureDashboardRestSelection();
