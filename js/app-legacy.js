@@ -901,20 +901,24 @@ function goPage(pg){
   CU = Object.assign({}, CU, { role: normalizeUserRole(CU && CU.role, CU), status: (isOwnerUser(CU) ? 'active' : (CU && CU.status) || 'active') });
   var navVisible=document.querySelector('#sbNav .sb-item[data-page="'+String(pg).replace(/"/g,'&quot;')+'"]');
   if(!canAccessPage(CU, pg) && !navVisible){toast('🚫 Нет доступа к этому разделу','err');return;}
-  try{
-    document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
-    document.querySelectorAll('.sb-item').forEach(i=>i.classList.remove('on'));
-    var pageEl=document.getElementById('pg-'+pg);
-    if(pageEl) pageEl.classList.add('on');
-    document.querySelectorAll(`[data-page="${pg}"]`).forEach(i=>i.classList.add('on'));
-    var titleEl=document.getElementById('topTitle');
-    if(titleEl) titleEl.textContent=PT[pg]||pg;
-    const R={order:renderOrder,dashboard:renderDash,catalog:renderCatalog,cart:renderCart,favorites:renderFavorites,orders:renderOrders,suppliers:renderSuppliers,analytics:renderAnalytics,tender:renderTender,techcards:renderTechCards,'chef-calc':initCalc,'sup-products':renderSupProducts,'sup-orders':renderSupOrders,'sup-analytics':renderSupAnalytics,'sup-dashboard':renderSupDash,admin:renderAdmin,restaurants:renderRestaurants,owner:renderOwner};
-    if(R[pg])R[pg]();
-  }catch(e){
-    console.error('goPage failed for '+pg+':', e);
-    toast('Страница открылась с ошибкой. Мы уже исправляем её.','err');
-  }
+  document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('on'); });
+  document.querySelectorAll('.sb-item').forEach(function(i){ i.classList.remove('on'); });
+  var pageEl=document.getElementById('pg-'+pg);
+  if(pageEl) pageEl.classList.add('on');
+  document.querySelectorAll('[data-page="'+pg+'"]').forEach(function(i){ i.classList.add('on'); });
+  var titleEl=document.getElementById('topTitle');
+  if(titleEl) titleEl.textContent=PT[pg]||pg;
+  var renderMap={order:renderOrder,dashboard:renderDash,catalog:renderCatalog,cart:renderCart,favorites:renderFavorites,orders:renderOrders,suppliers:renderSuppliers,analytics:renderAnalytics,tender:renderTender,techcards:renderTechCards,'chef-calc':initCalc,'sup-products':renderSupProducts,'sup-orders':renderSupOrders,'sup-analytics':renderSupAnalytics,'sup-dashboard':renderSupDash,admin:renderAdmin,restaurants:renderRestaurants,owner:renderOwner};
+  var renderFn=renderMap[pg];
+  if(!renderFn) return;
+  window.requestAnimationFrame(function(){
+    try{
+      renderFn();
+    }catch(e){
+      console.error('goPage render failed for '+pg+':', e);
+      toast('Страница открылась с ошибкой. Мы уже исправляем её.','err');
+    }
+  });
 }
 function getDashboardOrders(){
   ensureDashboardRestSelection();
