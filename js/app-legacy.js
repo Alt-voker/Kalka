@@ -10203,7 +10203,13 @@ document.addEventListener('DOMContentLoaded',function(){
   function finalizeBoot(){
     var ld=document.getElementById('pvLoad');if(ld)ld.remove();
     try{renderDemoG();}catch(e){console.error('renderDemoG failed during boot:',e);}
-    try{scSw('Login');}catch(e){console.error('scSw failed during boot:',e);}
+    try{
+      if(typeof CU!=='undefined' && CU){
+        scSw('APP');
+      } else {
+        scSw('Login');
+      }
+    }catch(e){console.error('scSw failed during boot:',e);}
     try{
       document.querySelectorAll('.ov').forEach(function(ov){
         ov.addEventListener('mousedown',function(e){if(e.target===ov)ov.classList.remove('on');});
