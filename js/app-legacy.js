@@ -2640,10 +2640,40 @@ function renderOwner(){
   var duplicateProducts=ownerDuplicateCount(PRODUCTS,function(p){return p&&p.name;})+ownerDuplicateCount(SUP_PRODS,function(p){return p&&p.name;});
   var dashboardEnabledUsers=(db.users||[]).filter(function(u){ return userCanSeeDashboard(u); }).length;
   var audit=(db.audit||[]).slice(0,8);
+  var clientStateVersion = (window._dbCache && Number(window._dbCache.__clientStateVersion || 0)) || 0;
+  var localStateVersion = 0;
+  try{
+    var rawState = localStorage.getItem('kalka_app_state_v1') || localStorage.getItem('pv_cache');
+    if(rawState){
+      var parsedState = JSON.parse(rawState);
+      localStateVersion = Number(parsedState && parsedState.__clientStateVersion || 0) || 0;
+    }
+  }catch(e){}
+  var activeUser = (CU && (CU.first || CU.last || CU.email)) ? [
+    [CU.first, CU.last].filter(Boolean).join(' ').trim() || CU.email || '—',
+    CU.role || '—',
+    CU.status || '—'
+  ] : ['—','—','—'];
+  var activeOrgId = '';
+  var activeOrgName = '—';
+  var activeLegalIds = [];
+  var activeLegalNames = [];
+  try{
+    activeOrgId = getCurrentPriceOrganizationId(db) || (activeRest && activeRest.organizationId) || '';
+    if(activeOrgId){
+      var orgRest = (db.restaurants||[]).find(function(r){
+        return String(r.organizationId||'').trim()===String(activeOrgId).trim() || String(r.id||'').trim()===String(activeOrgId).trim();
+      }) || null;
+      activeOrgName = (orgRest && (orgRest.brandName || orgRest.legalName || orgRest.name)) || '—';
+      activeLegalNames = getOrganizationLegalEntities(activeOrgId, db);
+      activeLegalIds = activeLegalNames.slice();
+    }
+  }catch(e){}
   var summaryEl=document.getElementById('ownerSummaryGrid');
   var businessEl=document.getElementById('ownerBusinessCards');
   var dataEl=document.getElementById('ownerDataControlList');
   var healthEl=document.getElementById('ownerHealthList');
+  var diagEl=document.getElementById('ownerClientContext');
   var auditEl=document.getElementById('ownerRecentAudit');
   if(summaryEl){
     summaryEl.innerHTML=[
@@ -2690,6 +2720,20 @@ function renderOwner(){
       ownerStatusRow('Почта поддержки',settings.supportEmail||'Не задана',settings.supportEmail?'good':'warn','Отображается для клиентов и ошибок'),
       ownerStatusRow('Уведомления',Object.values(notifications).filter(Boolean).length+'/6',Object.values(notifications).filter(Boolean).length>=4?'good':'warn','Контроль новых заказов, ошибок и цен'),
       ownerStatusRow('Резервное копирование','Готово',SUP_PRODS.length||PRODUCTS.length||ORDERS.length?'good':'warn','Экспорт JSON доступен из панели владельца')
+    ].join('');
+  }
+  if(diagEl){
+    var localStateSource = 'нет';
+    try{
+      localStateSource = localStorage.getItem('kalka_app_state_v1') ? 'kalka_app_state_v1' : (localStorage.getItem('pv_cache') ? 'pv_cache' : 'нет');
+    }catch(e){}
+    diagEl.innerHTML = [
+      ownerStatusRow('Пользователь', activeUser[0], activeUser[0] !== '—' ? 'good' : 'warn', 'Email: ' + (CU && CU.email ? CU.email : '—') + ' · Роль: ' + activeUser[1] + ' · Статус: ' + activeUser[2]),
+      ownerStatusRow('Активная организация', activeOrgId ? (activeOrgName + ' · ' + activeOrgId) : '—', activeOrgId ? 'good' : 'warn', 'Берётся из серверного контекста/кабинета'),
+      ownerStatusRow('Активные юр. лица', activeLegalNames.length ? activeLegalNames.join(' · ') : '—', activeLegalNames.length ? 'good' : 'warn', 'Список текущего price/context scope'),
+      ownerStatusRow('Версия client state', String(clientStateVersion || 0), clientStateVersion === 2 ? 'good' : 'warn', 'Синхронный snapshot в памяти'),
+      ownerStatusRow('Версия localStorage', String(localStateVersion || 0), localStateVersion === 2 ? 'good' : 'warn', 'Старый кэш не должен подхватываться'),
+      ownerStatusRow('Источник локального state', localStateSource, localStateSource !== 'нет' ? 'good' : 'warn', 'Используется только как временный ускоритель')
     ].join('');
   }
   if(auditEl){
