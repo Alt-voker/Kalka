@@ -339,7 +339,10 @@ function getOrganizationLegalEntities(organizationId, db){
   if(!orgId) return [];
   var legal=[];
   (db.restaurants||[]).forEach(function(rest){
-    if(!rest || String(rest.organizationId||'')!==orgId) return;
+    if(!rest) return;
+    var restOrgId=String(rest.organizationId||'').trim();
+    var restId=String(rest.id||'').trim();
+    if(restOrgId!==orgId && restId!==orgId) return;
     var items=Array.isArray(rest.assignedLegalEntities)&&rest.assignedLegalEntities.length
       ? rest.assignedLegalEntities
       : (Array.isArray(rest.legalEntities)&&rest.legalEntities.length ? rest.legalEntities : (rest.legalName ? [rest.legalName] : []));
