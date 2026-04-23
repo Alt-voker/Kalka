@@ -873,13 +873,20 @@ function goPage(pg){
   if(!CU)return;
   CU = Object.assign({}, CU, { role: normalizeUserRole(CU && CU.role, CU), status: (isOwnerUser(CU) ? 'active' : (CU && CU.status) || 'active') });
   if(!canAccessPage(CU, pg)){toast('🚫 Нет доступа к этому разделу','err');return;}
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
-  document.querySelectorAll('.sb-item').forEach(i=>i.classList.remove('on'));
-  document.getElementById('pg-'+pg)?.classList.add('on');
-  document.querySelectorAll(`[data-page="${pg}"]`).forEach(i=>i.classList.add('on'));
-  document.getElementById('topTitle').textContent=PT[pg]||pg;
-  const R={order:renderOrder,dashboard:renderDash,catalog:renderCatalog,cart:renderCart,favorites:renderFavorites,orders:renderOrders,suppliers:renderSuppliers,analytics:renderAnalytics,tender:renderTender,techcards:renderTechCards,'chef-calc':initCalc,'sup-products':renderSupProducts,'sup-orders':renderSupOrders,'sup-analytics':renderSupAnalytics,'sup-dashboard':renderSupDash,admin:renderAdmin,restaurants:renderRestaurants,owner:renderOwner};
-  if(R[pg])R[pg]();
+  try{
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+    document.querySelectorAll('.sb-item').forEach(i=>i.classList.remove('on'));
+    var pageEl=document.getElementById('pg-'+pg);
+    if(pageEl) pageEl.classList.add('on');
+    document.querySelectorAll(`[data-page="${pg}"]`).forEach(i=>i.classList.add('on'));
+    var titleEl=document.getElementById('topTitle');
+    if(titleEl) titleEl.textContent=PT[pg]||pg;
+    const R={order:renderOrder,dashboard:renderDash,catalog:renderCatalog,cart:renderCart,favorites:renderFavorites,orders:renderOrders,suppliers:renderSuppliers,analytics:renderAnalytics,tender:renderTender,techcards:renderTechCards,'chef-calc':initCalc,'sup-products':renderSupProducts,'sup-orders':renderSupOrders,'sup-analytics':renderSupAnalytics,'sup-dashboard':renderSupDash,admin:renderAdmin,restaurants:renderRestaurants,owner:renderOwner};
+    if(R[pg])R[pg]();
+  }catch(e){
+    console.error('goPage failed for '+pg+':', e);
+    toast('Страница открылась с ошибкой. Мы уже исправляем её.','err');
+  }
 }
 function getDashboardOrders(){
   ensureDashboardRestSelection();
