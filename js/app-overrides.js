@@ -65,6 +65,11 @@
     );
   }
 
+  function hasBootstrapIdentity(db) {
+    var normalized = ensureArrays(db);
+    return !!(normalized.users.length && normalized.restaurants.length);
+  }
+
   function syncRuntime(db) {
     var normalized = ensureArrays(db);
     normalized.__clientStateVersion = CLIENT_STATE_VERSION;
@@ -187,7 +192,7 @@
 
     if (response.error || !response.data || !response.data.payload) return null;
     var payload = ensureArrays(response.data.payload);
-    return hasMeaningfulState(payload) ? payload : null;
+    return hasMeaningfulState(payload) && hasBootstrapIdentity(payload) ? payload : null;
   }
 
   async function saveStateToSupabase(db) {
@@ -227,6 +232,88 @@
       console.error('Supabase business data hydrate failed:', error);
       return baseDb;
     }
+  }
+
+  function mergeArrayRecords(primary, secondary, keyGetter) {
+    var map = {};
+    function ingest(source, primaryWins) {
+      (source || []).forEach(function (item, index) {
+        if (!item || typeof item !== 'object') return;
+        var key = keyGetter(item, index);
+        if (!key) return;
+        if (!map[key]) {
+          map[key] = clone(item);
+          return;
+        }
+        map[key] = primaryWins
+          ? Object.assign({}, clone(item), map[key])
+          : Object.assign({}, map[key], clone(item));
+      });
+    }
+    ingest(secondary, false);
+    ingest(primary, true);
+    return Object.keys(map).map(function (key) { return map[key]; });
+  }
+
+  function mergeBootstrapState(primary, secondary) {
+    var left = ensureArrays(primary || getDefaults());
+    var right = ensureArrays(secondary || {});
+    var merged = clone(right);
+    merged.users = mergeArrayRecords(left.users, right.users, function (item) {
+      return String(item.id || item.email || '').trim().toLowerCase();
+    });
+    merged.restaurants = mergeArrayRecords(left.restaurants, right.restaurants, function (item) {
+      return String(item.id || item.organizationId || item.legacy_id || '').trim();
+    });
+    merged.audit = mergeArrayRecords(left.audit, right.audit, function (item) {
+      return String(item.ts || '') + '|' + String(item.user || '') + '|' + String(item.action || '');
+    });
+    merged.orgInvites = mergeArrayRecords(left.orgInvites, right.orgInvites, function (item) {
+      return String(item.id || item.restId || '') + '|' + String(item.userId || '');
+    });
+    merged.suppliers = mergeArrayRecords(left.suppliers, right.suppliers, function (item) {
+      return String(item.name || item.legacy_key || '').trim().toLowerCase();
+    });
+    merged.products = mergeArrayRecords(left.products, right.products, function (item) {
+      return String(item.id || item.name || '').trim().toLowerCase();
+    });
+    merged.orders = mergeArrayRecords(left.orders, right.orders, function (item) {
+      return String(item.id || item.legacy_order_id || '').trim();
+    });
+    merged.techCards = mergeArrayRecords(left.techCards, right.techCards, function (item) {
+      return String(item.id || item.legacy_tech_card_id || item.name || '').trim().toLowerCase();
+    });
+    merged.supProds = mergeArrayRecords(left.supProds, right.supProds, function (item) {
+      return String(item.id || item.name || '') + '|' + String(item._supplier || item.supplier || '');
+    });
+    merged.supsData = mergeArrayRecords(left.supsData, right.supsData, function (item) {
+      return String(item.name || item.legacy_key || '').trim().toLowerCase();
+    });
+    merged.supplierImportTemplates = mergeArrayRecords(left.supplierImportTemplates, right.supplierImportTemplates, function (item) {
+      return String(item.id || item.supplierName || '') + '|' + String(item.sheetName || '');
+    });
+    merged.priceImportBatches = mergeArrayRecords(left.priceImportBatches, right.priceImportBatches, function (item) {
+      return String(item.id || item.sourceFileName || '') + '|' + String(item.supplierName || '');
+    });
+    merged.priceImportItems = mergeArrayRecords(left.priceImportItems, right.priceImportItems, function (item) {
+      return String(item.id || item.batchId || '') + '|' + String(item.sourceRowNumber || '');
+    });
+    merged.supplierPriceLists = mergeArrayRecords(left.supplierPriceLists, right.supplierPriceLists, function (item) {
+      return String(item.id || item.legacy_price_list_id || '') + '|' + String(item.supplierName || '');
+    });
+    merged.supplierPriceListLegals = mergeArrayRecords(left.supplierPriceListLegals, right.supplierPriceListLegals, function (item) {
+      return String(item.id || item.legacy_price_list_legal_id || '') + '|' + String(item.priceListId || '');
+    });
+    merged.supplierPriceItems = mergeArrayRecords(left.supplierPriceItems, right.supplierPriceItems, function (item) {
+      return String(item.id || item.legacy_price_item_id || '') + '|' + String(item.priceListId || '');
+    });
+    merged.platformSettings = Object.assign({}, right.platformSettings || {}, left.platformSettings || {});
+    merged.notificationSettings = Object.assign({}, right.notificationSettings || {}, left.notificationSettings || {});
+    merged.apiSettings = Object.assign({}, right.apiSettings || {}, left.apiSettings || {});
+    merged.companySettings = Object.assign({}, right.companySettings || {}, left.companySettings || {});
+    merged.billingSettings = Object.assign({}, right.billingSettings || {}, left.billingSettings || {});
+    merged.__clientStateVersion = CLIENT_STATE_VERSION;
+    return merged;
   }
 
   function saveBusinessDataSnapshot(db) {
@@ -404,8 +491,21 @@
 
     (async function () {
       try {
-        var loaded = null;
+        var legacyState = null;
+        if (legacy.dbLoad) {
+          legacyState = await new Promise(function (resolve) {
+            legacy.dbLoad(function () {
+              try {
+                resolve(ensureArrays(window._dbCache || (legacy.dbGet ? legacy.dbGet() : null) || readLocalState() || getDefaults()));
+              } catch (error) {
+                console.error('legacy dbLoad state capture failed:', error);
+                resolve(ensureArrays(readLocalState() || getDefaults()));
+              }
+            });
+          });
+        }
 
+        var loaded = null;
         try {
           loaded = await loadStateFromSupabase();
         } catch (error) {
@@ -413,41 +513,12 @@
           loaded = null;
         }
 
-        if (loaded) {
-          var mergedLoaded = await loadBusinessDataFromSupabase(loaded);
-          syncRuntime(mergedLoaded);
-          finish();
-          return;
-        }
-
-        if (legacy.dbLoad) {
-          legacy.dbLoad(async function () {
-            try {
-              var fallbackState = window._dbCache || (legacy.dbGet ? legacy.dbGet() : null) || getDefaults();
-              var mergedFallback = await loadBusinessDataFromSupabase(fallbackState);
-              var normalizedFallback = syncRuntime(mergedFallback);
-              if (hasMeaningfulState(normalizedFallback)) {
-                saveBusinessDataSnapshot(normalizedFallback);
-                saveStateToSupabase(normalizedFallback).catch(function () {});
-              }
-            } catch (error) {
-              console.error('legacy dbLoad fallback hydrate failed:', error);
-              try {
-                syncRuntime(window._dbCache || (legacy.dbGet ? legacy.dbGet() : null) || readLocalState() || getDefaults());
-              } catch (innerError) {
-                console.error('legacy dbLoad final fallback failed:', innerError);
-              }
-            }
-            finish();
-          });
-          return;
-        }
-
-        var mergedLocalState = await loadBusinessDataFromSupabase(readLocalState() || getDefaults());
-        var localState = syncRuntime(mergedLocalState);
-        if (hasMeaningfulState(localState)) {
-          saveBusinessDataSnapshot(localState);
-          saveStateToSupabase(localState).catch(function () {});
+        var bootstrapBase = mergeBootstrapState(legacyState || getDefaults(), loaded || {});
+        var mergedLoaded = await loadBusinessDataFromSupabase(bootstrapBase);
+        var finalState = syncRuntime(mergeBootstrapState(bootstrapBase, mergedLoaded));
+        if (hasMeaningfulState(finalState)) {
+          saveBusinessDataSnapshot(finalState);
+          saveStateToSupabase(finalState).catch(function () {});
         }
       } catch (error) {
         console.error('dbLoad fatal fallback path failed:', error);
