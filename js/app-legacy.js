@@ -284,6 +284,7 @@ function dbSet(d){
   d.orders   = ORDERS;
   d.techCards = TECH_CARDS;
   if(!Array.isArray(d.supplierImportTemplates)) d.supplierImportTemplates = [];
+  d.__clientStateVersion = 2;
   _dbCache = d;
   try{ localStorage.setItem('pv_cache', JSON.stringify(d)); }catch(e){}
   _writeToFirebase(d, null);
@@ -293,7 +294,10 @@ function dbSave(d){ dbSet(d); }
 function _getLocal(){
   try{
     var r = localStorage.getItem('pv_cache');
-    if(r){ var d=JSON.parse(r); if(d&&Array.isArray(d.users)) return d; }
+    if(r){
+      var d=JSON.parse(r);
+      if(d&&Array.isArray(d.users) && Number(d.__clientStateVersion||0)===2) return d;
+    }
   }catch(e){}
   return _getDefaults();
 }
@@ -643,6 +647,25 @@ function setupUI(u){
 function doLogout(){
   CU=null;cart=[];
   if(window._pPoll){clearInterval(window._pPoll);window._pPoll=null;}
+  try{
+    Object.keys(localStorage).forEach(function(key){
+      if(/^(pv_|kalka_)/.test(key)) localStorage.removeItem(key);
+    });
+    localStorage.removeItem('pv_cache');
+    localStorage.removeItem('kalka_app_state_v1');
+    localStorage.removeItem('kalka_last_user');
+    sessionStorage.clear();
+  }catch(e){}
+  try{
+    window._dbCache=null;
+    activeRest={id:'r0',name:'Все рестораны',emoji:'🌐'};
+    _supPriceOrganizationId='';
+    _supPriceLegalEntityIds=[];
+    _supPriceLegalEntityNames=[];
+    _orderLegalEntityIds=[];
+    _orderLegalEntityNames=[];
+    selSups=[];
+  }catch(e){}
   document.getElementById('APP').classList.remove('on');
   document.getElementById('AUTH').classList.remove('gone');
   ['liE','liP'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});

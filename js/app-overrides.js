@@ -17,6 +17,7 @@
 
   var LOCAL_DB_KEY = 'kalka_app_state_v1';
   var LAST_USER_KEY = 'kalka_last_user';
+  var CLIENT_STATE_VERSION = 2;
   var loggingOut = false;
   var authBound = false;
   var restoreInFlight = false;
@@ -41,7 +42,12 @@
     if (!Array.isArray(base.orders)) base.orders = [];
     if (!Array.isArray(base.techCards)) base.techCards = [];
     if (!Array.isArray(base.supplierImportTemplates)) base.supplierImportTemplates = [];
+    if (!base.__clientStateVersion) base.__clientStateVersion = CLIENT_STATE_VERSION;
     return base;
+  }
+
+  function isCompatibleLocalState(db) {
+    return !!(db && Number(db.__clientStateVersion || 0) === CLIENT_STATE_VERSION && hasMeaningfulState(db));
   }
 
   function hasMeaningfulState(db) {
@@ -61,6 +67,7 @@
 
   function syncRuntime(db) {
     var normalized = ensureArrays(db);
+    normalized.__clientStateVersion = CLIENT_STATE_VERSION;
     window._dbCache = normalized;
     try { SUP_PRODS = normalized.supProds.slice(); } catch (error) {}
     try { SUPS_DATA = normalized.supsData.slice(); } catch (error) {}
@@ -106,10 +113,46 @@
   function readLocalState() {
     try {
       var raw = localStorage.getItem(LOCAL_DB_KEY) || localStorage.getItem('pv_cache');
-      return raw ? ensureArrays(JSON.parse(raw)) : null;
+      if (!raw) return null;
+      var parsed = ensureArrays(JSON.parse(raw));
+      return isCompatibleLocalState(parsed) ? parsed : null;
     } catch (error) {
       return null;
     }
+  }
+
+  function clearClientRuntimeState() {
+    try {
+      window._dbCache = null;
+      window.CU = null;
+      window.activeRest = { id: 'r0', name: 'Все рестораны', emoji: '🌐' };
+      if (typeof window.cart !== 'undefined') window.cart = [];
+      if (typeof window.tenderChanges !== 'undefined') window.tenderChanges = [];
+      if (typeof window.tenderLoaded !== 'undefined') window.tenderLoaded = false;
+      if (typeof window.ordersRestFilter !== 'undefined') window.ordersRestFilter = 'all';
+      if (typeof window.catFilter !== 'undefined') window.catFilter = 'all';
+      if (typeof window.ordFilter !== 'undefined') window.ordFilter = 'all';
+      if (typeof window.tcFilter !== 'undefined') window.tcFilter = 'all';
+      if (typeof window.selSups !== 'undefined') window.selSups = [];
+      if (typeof window.ALL_SUPS !== 'undefined') window.ALL_SUPS = [];
+      if (typeof window._supPriceOrganizationId !== 'undefined') window._supPriceOrganizationId = '';
+      if (typeof window._supPriceLegalEntityIds !== 'undefined') window._supPriceLegalEntityIds = [];
+      if (typeof window._supPriceLegalEntityNames !== 'undefined') window._supPriceLegalEntityNames = [];
+      if (typeof window._orderLegalEntityIds !== 'undefined') window._orderLegalEntityIds = [];
+      if (typeof window._orderLegalEntityNames !== 'undefined') window._orderLegalEntityNames = [];
+    } catch (error) {}
+  }
+
+  function clearClientStorage() {
+    try {
+      Object.keys(localStorage).forEach(function (key) {
+        if (/^(pv_|kalka_)/.test(key)) localStorage.removeItem(key);
+      });
+      localStorage.removeItem(LOCAL_DB_KEY);
+      localStorage.removeItem('pv_cache');
+      localStorage.removeItem(LAST_USER_KEY);
+    } catch (error) {}
+    try { sessionStorage.clear(); } catch (error) {}
   }
 
   function saveLastUser(user) {
@@ -468,6 +511,7 @@
         if (errEl) errEl.textContent = 'Заявка отклонена. Обратитесь к владельцу платформы';
         return;
       }
+      clearClientRuntimeState();
       if (typeof window.enterApp === 'function') window.enterApp(user);
 
       setTimeout(function () {
@@ -607,6 +651,8 @@
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     loggingOut = true;
     clearLastUser();
+    clearClientRuntimeState();
+    clearClientStorage();
     try {
       if (client) await client.auth.signOut();
     } catch (error) {
@@ -763,6 +809,7 @@
       }
 
       var user = fastResolveAppUser(response.data.session.user);
+      clearClientRuntimeState();
       var currentUser = null;
       try { currentUser = CU; } catch (error) { currentUser = window.CU || null; }
       if (typeof window.enterApp === 'function' && (!currentUser || currentUser.id !== user.id)) {
