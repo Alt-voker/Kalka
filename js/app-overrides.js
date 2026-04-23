@@ -138,6 +138,27 @@
     } catch (error) {}
   }
 
+  function readLastUser() {
+    try {
+      var raw = localStorage.getItem(LAST_USER_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function withTimeout(promise, ms, fallback) {
+    var timer;
+    return Promise.race([
+      promise,
+      new Promise(function (resolve) {
+        timer = setTimeout(function () { resolve(fallback); }, ms);
+      })
+    ]).finally(function () {
+      if (timer) clearTimeout(timer);
+    });
+  }
+
   function clearLastUser() {
     try {
       localStorage.removeItem(LAST_USER_KEY);
@@ -292,6 +313,35 @@
 
     upsertUserInDb(user);
     return user;
+  }
+
+  function buildFastAuthUser(authUser) {
+    var db = ensureArrays(window._dbCache || readLocalState() || getDefaults());
+    var existing = db.users.find(function (item) {
+      return item && item.email && item.email.toLowerCase() === String(authUser.email || '').toLowerCase();
+    }) || readLastUser() || null;
+    var meta = authUser.user_metadata || {};
+    var first = (existing && existing.first) || meta.first_name || meta.first || 'Пользователь';
+    var last = (existing && existing.last) || meta.last_name || meta.last || '';
+    var company = (existing && existing.company) || meta.company || 'КальКа';
+    var role = normalizeRole((existing && existing.role) || meta.role || meta.app_role || 'manager', { email: authUser.email, role: existing && existing.role });
+    if (isOwnerIdentity(authUser.email, null, { role: role })) {
+      role = 'owner';
+    }
+    var status = (existing && existing.status) || 'active';
+    if (status !== 'active' && status !== 'blocked' && status !== 'pending' && status !== 'rejected') status = 'active';
+    if (isOwnerIdentity(authUser.email, null, { role: role })) status = 'active';
+    return {
+      id: authUser.id,
+      first: first,
+      last: last,
+      company: company,
+      email: String(authUser.email || '').toLowerCase(),
+      role: role,
+      status: status,
+      ev: existing && typeof existing.ev !== 'undefined' ? existing.ev : true,
+      created: (existing && existing.created) || new Date().toISOString().slice(0, 10)
+    };
   }
 
   function bindAuthListener() {
@@ -475,8 +525,9 @@
         throw response.error;
       }
 
-      await hydrateStateFromSupabase();
-      var user = await resolveAppUser(response.data.user || (response.data.session && response.data.session.user));
+      var authUser = response.data.user || (response.data.session && response.data.session.user);
+      if (!authUser) throw new Error('Не удалось получить данные пользователя после входа');
+      var user = buildFastAuthUser(authUser);
       user.role = normalizeRole(user.role, user);
       if (isOwnerIdentity(user.email, null, { role: user.role })) {
         user.role = 'owner';
@@ -501,6 +552,19 @@
         return;
       }
       if (typeof window.enterApp === 'function') window.enterApp(user);
+      setTimeout(function () {
+        hydrateStateFromSupabase().catch(function (error) {
+          console.error('async hydrate after login failed:', error);
+        });
+        resolveAppUser(authUser).then(function (resolved) {
+          if (!resolved) return;
+          if (window.CU && window.CU.id === resolved.id) {
+            if (typeof window.enterApp === 'function') window.enterApp(resolved);
+          }
+        }).catch(function (error) {
+          console.error('async profile resolve after login failed:', error);
+        });
+      }, 0);
     } catch (error) {
       if (errEl) errEl.textContent = error && error.message ? error.message : 'Ошибка входа';
     } finally {
@@ -778,8 +842,7 @@
         return false;
       }
 
-      await hydrateStateFromSupabase();
-      var user = await resolveAppUser(response.data.session.user);
+      var user = buildFastAuthUser(response.data.session.user);
       user.role = normalizeRole(user.role, user);
       if (isOwnerIdentity(user.email, null, { role: user.role })) {
         user.role = 'owner';
@@ -793,6 +856,19 @@
       if (typeof window.enterApp === 'function' && (!currentUser || currentUser.id !== user.id)) {
         window.enterApp(user);
       }
+      setTimeout(function () {
+        hydrateStateFromSupabase().catch(function (error) {
+          console.error('async hydrate during restoreSession failed:', error);
+        });
+        resolveAppUser(response.data.session.user).then(function (resolved) {
+          if (!resolved) return;
+          if (window.CU && window.CU.id === resolved.id) {
+            if (typeof window.enterApp === 'function') window.enterApp(resolved);
+          }
+        }).catch(function (error) {
+          console.error('async profile resolve during restoreSession failed:', error);
+        });
+      }, 0);
       restoreInFlight = false;
       return true;
     }
