@@ -511,7 +511,8 @@ function syncRolePagesFromDb(db){
     var saved=stored&&Array.isArray(stored[roleKey]) ? stored[roleKey].filter(function(pg){
       return !!pg && !!PM[pg] && pg !== 'cart';
     }) : null;
-    ROLES[roleKey].pages=(saved&&saved.length ? saved : fallback).slice();
+    var merged=_uniqList((saved&&saved.length ? saved : fallback).concat(fallback));
+    ROLES[roleKey].pages=merged.length ? merged : fallback.slice();
   });
 }
 
