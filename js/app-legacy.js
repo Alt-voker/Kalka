@@ -375,7 +375,6 @@ let activeRest = {id:'r0', name:'Все рестораны', emoji:'🌐'};
 let tRC = 0, tcRC = 0, etcRC = 0, calcRC = 0;
 let editTCId = null, editProdId = null, adTab = 'pending';
 let sbC = false;
-var _restaurantRenderToken = 0;
 
 // ── СОСТОЯНИЕ ЗАГРУЗКИ ПРАЙСА ────────────────────────────────
 var _currentSupName  = '';
@@ -4483,115 +4482,6 @@ function renderRestaurants(){
 	      +'</div>';
   }).join('');
 }
-
-function renderRestaurantsFast(){
-  var el=document.getElementById('restGrid');
-  if(!el) return;
-  var db=dbGet();
-  var restaurants=(db.restaurants||[]).filter(function(r){ return r && r.id!=='r0'; });
-  var sub=document.getElementById('restPageSub');
-  if(sub) sub.textContent=restaurants.length+' заведений';
-  var token=++_restaurantRenderToken;
-
-  if(!restaurants.length){
-    el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--t3);">'
-      +'<div style="font-size:48px;margin-bottom:12px;">🍽️</div>'
-      +'<div style="font-size:16px;font-weight:700;margin-bottom:8px;">Нет заведений</div>'
-      +'<div style="font-size:13px;margin-bottom:20px;">Добавьте первый ресторан или бар</div>'
-      +'<button onclick="openModal(\'addRest\')" style="background:var(--ac);color:#fff;border:none;border-radius:var(--r);padding:10px 20px;font-weight:700;cursor:pointer;">+ Добавить заведение</button>'
-      +'</div>';
-    return;
-  }
-
-  el.innerHTML='<div id="restGridWrap" style="display:grid;gap:14px;"></div><div id="restGridHint" style="padding:14px 6px;color:var(--t3);font-size:12px;">Подготавливаем заведения…</div>';
-  var wrap=el.querySelector('#restGridWrap');
-  var hint=el.querySelector('#restGridHint');
-  var index=0;
-  var batch=1;
-
-  function cardHtml(r){
-    var canViewSensitive=canViewRestaurantSensitiveData(CU, r);
-    var canManageMembers=canManageRestaurantMembers(CU, r);
-    var canInviteMembers=canInviteRestaurantMembers(CU, r);
-    var members=r.members||[];
-    var legalEntities=Array.isArray(r.legalEntities)?r.legalEntities.filter(Boolean):[];
-    var assigned=Array.isArray(r.assignedLegalEntities)&&r.assignedLegalEntities.length?r.assignedLegalEntities.filter(Boolean):legalEntities.slice();
-    var historyRange=getRestaurantHistoryRange(r.id);
-    var history=getRestaurantHistory(r, historyRange);
-    var suppliers=(SUPS_DATA||[]).filter(function(s){ return normalizeSupplierOrganizationIds(s, db).indexOf(String(r.id))>=0 && !s.hidden; });
-    var title=(r.emoji||'🍽️')+' '+(r.name||'Без названия');
-    var statusLine=[r.type||'Ресторан', r.city, r.addr].filter(Boolean).join(' · ');
-    var memberCount=members.length;
-    var supplierCount=suppliers.length;
-    var templateCount=Array.isArray(r.orderTemplates)?r.orderTemplates.length:0;
-    var legalLabel=assigned.length?assigned.join(' · '):(r.legalName||'Не заполнено');
-    var actions=canViewSensitive
-      ? '<button onclick="openEditRest(\''+r.id+'\')" style="background:var(--bg4);border:1px solid var(--br2);border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer;color:var(--t2);">✏️ Изменить</button>'
-        +'<button onclick="deleteRest(\''+r.id+'\')" style="background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer;">🗑 Удалить</button>'
-      : '';
-    var supplierList=suppliers.slice(0,3).map(function(s){
-      return '<div style="padding:8px 10px;border:1px solid var(--br);border-radius:8px;background:var(--bg3);font-size:12px;">'
-        +'<b>'+s.name+'</b> · '+(s.city||'Без города')
-        +'</div>';
-    }).join('') || '<div style="font-size:12px;color:var(--t3);">Пока нет поставщиков.</div>';
-    var templateList=(Array.isArray(r.orderTemplates)&&r.orderTemplates.length?r.orderTemplates.slice(0,3).map(function(tpl){
-      return '<div style="padding:8px 10px;border:1px solid var(--br);border-radius:8px;background:var(--bg3);font-size:12px;display:flex;justify-content:space-between;gap:8px;align-items:center;">'
-        +'<span>'+tpl.name+'</span>'
-        +'<button onclick="useRestTemplate(\''+r.id+'\',\''+tpl.id+'\')" style="background:var(--ac);color:#fff;border:none;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;">Применить</button>'
-        +'</div>';
-    }).join(''):'<div style="font-size:12px;color:var(--t3);">Пока нет шаблонов.</div>');
-    var memberList=(members.length?members.map(function(m){
-      var u=(db.users||[]).find(function(item){ return item && item.id===m.userId; });
-      if(!u) return '';
-      return '<div style="padding:8px 10px;border:1px solid var(--br);border-radius:8px;background:var(--bg3);font-size:12px;display:flex;justify-content:space-between;gap:8px;align-items:center;">'
-        +'<span>'+u.first+' '+u.last+' · '+(ROLES[m.role]?ROLES[m.role].label:m.role)+'</span>'
-        +(canManageMembers?'<button onclick="removeRestMember(\''+r.id+'\',\''+u.id+'\')" style="background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:999px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;">✕</button>':'')
-        +'</div>';
-    }).filter(Boolean).join(''):'<div style="font-size:12px;color:var(--t3);">Нет участников.</div>');
-    return '<div style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);overflow:hidden;">'
-      +'<div style="padding:14px 16px;background:var(--bg3);border-bottom:1px solid var(--br);display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap;">'
-      +'<div style="min-width:0;">'
-      +'<div style="font-size:16px;font-weight:800;">'+title+'</div>'
-      +'<div style="font-size:12px;color:var(--t3);margin-top:4px;">'+statusLine+'</div>'
-      +'<div style="font-size:11px;color:var(--t3);margin-top:6px;">Юр. лицо: '+legalLabel+'</div>'
-      +'</div>'
-      +'<div style="display:flex;gap:6px;flex-wrap:wrap;">'+actions+'</div>'
-      +'</div>'
-      +'<div style="padding:14px 16px;display:grid;gap:12px;">'
-      +'<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;">'
-      +'<div style="padding:10px 12px;border:1px solid var(--br);border-radius:10px;background:var(--bg3);"><div style="font-size:10px;color:var(--t3);text-transform:uppercase;">Участники</div><div style="font-size:18px;font-weight:800;margin-top:4px;">'+memberCount+'</div></div>'
-      +'<div style="padding:10px 12px;border:1px solid var(--br);border-radius:10px;background:var(--bg3);"><div style="font-size:10px;color:var(--t3);text-transform:uppercase;">Поставщики</div><div style="font-size:18px;font-weight:800;margin-top:4px;">'+supplierCount+'</div></div>'
-      +'<div style="padding:10px 12px;border:1px solid var(--br);border-radius:10px;background:var(--bg3);"><div style="font-size:10px;color:var(--t3);text-transform:uppercase;">Шаблоны</div><div style="font-size:18px;font-weight:800;margin-top:4px;">'+templateCount+'</div></div>'
-      +'</div>'
-      +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;">'
-      +'<div style="padding:12px;border:1px solid var(--br);border-radius:10px;background:var(--bg3);"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:8px;">Участники</div>'+memberList+'</div>'
-      +'<div style="padding:12px;border:1px solid var(--br);border-radius:10px;background:var(--bg3);"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:8px;">Поставщики организации</div>'+supplierList+'</div>'
-      +'<div style="padding:12px;border:1px solid var(--br);border-radius:10px;background:var(--bg3);"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:8px;">Шаблоны заказов</div>'+templateList+'</div>'
-      +'</div>'
-      +'<div style="padding:12px;border:1px solid var(--br);border-radius:10px;background:var(--bg3);font-size:12px;color:var(--t2);">📦 Последние заказы: '+(history.lastOrders.length?history.lastOrders.map(function(order){ return order.id+' · '+order.date; }).join(' · '):'пока нет')+'</div>'
-      +'</div>'
-      +'</div>';
-  }
-
-  function appendBatch(){
-    if(token !== _restaurantRenderToken || !wrap) return;
-    var frag=document.createDocumentFragment();
-    var end=Math.min(index + batch, restaurants.length);
-    for(; index<end; index++){
-      var node=document.createElement('div');
-      node.innerHTML=cardHtml(restaurants[index]);
-      frag.appendChild(node.firstChild);
-    }
-    wrap.appendChild(frag);
-    if(hint) hint.textContent='Показаны '+index+' из '+restaurants.length+' заведений';
-    if(index < restaurants.length) requestAnimationFrame(appendBatch);
-    else if(hint) hint.textContent='Показаны все заведения: '+restaurants.length;
-  }
-
-  requestAnimationFrame(appendBatch);
-}
-renderRestaurants = renderRestaurantsFast;
-window.renderRestaurants = renderRestaurantsFast;
 
 function getRestaurantHistory(rest, days){
   var restId=rest&&rest.id ? String(rest.id) : '';
