@@ -2717,8 +2717,18 @@ function renderSupProducts(){
     el.innerHTML='<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--t3);">Нет товаров. Загрузите прайс кнопкой выше.</td></tr>';
     return;
   }
-  var rows=SUP_PRODS.map(function(p,i){
-    if(q&&p.name.toLowerCase().indexOf(q)<0&&(p.cat||'').toLowerCase().indexOf(q)<0)return '';
+  var token = ++_techCardsRenderToken;
+  el.innerHTML='<tr><td colspan="9" style="text-align:center;padding:22px;color:var(--t3);">Загрузка товаров…</td></tr>';
+  var rows=SUP_PRODS.filter(function(p){
+    return !(q&&p.name.toLowerCase().indexOf(q)<0&&(p.cat||'').toLowerCase().indexOf(q)<0);
+  });
+  var idx=0;
+  var html=[];
+  (function paintSupProducts(){
+    if(token !== _techCardsRenderToken) return;
+    var end=Math.min(idx+12, rows.length);
+    for(; idx<end; idx++){
+      var p=rows[idx];
     var canSee=canSeePrices(p);
     var hidStyle=p.hidden?'opacity:0.45;':'';
     var hidBadge=p.hidden?'<span style="font-size:10px;background:var(--rdD);color:var(--rd);border-radius:3px;padding:1px 5px;margin-left:4px;">скрыт</span>':'';
@@ -2747,8 +2757,10 @@ function renderSupProducts(){
       +'<td><span class="badge '+(p.active?'bg':'bgr')+'">'+(p.active?'Активен':'Скрыт')+'</span></td>'
       +'<td style="display:flex;gap:4px;justify-content:flex-end;">'+actionBtns+'</td>'
       +'</tr>';
-  }).join('');
-  el.innerHTML=rows||'<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--t3);">Ничего не найдено</td></tr>';
+    }
+    el.innerHTML=html.length ? html.join('') : '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--t3);">Ничего не найдено</td></tr>';
+    if(idx < rows.length) requestAnimationFrame(paintSupProducts);
+  })();
 }
 
 function delSupProd(i){
@@ -2759,7 +2771,22 @@ function delSupProd(i){
 }
 function renderSupOrders(){
   const el=document.getElementById('supOrdBody');if(!el)return;
-  el.innerHTML=ORDERS.slice(0,4).map((o,oi)=>{const[cl,lb]=SM[o.status]||['bgr','—'];return`<tr><td><b>${o.id}</b></td><td>${o.sup.split(' ').slice(1).join(' ')}</td><td>${o.items}</td><td style="font-size:11px;color:var(--t2);">${o.comment||'—'}</td><td><b>₽${o.sum.toLocaleString()}</b></td><td>${o.date}</td><td><span class="badge ${cl}">${lb}</span></td><td>${o.status==='processing'?`<button onclick="ORDERS[${oi}].status='transit';renderSupOrders();toast('✓ Принято!','ok');" style="background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;font-weight:600;">✓ Принять</button>`:''}</td></tr>`;}).join('');
+  var token = ++_supplierRenderToken;
+  el.innerHTML='<tr><td colspan="8" style="text-align:center;padding:22px;color:var(--t3);">Загрузка заказов…</td></tr>';
+  var rows=ORDERS.slice(0,4);
+  var idx=0;
+  var html=[];
+  (function paintSupOrders(){
+    if(token !== _supplierRenderToken) return;
+    var end=Math.min(idx+4, rows.length);
+    for(; idx<end; idx++){
+      var o=rows[idx];
+      const [cl,lb]=SM[o.status]||['bgr','—'];
+      html.push(`<tr><td><b>${o.id}</b></td><td>${o.sup.split(' ').slice(1).join(' ')}</td><td>${o.items}</td><td style="font-size:11px;color:var(--t2);">${o.comment||'—'}</td><td><b>₽${o.sum.toLocaleString()}</b></td><td>${o.date}</td><td><span class="badge ${cl}">${lb}</span></td><td>${o.status==='processing'?`<button onclick="ORDERS[${ORDERS.indexOf(o)}].status='transit';renderSupOrders();toast('✓ Принято!','ok');" style="background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;font-weight:600;">✓ Принять</button>`:''}</td></tr>`);
+    }
+    el.innerHTML=html.length ? html.join('') : '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--t3);">Нет заказов</td></tr>';
+    if(idx < rows.length) requestAnimationFrame(paintSupOrders);
+  })();
   const newOrd=document.getElementById('supNewOrd');
   if(newOrd)newOrd.innerHTML=ORDERS.filter(o=>o.status==='processing').map((o,oi)=>`<div style="background:var(--orD);border:1px solid rgba(255,112,67,.25);border-radius:var(--r2);padding:15px;margin-bottom:9px;"><div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;"><div><div style="font-weight:700;font-size:14px;">${o.id} · ${o.sup.split(' ').slice(1).join(' ')}</div><div style="font-size:11px;color:var(--t3);">${o.date}${o.comment?' · 💬 '+o.comment:''}</div></div><span class="badge bo">Новый</span></div><div style="font-size:13px;color:var(--t2);margin-bottom:12px;">${o.items}</div><div style="display:flex;align-items:center;justify-content:space-between;"><div style="font-family:var(--fH);font-size:17px;font-weight:800;">₽${o.sum.toLocaleString()}</div><div style="display:flex;gap:7px;"><button onclick="ORDERS[${ORDERS.indexOf(o)}].status='transit';renderSupOrders();renderSupDash();toast('✓ Заказ принят!','ok');" style="background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:var(--r);padding:9px 18px;font-weight:700;font-size:13px;cursor:pointer;">✓ Принять</button><button onclick="ORDERS[${ORDERS.indexOf(o)}].status='cancelled';renderSupOrders();renderSupDash();toast('✕ Отклонён','ok');" style="background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:var(--r);padding:9px 18px;font-size:13px;cursor:pointer;">✕ Отклонить</button></div></div></div>`).join('')||'<div class="empty"><div class="empty-ico">✅</div><div class="empty-txt">Нет новых заказов</div></div>';
 }
