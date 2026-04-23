@@ -823,6 +823,7 @@ function setupUI(u){
   const av=document.getElementById('sbAva');av.style.background=`linear-gradient(135deg,${rd.color},${rd.color}88)`;av.style.color=tc;av.textContent=(u.first[0]+u.last[0]).toUpperCase();
   document.getElementById('sbName').textContent=u.first+' '+u.last;document.getElementById('sbRole').textContent=u.company;
   const isS=u.role==='supplier',isAcc=u.role==='accountant';
+  ensureUserRestSelection(u);
   const scopedRestaurants=getUserScopedRestaurantIds(u, dbGet());
   document.getElementById('cartBtn').style.display=(!isS&&!isAcc)?'flex':'none';
   document.getElementById('favBtn').style.display=(!isS&&!isAcc)?'flex':'none';
@@ -2814,6 +2815,17 @@ function ensureDashboardRestSelection(){
     activeRest={id:'r0',name:'Нет доступа к дашборду',emoji:'🔒'};
     return;
   }
+  if(!activeRest || activeRest.id==='r0' || allowedIds.indexOf(activeRest.id)<0){
+    var next=(db.restaurants||[]).find(function(rest){ return allowedIds.indexOf(rest.id)>=0; });
+    if(next) activeRest=next;
+  }
+}
+function ensureUserRestSelection(user){
+  user=user||CU;
+  if(!user || isOwnerUser(user)) return;
+  var db=dbGet();
+  var allowedIds=getUserScopedRestaurantIds(user, db);
+  if(!allowedIds.length) return;
   if(!activeRest || activeRest.id==='r0' || allowedIds.indexOf(activeRest.id)<0){
     var next=(db.restaurants||[]).find(function(rest){ return allowedIds.indexOf(rest.id)>=0; });
     if(next) activeRest=next;
