@@ -158,7 +158,7 @@
     if (window.normalizeUserRole) return window.normalizeUserRole(role, user);
     if (isOwnerIdentity(user && user.email, null, { role: role })) return 'owner';
     var key = String(role || '').trim().toLowerCase();
-    return key || 'manager';
+    return window.ROLES && window.ROLES[key] ? key : 'manager';
   }
 
   async function loadStateFromSupabase() {
@@ -276,6 +276,7 @@
     var ownerIdentity = isOwnerIdentity(authUser.email, profile, meta) || (existing && existing.role === 'owner') || (profile && profile.role === 'owner');
     var role = ownerIdentity ? 'owner' : normalizeRole((existing && existing.role) || (profile && profile.role) || meta.role || meta.app_role || 'manager', { email: authUser.email, role: existing && existing.role });
     var status = ownerIdentity ? 'active' : ((existing && existing.status) || (profile && profile.status) || 'active');
+    if (status !== 'active' && status !== 'blocked' && status !== 'pending' && status !== 'rejected') status = 'active';
 
     var user = Object.assign({}, existing || {}, {
       id: authUser.id,
@@ -479,6 +480,9 @@
       user.role = normalizeRole(user.role, user);
       if (isOwnerIdentity(user.email, null, { role: user.role })) {
         user.role = 'owner';
+        user.status = 'active';
+      }
+      if (user.status !== 'active' && user.status !== 'blocked' && user.status !== 'pending' && user.status !== 'rejected') {
         user.status = 'active';
       }
       if (user.status === 'blocked') {
@@ -779,6 +783,9 @@
       user.role = normalizeRole(user.role, user);
       if (isOwnerIdentity(user.email, null, { role: user.role })) {
         user.role = 'owner';
+        user.status = 'active';
+      }
+      if (user.status !== 'active' && user.status !== 'blocked' && user.status !== 'pending' && user.status !== 'rejected') {
         user.status = 'active';
       }
       var currentUser = null;
