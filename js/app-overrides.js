@@ -40,12 +40,7 @@
     if (!Array.isArray(base.products)) base.products = [];
     if (!Array.isArray(base.orders)) base.orders = [];
     if (!Array.isArray(base.techCards)) base.techCards = [];
-    if (!Array.isArray(base.supplierPriceLists)) base.supplierPriceLists = [];
-    if (!Array.isArray(base.supplierPriceListLegals)) base.supplierPriceListLegals = [];
-    if (!Array.isArray(base.supplierPriceItems)) base.supplierPriceItems = [];
     if (!Array.isArray(base.supplierImportTemplates)) base.supplierImportTemplates = [];
-    if (!Array.isArray(base.priceImportBatches)) base.priceImportBatches = [];
-    if (!Array.isArray(base.priceImportItems)) base.priceImportItems = [];
     return base;
   }
 
@@ -60,12 +55,7 @@
       normalized.products.length ||
       normalized.orders.length ||
       normalized.techCards.length ||
-      normalized.supplierPriceLists.length ||
-      normalized.supplierPriceListLegals.length ||
-      normalized.supplierPriceItems.length ||
       normalized.supplierImportTemplates.length
-      || normalized.priceImportBatches.length
-      || normalized.priceImportItems.length
     );
   }
 
@@ -77,11 +67,6 @@
     try { PRODUCTS = normalized.products.slice(); } catch (error) {}
     try { ORDERS = normalized.orders.slice(); } catch (error) {}
     try { TECH_CARDS = normalized.techCards.slice(); } catch (error) {}
-    try { window.SUP_PRICE_LISTS = normalized.supplierPriceLists.slice(); } catch (error) {}
-    try { window.SUP_PRICE_LIST_LEGALS = normalized.supplierPriceListLegals.slice(); } catch (error) {}
-    try { window.SUP_PRICE_ITEMS = normalized.supplierPriceItems.slice(); } catch (error) {}
-    try { window.priceImportBatches = normalized.priceImportBatches.slice(); } catch (error) {}
-    try { window.priceImportItems = normalized.priceImportItems.slice(); } catch (error) {}
     try {
       var allSups = [];
       normalized.supsData.forEach(function (item) {

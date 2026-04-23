@@ -1218,10 +1218,6 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
   <label class="fL">Название прайса</label>
   <input class="fI" type="text" id="supPriceName" placeholder="Основной / Акции / Сезонный">
 
-  <label class="fL" style="margin-top:10px;">Организация</label>
-  <div id="supPriceOrgHint" style="font-size:11px;color:var(--t3);margin:-2px 0 6px;">Выберите организацию, к которой относится этот прайс.</div>
-  <select class="fS" id="supPriceOrgSelect" style="margin-bottom:12px;"></select>
-
   <label class="fL">Файл (.xlsx, .xls, .csv)</label>
   <input type="file" id="supPriceFile" accept=".xlsx,.xls,.csv,.txt"
     onchange="prepareSupPriceImportPreview()"
@@ -1233,7 +1229,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
     Юр. лица прайса
   </div>
   <div style="font-size:11px;color:var(--t3);margin-bottom:8px;">Выберите одно или несколько юр. лиц, для которых действует этот прайс.</div>
-  <div id="supPriceCompList" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;max-height:170px;overflow-y:auto;margin-bottom:6px;"></div>
+  <div id="supPriceCompList" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;max-height:140px;overflow-y:auto;margin-bottom:6px;"></div>
   <div style="display:flex;gap:8px;margin-bottom:14px;">
     <button onclick="selectAllSupPriceComps(true)" style="font-size:11px;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:5px;padding:4px 10px;cursor:pointer;">Все</button>
     <button onclick="selectAllSupPriceComps(false)" style="font-size:11px;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:5px;padding:4px 10px;cursor:pointer;">Снять</button>
