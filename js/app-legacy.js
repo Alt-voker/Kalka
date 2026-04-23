@@ -43,6 +43,11 @@ function isOwnerUser(u){
     return email===h || email.indexOf(h)>=0 || h.indexOf(email)>=0;
   });
 }
+function normalizeUserRole(role, user){
+  if(isOwnerUser(user)) return 'owner';
+  var key=String(role||'').trim().toLowerCase();
+  return ROLES[key] ? key : 'manager';
+}
 function _uniqList(list){
   return Array.from(new Set((Array.isArray(list)?list:[]).filter(Boolean).map(function(v){ return String(v).trim(); }).filter(Boolean)));
 }
@@ -810,6 +815,7 @@ function enterApp(u){
   }
 }
 function setupUI(u){
+  u = Object.assign({}, u, { role: normalizeUserRole(u && u.role, u) });
   const rd=ROLES[u.role]||{};const tc=['owner','chef','buyer'].includes(u.role)?'#000':'#fff';
   const av=document.getElementById('sbAva');av.style.background=`linear-gradient(135deg,${rd.color},${rd.color}88)`;av.style.color=tc;av.textContent=(u.first[0]+u.last[0]).toUpperCase();
   document.getElementById('sbName').textContent=u.first+' '+u.last;document.getElementById('sbRole').textContent=u.company;
@@ -843,7 +849,7 @@ function doLogout(){
 
 function toggleSB(){sbC=!sbC;document.getElementById('SB').classList.toggle('slim',sbC);document.getElementById('sbTog').textContent=sbC?'›':'‹';}
 function buildNav(u){
-  if(isOwnerUser(u)) u = Object.assign({}, u, { role:'owner', status:'active' });
+  u = Object.assign({}, u, { role: normalizeUserRole(u && u.role, u), status: (isOwnerUser(u) ? 'active' : (u && u.status) || 'active') });
   const basePages=((ROLES[u.role]||{}).pages||[]).slice();
   const rawPages=(u.role==='admin'&&ownerGetSettings().adminAdvanced&&basePages.indexOf('owner')<0)?['owner'].concat(basePages):basePages;
   const pages=rawPages.filter(function(pg){ return pg!=='dashboard' || userCanSeeDashboard(u); });
@@ -862,7 +868,7 @@ function buildNav(u){
 }
 function goPage(pg){
   if(!CU)return;
-  if(isOwnerUser(CU)) CU = Object.assign({}, CU, { role:'owner', status:'active' });
+  CU = Object.assign({}, CU, { role: normalizeUserRole(CU && CU.role, CU), status: (isOwnerUser(CU) ? 'active' : (CU && CU.status) || 'active') });
   if(!canAccessPage(CU, pg)){toast('🚫 Нет доступа к этому разделу','err');return;}
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.sb-item').forEach(i=>i.classList.remove('on'));
@@ -2738,7 +2744,7 @@ function declineOrgInvite(inviteId){
 function userCanSeeDashboard(user){
   if(!user) return false;
   if(isOwnerUser(user)) return true;
-  if(user.role==='owner') return true;
+  if(normalizeUserRole(user.role, user)==='owner') return true;
   var access=normalizeDashboardAccess(user);
   if(!access.enabled) return false;
   if(access.scope==='all_orgs') return true;
@@ -2763,7 +2769,7 @@ function ensureDashboardRestSelection(){
 
 function canAccessPage(u, pg){
   if(!u) return false;
-  if(isOwnerUser(u)) u = Object.assign({}, u, { role:'owner', status:'active' });
+  u = Object.assign({}, u, { role: normalizeUserRole(u && u.role, u), status: (isOwnerUser(u) ? 'active' : (u && u.status) || 'active') });
   if(pg==='dashboard') return userCanSeeDashboard(u);
   var pages=(ROLES[u.role]||{}).pages||[];
   if(pages.indexOf(pg)>=0) return true;

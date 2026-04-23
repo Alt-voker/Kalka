@@ -154,6 +154,13 @@
     });
   }
 
+  function normalizeRole(role, user) {
+    if (window.normalizeUserRole) return window.normalizeUserRole(role, user);
+    if (isOwnerIdentity(user && user.email, null, { role: role })) return 'owner';
+    var key = String(role || '').trim().toLowerCase();
+    return key || 'manager';
+  }
+
   async function loadStateFromSupabase() {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return null;
@@ -267,7 +274,7 @@
     var last = (existing && existing.last) || (profile && (profile.last_name || profile.last)) || meta.last_name || meta.last || '';
     var company = (existing && existing.company) || (profile && profile.company) || meta.company || 'КальКа';
     var ownerIdentity = isOwnerIdentity(authUser.email, profile, meta) || (existing && existing.role === 'owner') || (profile && profile.role === 'owner');
-    var role = ownerIdentity ? 'owner' : ((existing && existing.role) || (profile && profile.role) || meta.role || meta.app_role || 'manager');
+    var role = ownerIdentity ? 'owner' : normalizeRole((existing && existing.role) || (profile && profile.role) || meta.role || meta.app_role || 'manager', { email: authUser.email, role: existing && existing.role });
     var status = ownerIdentity ? 'active' : ((existing && existing.status) || (profile && profile.status) || 'active');
 
     var user = Object.assign({}, existing || {}, {
@@ -469,6 +476,7 @@
 
       await hydrateStateFromSupabase();
       var user = await resolveAppUser(response.data.user || (response.data.session && response.data.session.user));
+      user.role = normalizeRole(user.role, user);
       if (isOwnerIdentity(user.email, null, { role: user.role })) {
         user.role = 'owner';
         user.status = 'active';
@@ -768,6 +776,7 @@
 
       await hydrateStateFromSupabase();
       var user = await resolveAppUser(response.data.session.user);
+      user.role = normalizeRole(user.role, user);
       if (isOwnerIdentity(user.email, null, { role: user.role })) {
         user.role = 'owner';
         user.status = 'active';
