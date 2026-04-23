@@ -88,10 +88,16 @@ create table if not exists public.supplier_price_lists (
   supplier_id uuid references public.suppliers(id) on delete set null,
   supplier_name text not null,
   price_name text not null default '',
+  price_type text not null default 'main',
   uploaded_at timestamptz not null default now(),
   active boolean not null default true,
+  status text not null default 'active',
   comment text not null default '',
   source_file text not null default '',
+  uploaded_by_user_id uuid references auth.users(id) on delete set null,
+  uploaded_by_user_name text not null default '',
+  legal_entity_ids jsonb not null default '[]'::jsonb,
+  legal_entity_names jsonb not null default '[]'::jsonb,
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -195,6 +201,37 @@ create table if not exists public.price_import_items (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text not null unique,
+  full_name text not null default '',
+  role text not null default 'member',
+  organization_ids jsonb not null default '[]'::jsonb,
+  legal_entity_ids jsonb not null default '[]'::jsonb,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.organization_members (
+  id uuid primary key default gen_random_uuid(),
+  organization_id text not null,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  role_id text not null default 'member',
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, user_id)
+);
+
+create table if not exists public.member_legal_entities (
+  id uuid primary key default gen_random_uuid(),
+  member_id uuid not null references public.organization_members(id) on delete cascade,
+  legal_entity_id text not null,
+  created_at timestamptz not null default now(),
+  unique (member_id, legal_entity_id)
+);
+
 alter table public.restaurants add column if not exists organization_id text not null default '';
 alter table public.suppliers add column if not exists organization_id text not null default '';
 alter table public.products add column if not exists organization_id text not null default '';
@@ -212,6 +249,117 @@ alter table public.price_import_items add column if not exists organization_id t
 alter table public.supplier_price_lists add column if not exists organization_id text not null default '';
 alter table public.supplier_price_list_legal_entities add column if not exists organization_id text not null default '';
 alter table public.supplier_price_items add column if not exists organization_id text not null default '';
+alter table public.supplier_price_lists add column if not exists price_type text not null default 'main';
+alter table public.supplier_price_lists add column if not exists status text not null default 'active';
+alter table public.supplier_price_lists add column if not exists uploaded_by_user_id uuid references auth.users(id) on delete set null;
+alter table public.supplier_price_lists add column if not exists uploaded_by_user_name text not null default '';
+alter table public.supplier_price_lists add column if not exists legal_entity_ids jsonb not null default '[]'::jsonb;
+alter table public.supplier_price_lists add column if not exists legal_entity_names jsonb not null default '[]'::jsonb;
+alter table public.profiles add column if not exists organization_ids jsonb not null default '[]'::jsonb;
+alter table public.profiles add column if not exists legal_entity_ids jsonb not null default '[]'::jsonb;
+alter table public.organization_members add column if not exists role_id text not null default 'member';
+alter table public.organization_members add column if not exists is_active boolean not null default true;
+alter table public.member_legal_entities add column if not exists legal_entity_id text not null default '';
+
+create or replace function public.current_user_organization_ids()
+returns text[]
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  org_ids text[] := array[]::text[];
+begin
+  select coalesce(array_agg(distinct value), array[]::text[]) into org_ids
+  from (
+    select jsonb_array_elements_text(coalesce(p.organization_ids, '[]'::jsonb)) as value
+    from public.profiles p
+    where p.id = auth.uid() and coalesce(p.is_active, true)
+    union
+    select om.organization_id as value
+    from public.organization_members om
+    where om.user_id = auth.uid() and coalesce(om.is_active, true)
+  ) src
+  where coalesce(value, '') <> '';
+  return org_ids;
+end;
+$$;
+
+create or replace function public.current_user_legal_entity_ids()
+returns text[]
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  legal_ids text[] := array[]::text[];
+begin
+  select coalesce(array_agg(distinct value), array[]::text[]) into legal_ids
+  from (
+    select jsonb_array_elements_text(coalesce(p.legal_entity_ids, '[]'::jsonb)) as value
+    from public.profiles p
+    where p.id = auth.uid() and coalesce(p.is_active, true)
+    union
+    select mle.legal_entity_id as value
+    from public.member_legal_entities mle
+    join public.organization_members om on om.id = mle.member_id
+    where om.user_id = auth.uid() and coalesce(om.is_active, true)
+  ) src
+  where coalesce(value, '') <> '';
+  return legal_ids;
+end;
+$$;
+
+create or replace function public.current_user_can_manage_prices()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and coalesce(p.is_active, true)
+      and lower(coalesce(p.role, '')) in ('owner','admin','manager','buyer')
+  )
+  or exists (
+    select 1
+    from public.organization_members om
+    where om.user_id = auth.uid()
+      and coalesce(om.is_active, true)
+      and lower(coalesce(om.role_id, '')) in ('owner','admin','manager','buyer')
+  );
+$$;
+
+create or replace function public.can_access_supplier_price_list(list_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.supplier_price_lists pl
+    where pl.id = list_id
+      and pl.organization_id = any(public.current_user_organization_ids())
+      and (
+        not exists (
+          select 1
+          from public.supplier_price_list_legal_entities le
+          where le.price_list_id = pl.id
+        )
+        or exists (
+          select 1
+          from public.supplier_price_list_legal_entities le
+          where le.price_list_id = pl.id
+            and le.legal_entity_id = any(public.current_user_legal_entity_ids())
+        )
+      )
+  );
+$$;
 
 create or replace function public.replace_commerce_snapshot(snapshot jsonb)
 returns void
@@ -315,17 +463,25 @@ begin
     select id into supplier_uuid from public.suppliers where name = coalesce(price_list_row->>'supplierName', '') limit 1;
     insert into public.supplier_price_lists (
       legacy_price_list_id, organization_id, supplier_id, supplier_name, price_name,
-      uploaded_at, active, comment, source_file
+      price_type, uploaded_at, active, status, comment, source_file,
+      uploaded_by_user_id, uploaded_by_user_name, legal_entity_ids, legal_entity_names, created_by
     ) values (
       nullif(price_list_row->>'id', ''),
       coalesce(price_list_row->>'organizationId', price_list_row->>'organization_id', ''),
       supplier_uuid,
       coalesce(price_list_row->>'supplierName', ''),
       coalesce(price_list_row->>'priceName', price_list_row->>'name', ''),
+      coalesce(price_list_row->>'priceType', price_list_row->>'price_type', 'main'),
       coalesce(nullif(price_list_row->>'uploadedAt', '')::timestamptz, now()),
       coalesce(nullif(price_list_row->>'active', '')::boolean, true),
+      coalesce(price_list_row->>'status', 'active'),
       coalesce(price_list_row->>'comment', ''),
-      coalesce(price_list_row->>'sourceFile', '')
+      coalesce(price_list_row->>'sourceFile', ''),
+      nullif(price_list_row->>'uploadedByUserId', '')::uuid,
+      coalesce(price_list_row->>'uploadedByUserName', ''),
+      coalesce(price_list_row->'legalEntityIds', '[]'::jsonb),
+      coalesce(price_list_row->'legalEntityNames', '[]'::jsonb),
+      nullif(price_list_row->>'createdBy', '')::uuid
     );
   end loop;
 
@@ -586,6 +742,35 @@ alter table public.price_import_items enable row level security;
 alter table public.supplier_price_lists enable row level security;
 alter table public.supplier_price_list_legal_entities enable row level security;
 alter table public.supplier_price_items enable row level security;
+alter table public.profiles enable row level security;
+alter table public.organization_members enable row level security;
+alter table public.member_legal_entities enable row level security;
+
+drop policy if exists "profiles_self_rw_authenticated" on public.profiles;
+create policy "profiles_self_rw_authenticated"
+on public.profiles
+for all to authenticated
+using (id = auth.uid())
+with check (id = auth.uid());
+
+drop policy if exists "organization_members_self_rw_authenticated" on public.organization_members;
+create policy "organization_members_self_rw_authenticated"
+on public.organization_members
+for select to authenticated
+using (user_id = auth.uid() or public.current_user_can_manage_prices());
+
+drop policy if exists "member_legal_entities_self_rw_authenticated" on public.member_legal_entities;
+create policy "member_legal_entities_self_rw_authenticated"
+on public.member_legal_entities
+for select to authenticated
+using (
+  exists (
+    select 1
+    from public.organization_members om
+    where om.id = member_legal_entities.member_id
+      and (om.user_id = auth.uid() or public.current_user_can_manage_prices())
+  )
+);
 
 drop policy if exists "supplier_import_templates_rw_authenticated" on public.supplier_import_templates;
 create policy "supplier_import_templates_rw_authenticated"
@@ -612,19 +797,37 @@ drop policy if exists "supplier_price_lists_rw_authenticated" on public.supplier
 create policy "supplier_price_lists_rw_authenticated"
 on public.supplier_price_lists
 for all to authenticated
-using (true)
-with check (true);
+using (
+  organization_id = any(public.current_user_organization_ids())
+  and public.can_access_supplier_price_list(id)
+)
+with check (
+  organization_id = any(public.current_user_organization_ids())
+  and public.current_user_can_manage_prices()
+);
 
 drop policy if exists "supplier_price_list_legals_rw_authenticated" on public.supplier_price_list_legal_entities;
 create policy "supplier_price_list_legals_rw_authenticated"
 on public.supplier_price_list_legal_entities
 for all to authenticated
-using (true)
-with check (true);
+using (
+  organization_id = any(public.current_user_organization_ids())
+  and public.can_access_supplier_price_list(price_list_id)
+)
+with check (
+  organization_id = any(public.current_user_organization_ids())
+  and public.current_user_can_manage_prices()
+);
 
 drop policy if exists "supplier_price_items_rw_authenticated" on public.supplier_price_items;
 create policy "supplier_price_items_rw_authenticated"
 on public.supplier_price_items
 for all to authenticated
-using (true)
-with check (true);
+using (
+  organization_id = any(public.current_user_organization_ids())
+  and public.can_access_supplier_price_list(price_list_id)
+)
+with check (
+  organization_id = any(public.current_user_organization_ids())
+  and public.current_user_can_manage_prices()
+);

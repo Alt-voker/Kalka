@@ -150,6 +150,8 @@ let sbC = false;
 // ── СОСТОЯНИЕ ЗАГРУЗКИ ПРАЙСА ────────────────────────────────
 var _currentSupName  = '';
 var _supPriceAppend  = false;
+var _supPriceOrganizationId = '';
+var _supPriceLegalEntityNames = [];
 var _mcmRows = [], _mcmSupName = '', _mcmAppend = false, _mcmPriceName = '';
 var _priceLayoutMemory={};
 var _mcmSupName='';
@@ -280,6 +282,9 @@ function dbSet(d){
   d.products = PRODUCTS;
   d.orders   = ORDERS;
   d.techCards = TECH_CARDS;
+  if(!Array.isArray(d.supplierPriceLists)) d.supplierPriceLists = [];
+  if(!Array.isArray(d.supplierPriceListLegals)) d.supplierPriceListLegals = [];
+  if(!Array.isArray(d.supplierPriceItems)) d.supplierPriceItems = [];
   if(!Array.isArray(d.supplierImportTemplates)) d.supplierImportTemplates = [];
   _dbCache = d;
   try{ localStorage.setItem('pv_cache', JSON.stringify(d)); }catch(e){}
@@ -309,7 +314,12 @@ function _getDefaults(){
     systemLog:[{ts:new Date().toLocaleString('ru'),type:'system',severity:'info',title:'Инициализация',details:'Платформа создана',source:'core'}],
     platformSettings:{},
     companySettings:{},
+    supplierPriceLists:[],
+    supplierPriceListLegals:[],
+    supplierPriceItems:[],
     supplierImportTemplates:[],
+    priceImportBatches:[],
+    priceImportItems:[],
     supplierRatings:{},
     userFavorites:{}
   };
@@ -318,7 +328,107 @@ function v(id){return(document.getElementById(id)?.value||'').trim();}
 function isEmail(e){return/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);}
 function today(){return new Date().toISOString().slice(0,10);}
 function dlFile(c,m,n){const b=new Blob([c],{type:m});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=n;a.click();}
-function minP(p){return p.suppliers.length?Math.min(...p.suppliers.map(s=>s.price)):0;}
+function _uniqText(arr){return Array.from(new Set((Array.isArray(arr)?arr:[]).map(function(v){return String(v||'').trim();}).filter(Boolean)));}
+function _arrayFromAny(value){
+  if(Array.isArray(value)) return value.slice();
+  if(value === undefined || value === null || value === '') return [];
+  return [value];
+}
+function getUserOrganizationIds(user, db){
+  db=db||dbGet();
+  if(!user) return [];
+  if(user.role==='owner'){
+    return _uniqText((db.restaurants||[]).map(function(rest){ return rest && rest.organizationId ? String(rest.organizationId) : ''; }));
+  }
+  var restIds=getUserScopedRestaurantIds(user, db);
+  var orgIds=(db.restaurants||[]).filter(function(rest){
+    return rest && restIds.indexOf(String(rest.id))>=0 && rest.organizationId;
+  }).map(function(rest){ return String(rest.organizationId); });
+  return _uniqText(orgIds);
+}
+function getCurrentOrganizationId(db){
+  db=db||dbGet();
+  var rest=getCurrentOrderRestaurantMeta()||activeRest||null;
+  if(rest && rest.organizationId) return String(rest.organizationId);
+  var allowed=getUserScopedRestaurantIds(CU, db);
+  var matched=(db.restaurants||[]).find(function(item){
+    return item && item.id!=='r0' && allowed.indexOf(String(item.id))>=0 && item.organizationId;
+  });
+  return matched && matched.organizationId ? String(matched.organizationId) : '';
+}
+function getOrganizationLegalEntities(organizationId, db){
+  db=db||dbGet();
+  var orgId=String(organizationId||'').trim();
+  if(!orgId) return [];
+  var legal=[];
+  (db.restaurants||[]).forEach(function(rest){
+    if(!rest || String(rest.organizationId||'')!==orgId) return;
+    getRestLegalEntities(rest).forEach(function(name){
+      if(legal.indexOf(name)<0) legal.push(name);
+    });
+  });
+  return legal;
+}
+function getCurrentPriceContext(db){
+  db=db||dbGet();
+  var organizationId=_supPriceOrganizationId||getCurrentOrganizationId(db);
+  var legalEntityNames=Array.isArray(_supPriceLegalEntityNames)&&_supPriceLegalEntityNames.length
+    ? _supPriceLegalEntityNames.slice()
+    : getOrganizationLegalEntities(organizationId, db);
+  return {
+    organizationId:String(organizationId||''),
+    legalEntityNames:_uniqText(legalEntityNames),
+    legalEntityIds:_uniqText(legalEntityNames)
+  };
+}
+function getSupplierOrganizationIdsByName(supName, db){
+  db=db||dbGet();
+  var supplier=(db.supsData||[]).find(function(item){
+    return item && (item.name===supName || item.legalName===supName || item.legalName===supName || item.name===String(supName||'').trim());
+  });
+  if(!supplier) return [];
+  return normalizeSupplierOrganizationIds(supplier, db);
+}
+function getVisiblePriceEntryOrgIds(entry, supName, db){
+  db=db||dbGet();
+  var ids=_uniqText(_arrayFromAny(entry && (entry.organizationIds||entry.allowedOrganizationIds||entry.allowedOrganizations||entry.organization_id)));
+  if(!ids.length && entry && entry.organizationId) ids=[String(entry.organizationId)];
+  if(!ids.length && supName) ids=getSupplierOrganizationIdsByName(supName, db);
+  return ids;
+}
+function getVisiblePriceEntryLegalIds(entry){
+  return _uniqText(_arrayFromAny(entry && (entry.legalEntityIds||entry.allowedLegalEntityIds||entry.legal_entity_ids||entry.legalEntities)));
+}
+function priceEntryMatchesContext(entry, supName, ctx, db){
+  ctx=ctx||getCurrentPriceContext(db);
+  if(CU && (CU.role==='owner' || CU.role==='admin' || CU.role==='supplier')) return true;
+  var orgIds=getVisiblePriceEntryOrgIds(entry, supName, db);
+  if(orgIds.length && ctx.organizationId && orgIds.indexOf(String(ctx.organizationId))<0) return false;
+  if(orgIds.length && !ctx.organizationId) return false;
+  var legalIds=getVisiblePriceEntryLegalIds(entry);
+  if(legalIds.length){
+    if(!ctx.legalEntityIds.length && !ctx.legalEntityNames.length) return false;
+    var legalSet=ctx.legalEntityIds.concat(ctx.legalEntityNames);
+    if(!legalIds.some(function(id){ return legalSet.indexOf(String(id))>=0; })) return false;
+  }
+  return true;
+}
+function getVisibleSupplierPrices(product, supName, db){
+  db=db||dbGet();
+  var ctx=getCurrentPriceContext(db);
+  return _uniqText([]).concat((product && Array.isArray(product.suppliers) ? product.suppliers : []).filter(function(entry){
+    return entry && entry.name===supName && priceEntryMatchesContext(entry, supName, ctx, db);
+  }));
+}
+function minP(p){
+  if(!p || !Array.isArray(p.suppliers) || !p.suppliers.length) return 0;
+  var ctx=getCurrentPriceContext(dbGet());
+  var visible=p.suppliers.filter(function(entry){ return entry && priceEntryMatchesContext(entry, entry.name||p.name, ctx, dbGet()); });
+  var source=visible.length ? visible : p.suppliers;
+  var prices=source.map(function(s){ return Number(s.price||0) || 0; }).filter(function(v){ return isFinite(v) && v>=0; });
+  if(!prices.length) return 0;
+  return Math.min.apply(Math, prices);
+}
 function maxP(p){return p.suppliers.length?Math.max(...p.suppliers.map(s=>s.price)):0;}
 function sav(p){return p.suppliers.length>1?maxP(p)-minP(p):0;}
 function curP(pid){const t=tenderChanges.find(x=>x.pid===pid);if(t)return t.newPrice;const p=PRODUCTS.find(x=>x.id===pid);return p?minP(p):0;}
@@ -922,12 +1032,14 @@ function getCatalogVisibleSuppliers(){
 }
 
 function getSupplierCatalogProducts(supName){
+  var ctx=getCurrentPriceContext(dbGet());
   var seen={};
   var items=[];
   (SUP_PRODS||[]).forEach(function(p){
     var owner=p && (p._supplier||p.supplier||'');
     if(owner!==supName) return;
     if(p.hidden || p.active===false) return;
+    if(!priceEntryMatchesContext(p, supName, ctx, dbGet())) return;
     var key=String(p.name||'').trim().toLowerCase();
     if(!key || seen[key]) return;
     seen[key]=true;
@@ -941,7 +1053,7 @@ function getSupplierCatalogProducts(supName){
   });
   (PRODUCTS||[]).forEach(function(prod){
     if(!prod || !Array.isArray(prod.suppliers)) return;
-    var match=prod.suppliers.some(function(s){ return s && s.name===supName; });
+    var match=prod.suppliers.some(function(s){ return s && s.name===supName && priceEntryMatchesContext(s, supName, ctx, dbGet()); });
     if(!match) return;
     var key=String(prod.name||'').trim().toLowerCase();
     if(!key || seen[key]) return;
@@ -1584,6 +1696,7 @@ function renderSuppliers(){
 
     // Кнопки загрузки прайса — для всех пользователей
     var priceBtns=canManagePrices?'<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--br);">'
+      +'<button onclick="openSupPriceLists(\''+s.name+'\')" style="flex:1;background:var(--bg4);color:var(--t2);border:1px solid var(--br2);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;">Прайсы</button>'
       +'<button onclick="deleteSupPrice(\''+s.name+'\')" style="flex:1;background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;">Удалить прайс</button>'
       +'<button onclick="openSupPriceUpload(\''+s.name+'\',false)" style="flex:1;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;font-weight:600;">Основной прайс</button>'
       +'<button onclick="openSupPriceUpload(\''+s.name+'\',true)" style="flex:1;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;">+ Доп.прайс</button>'
@@ -2239,6 +2352,12 @@ function getUserOutgoingOrders(user){
 function normalizeSupplierOrganizationIds(supplier, db){
   db=db||dbGet();
   if(!supplier) return [];
+  if(supplier.organizationId){
+    return _uniqText([String(supplier.organizationId)]);
+  }
+  if(supplier.organization_id){
+    return _uniqText([String(supplier.organization_id)]);
+  }
   var ids=Array.isArray(supplier.organizationIds)?supplier.organizationIds.filter(Boolean):[];
   if(ids.length) return Array.from(new Set(ids.map(String)));
   if(Array.isArray(supplier.organizations) && supplier.organizations.length){
@@ -5096,27 +5215,65 @@ function selectSupPriceSheet(sheetName){
 function openSupPriceUpload(supName, append){
   _currentSupName = supName;
   _supPriceAppend = append;
+  var db = dbGet();
+  var ctx = getCurrentPriceContext(db);
+  _supPriceOrganizationId = ctx.organizationId || '';
+  _supPriceLegalEntityNames = (ctx.legalEntityNames || []).slice();
   var titleEl = document.getElementById('supPriceUploadTitle');
   if(titleEl) titleEl.textContent = append ? 'Доп. прайс: '+supName : 'Новый прайс: '+supName;
   var nameEl = document.getElementById('supPriceSupName');
   if(nameEl) nameEl.textContent = supName;
   var priceNameEl = document.getElementById('supPriceName');
   if(priceNameEl) priceNameEl.value = '';
-  var db = dbGet();
-  var users = (db.users||[]).filter(function(u){
-    return u.status==='active' && u.role!=='supplier';
+  var orgSelect = document.getElementById('supPriceOrgSelect');
+  var orgHint = document.getElementById('supPriceOrgHint');
+  var orgs = [];
+  var orgMap = {};
+  (db.restaurants||[]).forEach(function(rest){
+    if(!rest || rest.id==='r0') return;
+    if(!isRestaurantParticipant(CU, rest) && !(CU && (CU.role==='owner' || CU.role==='admin'))) return;
+    var orgId = String(rest.organizationId || rest.id || '').trim();
+    if(!orgId || orgMap[orgId]) return;
+    orgMap[orgId] = {
+      id: orgId,
+      label: rest.brandName || rest.legalName || rest.name || ('Организация '+orgId),
+      legalEntities: getOrganizationLegalEntities(orgId, db)
+    };
+    orgs.push(orgMap[orgId]);
   });
-  var listEl = document.getElementById('supPriceCompList');
-  if(listEl){
-    listEl.innerHTML = users.length ? users.map(function(u){
-      var rd=ROLES[u.role]||{label:u.role};
-      return '<label style="display:flex;align-items:center;gap:10px;padding:6px 4px;cursor:pointer;">'
-        +'<input type="checkbox" class="sup-price-comp-cb" value="'+u.id+'" data-company="'+(u.company||'')+'" checked '
-        +'style="width:16px;height:16px;cursor:pointer;accent-color:var(--ac);">'
-        +'<div><div style="font-size:13px;font-weight:600;">'+u.first+' '+u.last+'</div>'
-        +'<div style="font-size:11px;color:var(--t3);">'+(u.company||'—')+' — '+rd.label+'</div></div></label>';
-    }).join('') : '<div style="color:var(--t3);padding:8px;font-size:12px;">Нет пользователей</div>';
+  if(!orgs.length){
+    var fallbackOrg = ctx.organizationId || '';
+    if(fallbackOrg){
+      var fallbackRest=(db.restaurants||[]).find(function(r){ return String(r.organizationId||'')===String(fallbackOrg); }) || null;
+      orgs.push({
+        id: fallbackOrg,
+        label: (fallbackRest && (fallbackRest.brandName || fallbackRest.legalName || fallbackRest.name)) || ('Организация '+fallbackOrg),
+        legalEntities: getOrganizationLegalEntities(fallbackOrg, db)
+      });
+    }
   }
+  if(orgSelect){
+    orgSelect.innerHTML = orgs.map(function(org){
+      return '<option value="'+org.id+'">'+_esc(org.label)+' · '+org.id+'</option>';
+    }).join('') || '<option value="">— нет доступных организаций —</option>';
+    orgSelect.value = ctx.organizationId && orgs.some(function(org){ return org.id===ctx.organizationId; }) ? ctx.organizationId : (orgs[0] ? orgs[0].id : '');
+    orgSelect.onchange = function(){
+      _supPriceOrganizationId = this.value || '';
+      _supPriceLegalEntityNames = getOrganizationLegalEntities(this.value || '', db);
+      renderSupPriceLegalList(this.value, db);
+      if(orgHint){
+        orgHint.textContent = this.value
+          ? 'Прайс будет сохранён в контуре организации: '+orgSelect.options[orgSelect.selectedIndex].text
+          : 'Сначала выберите организацию.';
+      }
+    };
+  }
+  if(orgHint){
+    orgHint.textContent = orgSelect && orgSelect.value
+      ? 'Прайс будет сохранён в контуре организации: '+orgSelect.options[orgSelect.selectedIndex].text
+      : 'Сначала выберите организацию.';
+  }
+  renderSupPriceLegalList(orgSelect ? orgSelect.value : ctx.organizationId, db);
   var fi=document.getElementById('supPriceFile'); if(fi)fi.value='';
   var err=document.getElementById('supPriceErr'); if(err)err.textContent='';
   _supPriceImportBook = null;
@@ -5136,10 +5293,40 @@ function selectAllSupPriceComps(val){
   document.querySelectorAll('.sup-price-comp-cb').forEach(function(cb){cb.checked=val;});
 }
 
+function renderSupPriceLegalList(orgId, db){
+  db=db||dbGet();
+  var listEl = document.getElementById('supPriceCompList');
+  if(!listEl) return;
+  var legalEntities = getOrganizationLegalEntities(orgId, db);
+  if(!legalEntities.length){
+    listEl.innerHTML = '<div style="color:var(--t3);padding:8px;font-size:12px;">У этой организации не настроены юр. лица.</div>';
+    _supPriceLegalEntityNames = [];
+    return;
+  }
+  if(!_supPriceLegalEntityNames.length || !_supPriceLegalEntityNames.some(function(name){ return legalEntities.indexOf(name)>=0; })){
+    _supPriceLegalEntityNames = legalEntities.slice();
+  }
+  listEl.innerHTML = legalEntities.map(function(name){
+    var checked = _supPriceLegalEntityNames.indexOf(name) >= 0;
+    return '<label style="display:flex;align-items:flex-start;gap:10px;padding:6px 4px;cursor:pointer;">'
+      +'<input type="checkbox" class="sup-price-comp-cb" value="'+_esc(name)+'"'+(checked?' checked':'')+' style="width:16px;height:16px;cursor:pointer;accent-color:var(--ac);margin-top:2px;">'
+      +'<div><div style="font-size:13px;font-weight:600;">'+_esc(name)+'</div>'
+      +'<div style="font-size:11px;color:var(--t3);">Будет видеть только текущая организация и юр. лица</div></div></label>';
+  }).join('');
+}
+
 
 function canSeePrices(product){
   if(!CU)return false;
   if(CU.role==='owner'||CU.role==='admin'||CU.role==='supplier')return true;
+  var ctx=getCurrentPriceContext(dbGet());
+  if(product.allowedOrganizationIds&&product.allowedOrganizationIds.length>0){
+    if(ctx.organizationId && product.allowedOrganizationIds.indexOf(ctx.organizationId)>=0) return true;
+  }
+  if(product.allowedLegalEntityIds&&product.allowedLegalEntityIds.length>0){
+    if((ctx.legalEntityIds||[]).some(function(id){ return product.allowedLegalEntityIds.indexOf(id)>=0; })) return true;
+    if((ctx.legalEntityNames||[]).some(function(name){ return product.allowedLegalEntityIds.indexOf(name)>=0; })) return true;
+  }
   if(product.allowedUserIds&&product.allowedUserIds.length>0){
     if(product.allowedUserIds.indexOf(CU.id)>=0)return true;
   }
@@ -5256,8 +5443,11 @@ function smartAddToCart(){
       var prod=match.prod||match.supProd;
       var supName='',price=0;
       if(match.prod){
-        var sups=match.prod.suppliers||[];
-        var cheapest=sups.reduce(function(best,s){return(!best||s.price<best.price)?s:best;},null);
+        var sups=(match.prod.suppliers||[]).filter(function(s){
+          return priceEntryMatchesContext(s, s && s.name ? s.name : supName, getCurrentPriceContext(dbGet()), dbGet());
+        });
+        if(!sups.length) sups = match.prod.suppliers||[];
+        var cheapest=sups.reduce(function(best,s){return(!best||Number(s.price||0)<Number(best.price||0))?s:best;},null);
         supName=cheapest?cheapest.name:(ALL_SUPS[0]||'—');
         price=cheapest?cheapest.price:0;
       } else if(match.supProd){
@@ -5302,23 +5492,132 @@ function quickSelect(){}
 
 
 
-function deleteSupPrice(supName) {
-  if(!confirm('Удалить все прайсы поставщика «'+supName+'»?'))return;
-  var before=SUP_PRODS.length;
+function getVisibleSupplierPriceLists(supName, db){
+  db=db||dbGet();
+  var ctx=getCurrentPriceContext(db);
+  var lists=(db.supplierPriceLists||[]).filter(function(item){
+    if(!item) return false;
+    var itemSup = item.supplierName || item.supplier_name || item.supplier || '';
+    if(itemSup!==supName) return false;
+    if(item.active===false || item.status==='archived') return false;
+    var orgIds=getVisiblePriceEntryOrgIds(item, supName, db);
+    if(orgIds.length){
+      if(!ctx.organizationId) return false;
+      if(orgIds.indexOf(String(ctx.organizationId))<0) return false;
+    }
+    var legalIds=getVisiblePriceEntryLegalIds(item);
+    var legalLinks=(db.supplierPriceListLegals||[]).filter(function(link){ return link && String(link.priceListId)===String(item.id); });
+    if(legalIds.length || legalLinks.length){
+      if(!ctx.legalEntityNames.length && !ctx.legalEntityIds.length) return false;
+      var allowed=(legalIds.length ? legalIds : legalLinks.map(function(link){ return link.legalEntityName || link.legalEntityId || ''; }).filter(Boolean));
+      var legalSet=ctx.legalEntityIds.concat(ctx.legalEntityNames);
+      if(!allowed.some(function(name){ return legalSet.indexOf(String(name))>=0; })) return false;
+    }
+    return true;
+  });
+  return lists.sort(function(a,b){
+    var ad=String(a.uploadedAt||a.updatedAt||'');
+    var bd=String(b.uploadedAt||b.updatedAt||'');
+    return bd.localeCompare(ad,'ru');
+  });
+}
+
+function openSupPriceLists(supName){
+  var db=dbGet();
+  var body=document.getElementById('supplierPriceListsBody');
+  var title=document.getElementById('supplierPriceListsTitle');
+  var hint=document.getElementById('supplierPriceListsHint');
+  var lists=getVisibleSupplierPriceLists(supName, db);
+  if(title) title.textContent='Прайсы поставщика: '+supName;
+  if(hint){
+    var ctx=getCurrentPriceContext(db);
+    hint.textContent=ctx.organizationId
+      ? 'Показаны прайсы текущей организации '+ctx.organizationId+' и доступных юр. лиц.'
+      : 'Выберите организацию в кабинете, чтобы увидеть доступные прайсы.';
+  }
+  if(body){
+    if(!lists.length){
+      body.innerHTML='<div style="padding:12px;color:var(--t3);font-size:12px;">Для этого поставщика в текущем контуре прайсы не найдены.</div>';
+    } else {
+      body.innerHTML=lists.map(function(item){
+        var legals=(db.supplierPriceListLegals||[]).filter(function(link){ return link && String(link.priceListId)===String(item.id); });
+        var legalNames=getVisiblePriceEntryLegalIds(item);
+        if(!legalNames.length){
+          legalNames=legals.map(function(link){ return link.legalEntityName || link.legalEntityId || ''; }).filter(Boolean);
+        }
+        var itemRows=(db.supplierPriceItems||[]).filter(function(row){ return row && String(row.priceListId)===String(item.id); });
+        var status=item.status==='archived'||item.active===false ? 'Архив' : 'Активен';
+        var total=itemRows.length;
+        return '<div style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:12px;margin-bottom:10px;">'
+          +'<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;">'
+          +'<div style="min-width:0;flex:1;">'
+          +'<div style="font-size:14px;font-weight:700;">'+_esc(item.priceName||item.name||'Прайс')+'</div>'
+          +'<div style="font-size:11px;color:var(--t3);margin-top:3px;">Организация: '+_esc(item.organizationId||'—')+' · Юр. лица: '+_esc(legalNames.join(' · ')||'—')+'</div>'
+          +'<div style="font-size:11px;color:var(--t3);margin-top:3px;">Загрузил: '+_esc(item.uploadedByUserName||item.uploadedByUserId||'—')+' · '+_esc(item.uploadedAt||item.createdAt||'')+'</div>'
+          +'</div>'
+          +'<span class="badge '+(status==='Активен'?'bg':'br')+'">'+status+'</span>'
+          +'</div>'
+          +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:var(--t2);">'
+          +'<span>Позиций: <b>'+total+'</b></span>'
+          +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+          +'<button onclick="deleteSupPrice(\''+supName+'\',\''+item.id+'\')" style="background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;">Удалить</button>'
+          +'<button onclick="openSupPriceUpload(\''+supName+'\',false)" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;">Загрузить</button>'
+          +'</div></div></div>';
+      }).join('');
+    }
+  }
+  openModal('supplierPriceLists');
+}
+
+function deleteSupPrice(supName, priceListId) {
+  var db=dbGet();
+  var lists=priceListId ? (db.supplierPriceLists||[]).filter(function(item){ return item && String(item.id)===String(priceListId); }) : getVisibleSupplierPriceLists(supName, db);
+  if(!lists.length){
+    toast('Прайсы не найдены','err');
+    return;
+  }
+  if(!confirm('Удалить '+lists.length+' прайс(ов) поставщика «'+supName+'»?'))return;
+
+  var ids=lists.map(function(item){ return String(item.id); });
+  db.supplierPriceLists=(db.supplierPriceLists||[]).filter(function(item){
+    return !item || ids.indexOf(String(item.id))<0;
+  });
+  db.supplierPriceListLegals=(db.supplierPriceListLegals||[]).filter(function(item){
+    return !item || ids.indexOf(String(item.priceListId))<0;
+  });
+  db.supplierPriceItems=(db.supplierPriceItems||[]).filter(function(item){
+    return !item || ids.indexOf(String(item.priceListId))<0;
+  });
+
+  var idSet={};
+  ids.forEach(function(id){ idSet[String(id)] = true; });
   SUP_PRODS=SUP_PRODS.filter(function(p){
-    return !(p._supplier===supName||p.supplier===supName);
+    if(!p) return false;
+    if((p._supplier||p.supplier)!==supName) return true;
+    if(p.priceListId && idSet[String(p.priceListId)]) return false;
+    if(p.priceListName){
+      return !(lists.some(function(item){ return String(item.priceName||item.name||'')===String(p.priceListName); }));
+    }
+    return false;
   });
-  // Убрать поставщика из каталога
   PRODUCTS.forEach(function(p){
-    p.suppliers=p.suppliers.filter(function(s){return s.name!==supName;});
+    if(!p || !Array.isArray(p.suppliers)) return;
+    p.suppliers=p.suppliers.filter(function(s){
+      if(!s || s.name!==supName) return true;
+      if(s.priceListId && idSet[String(s.priceListId)]) return false;
+      if(s.priceListName){
+        return !(lists.some(function(item){ return String(item.priceName||item.name||'')===String(s.priceListName); }));
+      }
+      return false;
+    });
   });
-  var removed=before-SUP_PRODS.length;
   savePriceData();
   renderSupProducts();
   renderSuppliers();
   if(typeof renderCatalog==='function')renderCatalog();
-  toast('Удалено '+removed+' позиций прайса «'+supName+'»','ok');
-  logAudit(CU?CU.first+' '+CU.last:'','Удалён прайс «'+supName+'»','Прайсы');
+  openSupPriceLists(supName);
+  toast('Удалено '+lists.length+' прайс(ов) «'+supName+'»','ok');
+  logAudit(CU?CU.first+' '+CU.last:'','Удалён прайс(ы) «'+supName+'»','Прайсы');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -9447,3 +9746,236 @@ document.addEventListener('DOMContentLoaded',function(){
     },200);
   });
 });
+
+function processSupPriceRows(rows, cols, supName, append, priceName, allowedUserIds) {
+  var db = dbGet();
+  if(!Array.isArray(db.supplierPriceLists)) db.supplierPriceLists = [];
+  if(!Array.isArray(db.supplierPriceListLegals)) db.supplierPriceListLegals = [];
+  if(!Array.isArray(db.supplierPriceItems)) db.supplierPriceItems = [];
+
+  var organizationId = _supPriceOrganizationId || getCurrentOrganizationId(db) || '';
+  var legalEntityNames = _uniqText((_supPriceLegalEntityNames && _supPriceLegalEntityNames.length) ? _supPriceLegalEntityNames : getOrganizationLegalEntities(organizationId, db));
+  if(!organizationId){
+    toast('Выберите организацию для прайса','err');
+    return {added:0, updated:0, skipped:0};
+  }
+  if(!legalEntityNames.length){
+    toast('Выберите хотя бы одно юр. лицо для прайса','err');
+    return {added:0, updated:0, skipped:0};
+  }
+
+  var allowedCompanies = [];
+  document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
+    var co = cb.dataset.company;
+    if(co && allowedCompanies.indexOf(co) < 0) allowedCompanies.push(co);
+  });
+  if(!allowedUserIds || !allowedUserIds.length){
+    allowedUserIds = [];
+    document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
+      allowedUserIds.push(cb.value);
+    });
+  }
+
+  var priceType = append ? 'additional' : 'main';
+  var priceListId = 'pl-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+  var supplierRecord = (db.supsData || []).find(function(item){
+    return item && (item.name === supName || item.legalName === supName);
+  }) || null;
+  var supplierId = supplierRecord && supplierRecord.id ? String(supplierRecord.id) : '';
+
+  db.supplierPriceLists = (db.supplierPriceLists || []).filter(function(item){
+    if(!item) return false;
+    if(String(item.supplierName || item.supplier_name || item.supplier || '') !== String(supName)) return true;
+    if(String(item.organizationId || item.organization_id || '') !== String(organizationId)) return true;
+    var itemType = item.priceType || item.price_type || 'main';
+    if(String(itemType) !== String(priceType)) return true;
+    var itemLegals = _uniqText((db.supplierPriceListLegals || []).filter(function(link){
+      return link && String(link.priceListId || link.price_list_id) === String(item.id);
+    }).map(function(link){
+      return String(link.legalEntityName || link.legal_entity_name || link.legalEntityId || link.legal_entity_id || '');
+    }));
+    if(itemLegals.length !== legalEntityNames.length) return true;
+    return !itemLegals.every(function(name){ return legalEntityNames.indexOf(name) >= 0; });
+  });
+
+  if(!append){
+    SUP_PRODS = SUP_PRODS.filter(function(p){
+      return !(p._supplier===supName && (p._priceName===priceName||!p._priceName));
+    });
+  }
+
+  var added = 0, updated = 0, skipped = 0, needsReview = [];
+  var headerRow = cols.headerRow >= 0 ? cols.headerRow : 0;
+  var cleanedRows = Array.isArray(rows) ? rows.slice(headerRow + 1) : [];
+  var priceListEntry = {
+    id: priceListId,
+    organizationId: organizationId,
+    supplierId: supplierId,
+    supplierName: supName,
+    priceName: priceName,
+    priceType: priceType,
+    status: 'active',
+    active: true,
+    comment: append ? 'Дополнительный прайс' : 'Основной прайс',
+    sourceFile: _supPriceImportFileName || '',
+    uploadedByUserId: CU ? CU.id : '',
+    uploadedByUserName: auditActor(),
+    uploadedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  db.supplierPriceLists.push(priceListEntry);
+  legalEntityNames.forEach(function(legalName){
+    db.supplierPriceListLegals.push({
+      id: 'pll-' + Date.now() + '-' + Math.random().toString(16).slice(2),
+      priceListId: priceListId,
+      organizationId: organizationId,
+      legalEntityId: legalName,
+      legalEntityName: legalName
+    });
+  });
+
+  cleanedRows.forEach(function(parts, idx){
+    var name  = _collectJoinedText(parts, cols.nameCols);
+    var unit  = _collectJoinedText(parts, cols.unitCols);
+    var price = _collectFirstPrice(parts, cols.priceCols);
+    var price2 = _collectFirstPrice(parts, cols.price2Cols);
+    if((!price || price<=0) && price2 > 0) price = price2;
+
+    if(!name) {
+      skipped++;
+      return;
+    }
+    if(!price || price <= 0) {
+      if(!price) needsReview.push({row:idx+headerRow+2, name:name, reason:'Нет цены'});
+      skipped++;
+      return;
+    }
+    if(/^\d+$/.test(name)) {
+      needsReview.push({row:idx+headerRow+2, name:name, reason:'Название — число'});
+      return;
+    }
+
+    var uLow = unit.toLowerCase();
+    var pKg=0, pSh=0, pL=0, pMl=0;
+    if(uLow==='кг'||uLow==='kg')       pKg = price;
+    else if(uLow==='г'||uLow==='g')    pKg = Math.round(price*1000*100)/100;
+    else if(uLow==='л'||uLow==='l')    pL  = price;
+    else if(uLow==='мл'||uLow==='ml')  { pL = Math.round(price*1000*100)/100; unit='л'; }
+    else                               pSh = price;
+
+    var currentType = priceType;
+    var ex = SUP_PRODS.findIndex(function(p){
+      return p && p._supplier===supName && String(p.priceListId||'')===String(priceListId);
+    });
+    var entry = {
+      id:        ex>=0 ? SUP_PRODS[ex].id : Date.now()+idx,
+      name:      name,
+      cat:       '—',
+      unit:      unit,
+      supplier:  supName,
+      _supplier: supName,
+      _priceName:priceName,
+      organizationId: organizationId,
+      organizationIds: [organizationId],
+      legalEntityIds: legalEntityNames.slice(),
+      legalEntityNames: legalEntityNames.slice(),
+      priceListId: priceListId,
+      priceListName: priceName,
+      uploadedByUserId: CU ? CU.id : '',
+      uploadedByUserName: auditActor(),
+      pKg:pKg, pSh:pSh, pL:pL, pMl:pMl,
+      stock:     999,
+      active:    true,
+      hidden:    false,
+      _type:     currentType,
+      allowedUserIds:    allowedUserIds.slice(),
+      allowedCompanies:  allowedCompanies.slice()
+    };
+    if(ex>=0){ SUP_PRODS[ex]=entry; updated++; }
+    else     { SUP_PRODS.push(entry); added++; }
+
+    var prodIdx = PRODUCTS.findIndex(function(p){
+      return p.name.toLowerCase()===name.toLowerCase();
+    });
+    if(prodIdx>=0){
+      var supplierPayload = {
+        name: supName,
+        price: price,
+        priceListId: priceListId,
+        priceListName: priceName,
+        organizationId: organizationId,
+        organizationIds: [organizationId],
+        legalEntityIds: legalEntityNames.slice(),
+        legalEntityNames: legalEntityNames.slice(),
+        priceType: currentType
+      };
+      var spIdx = PRODUCTS[prodIdx].suppliers.findIndex(function(s){
+        return s && s.name===supName && String(s.priceListId||'')===String(priceListId);
+      });
+      if(spIdx>=0) PRODUCTS[prodIdx].suppliers[spIdx] = supplierPayload;
+      else         PRODUCTS[prodIdx].suppliers.push(supplierPayload);
+      PRODUCTS[prodIdx].unit = PRODUCTS[prodIdx].unit || unit;
+    } else {
+      PRODUCTS.push({
+        id:Date.now()+idx+10000, name:name, cat:'dry', unit:unit, emoji:'',
+        sticker:null, fav:false, allowedCompanies:allowedCompanies.slice(),
+        suppliers:[{
+          name:supName,
+          price:price,
+          priceListId:priceListId,
+          priceListName:priceName,
+          organizationId:organizationId,
+          organizationIds:[organizationId],
+          legalEntityIds:legalEntityNames.slice(),
+          legalEntityNames:legalEntityNames.slice(),
+          priceType:currentType
+        }],
+        pKg:pKg, pSh:pSh, pL:pL, pMl:0
+      });
+      if(ALL_SUPS.indexOf(supName)<0) ALL_SUPS.push(supName);
+    }
+
+    db.supplierPriceItems.push({
+      id: 'spi-' + Date.now() + '-' + idx + '-' + Math.random().toString(16).slice(2),
+      priceListId: priceListId,
+      organizationId: organizationId,
+      productId: '',
+      productName: String(name).trim(),
+      nameInPrice: String(name).trim(),
+      price: Number(price || 0) || 0,
+      unitId: String(unit || '').trim(),
+      sourceRowNumber: idx + headerRow + 2,
+      rawData: {name:name, unit:unit, price:price}
+    });
+  });
+
+  rememberPriceLayout(supName, cols);
+  savePriceData();
+  renderSupProducts();
+  if(typeof renderCatalog==='function') renderCatalog();
+
+  var msg = (append?'Доп.':'Новый') + ' прайс «'+priceName+'» ('+supName+'): '
+    +'+'+added+' новых, обн.'+updated
+    +(skipped?' · пропущено: '+skipped:'');
+  toast(msg, 'ok');
+  if(needsReview.length){
+    var reviewEl=document.getElementById('priceReviewSection');
+    var reviewList=document.getElementById('priceReviewList');
+    if(reviewEl) reviewEl.style.display='block';
+    if(reviewList){
+      reviewList.innerHTML=needsReview.map(function(item){
+        return '<div style="padding:8px 12px;border-bottom:1px solid var(--br);font-size:12px;">'
+          +'<b>#'+item.row+'</b> '+_esc(item.name)+' <span style="color:var(--t3);">— '+_esc(item.reason)+'</span></div>';
+      }).join('');
+    }
+  }
+  logAudit(CU?CU.first+' '+CU.last:'','Загрузил прайс «'+priceName+'» · '+supName,'Прайсы');
+  return {added:added, updated:updated, skipped:skipped};
+}
+
+function _saveSupplierImportRowsDirect(rows, supName, append, priceName, allowedUserIds){
+  var db=dbGet();
+  var cols = _supPriceImportState && _supPriceImportState.mapping ? _supPriceImportState.mapping : {name:[],unit:[],price:[],price2:[]};
+  return processSupPriceRows(rows, cols, supName, append, priceName, allowedUserIds);
+}

@@ -147,11 +147,15 @@
       supplierId: row.supplier_id || '',
       supplierName: row.supplier_name || '',
       priceName: row.price_name || row.name || '',
+      priceType: row.price_type || row.priceType || 'main',
       legalEntityIds: safeArray(row.legal_entity_ids),
       legalEntityNames: safeArray(row.legal_entity_names),
       comment: row.comment || '',
       sourceFile: row.source_file || '',
       active: row.active !== false,
+      status: row.status || (row.active === false ? 'archived' : 'active'),
+      uploadedByUserId: row.uploaded_by_user_id || row.created_by || '',
+      uploadedByUserName: row.uploaded_by_user_name || '',
       uploadedAt: row.uploaded_at || row.created_at || '',
       updatedAt: row.updated_at || row.created_at || ''
     };
