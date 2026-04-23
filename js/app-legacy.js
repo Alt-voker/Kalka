@@ -1475,23 +1475,31 @@ function getCatalogSupplierAssortmentCount(supName){
   return getSupplierCatalogProducts(supName).length;
 }
 
-function getCatalogSuppliers(){
+function getCatalogSuppliers(opts){
+  opts = opts || {};
   var query=_catalogQuery;
+  var lazyAssortment = opts.lazyAssortment !== false;
+  var needsAssortment = !lazyAssortment || !!query || _catalogSort === 'assortment';
   var list=getCatalogVisibleSuppliers().map(function(s){
-    var assortment=getSupplierCatalogProducts(s.name);
     var rating=getSupplierRatingSummary(s.name);
-    return Object.assign({}, s, {
+    var item = Object.assign({}, s, {
       legalName:s.legalName||s.name||'—',
       city:s.city||'—',
       minOrderLabel:s.min||'—',
       deliverySchedule:s.deliverySchedule||s.delivery||'—',
       workSchedule:s.workSchedule||'—',
-      assortmentCount:assortment.length,
-      assortmentIndex:query ? assortment.map(function(item){ return item.name; }).join(' ') : '',
+      assortmentCount:null,
+      assortmentIndex:'',
       ratingAverage:rating.average,
       ratingCount:rating.count,
       myRating:rating.mine
     });
+    if(needsAssortment){
+      var assortment=getSupplierCatalogProducts(s.name);
+      item.assortmentCount = assortment.length;
+      item.assortmentIndex = query ? assortment.map(function(item){ return item.name; }).join(' ') : '';
+    }
+    return item;
   });
   if(query){
     list=list.filter(function(s){
@@ -1630,7 +1638,7 @@ function catalogSupplierUploadPrice(){
 
 function renderCatalog(){
   var started = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-  var list=getCatalogSuppliers();
+  var list=getCatalogSuppliers({lazyAssortment:true});
   var sub=document.getElementById('catalogSub');
   if(sub){
     sub.textContent='Открытый каталог поставщиков: '+list.length+' компаний · ассортимент обновляется автоматически после загрузки прайсов в системе';
@@ -1661,7 +1669,9 @@ function renderCatList(list){
     for(; index<end; index++){
       var s=list[index];
       var card=document.createElement('div');
+      var countLabel = (s.assortmentCount == null ? '…' : String(s.assortmentCount));
       card.style.cssText='background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);overflow:hidden;cursor:pointer;';
+      card.setAttribute('data-sup-name', s.name || '');
       card.onclick=(function(name){
         return function(){ openCatalogSupplierCard(name); };
       })(s.name);
@@ -1672,7 +1682,7 @@ function renderCatList(list){
         +'<div style="font-size:17px;font-weight:800;">'+s.name+'</div>'
         +'<div style="font-size:12px;color:var(--t3);margin-top:4px;">'+(s.type||'Поставщик')+'</div>'
         +'</div>'
-        +'<div style="font-size:11px;color:var(--t3);white-space:nowrap;">'+s.assortmentCount+' поз.</div>'
+        +'<div class="cat-assort-count" style="font-size:11px;color:var(--t3);white-space:nowrap;">'+countLabel+' поз.</div>'
         +'</div>'
         +'</div>'
         +'<div style="padding:14px 16px;display:grid;gap:8px;">'
@@ -1696,9 +1706,35 @@ function renderCatList(list){
     wrap.appendChild(frag);
     if(hint) hint.textContent='Показаны '+index+' из '+total+' поставщиков';
     if(index < total) requestAnimationFrame(appendBatch);
-    else if(hint) hint.textContent='Показаны все поставщики: '+total;
+    else {
+      if(hint) hint.textContent='Показаны все поставщики: '+total;
+      hydrateCatalogAssortmentCounts(list, wrap, token);
+    }
   }
   requestAnimationFrame(appendBatch);
+}
+
+function hydrateCatalogAssortmentCounts(list, wrap, token){
+  if(!wrap || token !== _catalogRenderToken) return;
+  var idx = 0;
+  var batch = 8;
+  function paintCounts(){
+    if(token !== _catalogRenderToken || !wrap) return;
+    var end = Math.min(idx + batch, list.length);
+    for(; idx < end; idx++){
+      var s = list[idx];
+      var card = Array.from(wrap.querySelectorAll('[data-sup-name]')).find(function(node){
+        return node && node.getAttribute('data-sup-name') === String(s.name || '');
+      });
+      if(!card) continue;
+      var countEl = card.querySelector('.cat-assort-count');
+      if(!countEl) continue;
+      var count = getCatalogSupplierAssortmentCount(s.name);
+      countEl.textContent = count + ' поз.';
+    }
+    if(idx < list.length) requestAnimationFrame(paintCounts);
+  }
+  requestAnimationFrame(paintCounts);
 }
 function addToCartD(pid){
   // Берём минимальную цену по умолчанию
