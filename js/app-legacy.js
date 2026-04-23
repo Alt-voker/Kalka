@@ -460,6 +460,8 @@ function dbLoad(callback){
           _visibleSuppliersCache = { key:'', items:[] };
           _techCardsRenderCache = { key:'', html:'' };
           _tenderAffCache = { key:'', byPid:{} };
+          _orderBestMatchCache = { key:'', byKey:{} };
+          _restaurantHistoryCache = { key:'', byId:{} };
           if(callback) callback();
           return;
         }
@@ -495,6 +497,8 @@ function dbLoad(callback){
     _visibleSuppliersCache = { key:'', items:[] };
     _techCardsRenderCache = { key:'', html:'' };
     _tenderAffCache = { key:'', byPid:{} };
+    _orderBestMatchCache = { key:'', byKey:{} };
+    _restaurantHistoryCache = { key:'', byId:{} };
     if(callback) callback();
   };
   xhr.ontimeout = xhr.onerror = function(){
@@ -521,6 +525,8 @@ function dbLoad(callback){
     _visibleSuppliersCache = { key:'', items:[] };
     _techCardsRenderCache = { key:'', html:'' };
     _tenderAffCache = { key:'', byPid:{} };
+    _orderBestMatchCache = { key:'', byKey:{} };
+    _restaurantHistoryCache = { key:'', byId:{} };
     if(callback) callback();
   };
   xhr.send();
@@ -593,6 +599,8 @@ function dbSet(d){
   _visibleSuppliersCache = { key:'', items:[] };
   _techCardsRenderCache = { key:'', html:'' };
   _tenderAffCache = { key:'', byPid:{} };
+  _orderBestMatchCache = { key:'', byKey:{} };
+  _restaurantHistoryCache = { key:'', byId:{} };
   try{ localStorage.setItem('pv_cache', JSON.stringify(d)); }catch(e){}
   _writeToFirebase(d, null);
 }
@@ -1391,7 +1399,7 @@ var _catalogRatingCache = { key:'', bySupplier:{} };
 var _catalogDataRevision = 1;
 var _catalogRenderToken = 0;
 var _supplierRenderToken = 0;
-var _catalogCardBatchSize = 24;
+var _catalogCardBatchSize = 8;
 var _catalogSupplierCardToken = 0;
 var _supplierTurnoverCache = { key:'', bySupplier:{} };
 var _supplierTurnoverIndexCache = { key:'', bySupplier:{} };
@@ -1407,6 +1415,8 @@ var _techCardsRenderToken = 0;
 var _techCardsRenderCache = { key:'', html:'' };
 var _tenderRenderToken = 0;
 var _tenderAffCache = { key:'', byPid:{} };
+var _orderBestMatchCache = { key:'', byKey:{} };
+var _restaurantHistoryCache = { key:'', byId:{} };
 
 function renderSupSel(){}
 function togSup(){ renderCatalog(); }
@@ -1599,7 +1609,7 @@ function renderCatalogSupplierCard(){
   listWrap.style.cssText='display:grid;gap:6px;';
   body.appendChild(listWrap);
   var idx=0;
-  var batch=30;
+  var batch=10;
   function appendItems(){
     if(token !== _catalogSupplierCardToken || !listWrap) return;
     var frag=document.createDocumentFragment();
@@ -2119,7 +2129,7 @@ function renderOrders(){
   var html=[];
   (function paintOrderRows(){
     if(token !== _ordersRenderToken) return;
-    var end=Math.min(index+8, rows.length);
+    var end=Math.min(index+4, rows.length);
     for(; index<end; index++){
       var o=rows[index];
       var pair=SM[o.status]||['bgr','—'];
@@ -2234,7 +2244,7 @@ function renderSuppliers(){
   function appendBatch(){
     if(token !== _supplierRenderToken || !wrap) return;
     var frag=document.createDocumentFragment();
-    var end=Math.min(index + 12, total);
+    var end=Math.min(index + 4, total);
     for(; index<end; index++){
       var s=visible[index];
       var card=document.createElement('div');
@@ -4458,6 +4468,17 @@ function renderRestaurants(){
 }
 
 function getRestaurantHistory(rest, days){
+  var restId=rest&&rest.id ? String(rest.id) : '';
+  var dayKey=String(days||0);
+  var cacheSig=[
+    String(_catalogDataRevision || 0),
+    restId,
+    dayKey,
+    String((ORDERS||[]).length || 0)
+  ].join('::');
+  if(_restaurantHistoryCache.key === cacheSig && _restaurantHistoryCache.byId && Object.prototype.hasOwnProperty.call(_restaurantHistoryCache.byId, cacheSig)){
+    return _restaurantHistoryCache.byId[cacheSig];
+  }
   var restName=rest&&rest.name?String(rest.name):'';
   var allOrders=(ORDERS||[]).filter(function(order){
     return String(order.rest||'')===restName;
@@ -4485,7 +4506,7 @@ function getRestaurantHistory(rest, days){
       itemCounts[item]=(itemCounts[item]||0)+1;
     });
   });
-  return {
+  var summary = {
     orderCount: orders.length,
     totalSum: totalSum,
     avgOrder: orders.length?totalSum/orders.length:0,
@@ -4502,6 +4523,9 @@ function getRestaurantHistory(rest, days){
     favoriteSuppliers: Object.keys(supplierCounts).sort(function(a,b){ return supplierCounts[b]-supplierCounts[a]; }).slice(0,3),
     frequentItems: Object.keys(itemCounts).sort(function(a,b){ return itemCounts[b]-itemCounts[a]; }).slice(0,5)
   };
+  _restaurantHistoryCache.key = cacheSig;
+  _restaurantHistoryCache.byId[cacheSig] = summary;
+  return summary;
 }
 
 function getRestaurantSmartSuggestions(){
@@ -8309,6 +8333,16 @@ function _scoreMatch(productName, keyword) {
 
 // Найти лучший товар поставщика для ключевого слова (учитывая синонимы)
 function _findBestForSupplier(keyword, supName) {
+  var cacheSig = [
+    String(_catalogDataRevision || 0),
+    String(keyword || ''),
+    String(supName || ''),
+    String((SUP_PRODS||[]).length || 0),
+    String((PRODUCTS||[]).length || 0)
+  ].join('::');
+  if(_orderBestMatchCache.key === cacheSig && Object.prototype.hasOwnProperty.call(_orderBestMatchCache.byKey, cacheSig)){
+    return _orderBestMatchCache.byKey[cacheSig];
+  }
   var best = {item: null, score: 0};
   var keywords = [keyword];
   var scopedCandidates = [];
@@ -8347,7 +8381,12 @@ function _findBestForSupplier(keyword, supName) {
     scopedCandidates.push(p);
   });
 
-  if(scopedCandidates.length) return best.score > 0 ? best : null;
+  if(scopedCandidates.length){
+    var scopedResult = best.score > 0 ? best : null;
+    _orderBestMatchCache.byKey[cacheSig] = scopedResult;
+    _orderBestMatchCache.key = cacheSig;
+    return scopedResult;
+  }
 
   // Поиск по PRODUCTS этого поставщика
   PRODUCTS.forEach(function(p) {
@@ -8378,7 +8417,10 @@ function _findBestForSupplier(keyword, supName) {
     }
   });
 
-  return best.score > 0 ? best : null;
+  var finalResult = best.score > 0 ? best : null;
+  _orderBestMatchCache.byKey[cacheSig] = finalResult;
+  _orderBestMatchCache.key = cacheSig;
+  return finalResult;
 }
 
 // Извлечь ключевое слово — первое слово строки
