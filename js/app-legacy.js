@@ -561,6 +561,7 @@ function dbSet(d){
   _catalogDataRevision = (_catalogDataRevision || 0) + 1;
   _catalogProductsCache = { key:'', bySupplier:{} };
   _catalogRatingCache = { key:'', bySupplier:{} };
+  _supplierTurnoverCache = { key:'', bySupplier:{} };
   try{ localStorage.setItem('pv_cache', JSON.stringify(d)); }catch(e){}
   _writeToFirebase(d, null);
 }
@@ -1022,19 +1023,32 @@ function getOrganizationTurnoverRows(orders){
   return Object.entries(totals).sort(function(a,b){ return b[1]-a[1]; });
 }
 function getSupplierTurnoverSummary(supplierName, orders){
+  var sig = [
+    String(_catalogDataRevision || 0),
+    String((orders||[]).length || 0),
+    String(supplierName || '')
+  ].join('::');
+  if(_supplierTurnoverCache.key !== sig){
+    _supplierTurnoverCache = { key:sig, bySupplier:{} };
+  }
+  if(_supplierTurnoverCache.bySupplier && _supplierTurnoverCache.bySupplier[supplierName]){
+    return _supplierTurnoverCache.bySupplier[supplierName];
+  }
   var matched=(orders||[]).filter(function(order){
     return (getOrderSupplierName(order)||order.sup||'')===supplierName;
   });
   var by30=getOrdersForPeriod(matched,30).reduce(function(sum,order){ return sum+(Number(order.sum)||0); },0);
   var by90=getOrdersForPeriod(matched,90).reduce(function(sum,order){ return sum+(Number(order.sum)||0); },0);
   var all=matched.reduce(function(sum,order){ return sum+(Number(order.sum)||0); },0);
-  return {
+  var summary = {
     count:matched.length,
     by30:by30,
     by90:by90,
     all:all,
     organizations:getOrganizationTurnoverRows(matched)
   };
+  _supplierTurnoverCache.bySupplier[supplierName] = summary;
+  return summary;
 }
 function getAnalyticsPeriodValue(){
   var value=document.getElementById('analyticsPeriod');
@@ -1256,6 +1270,7 @@ var _catalogRenderToken = 0;
 var _supplierRenderToken = 0;
 var _catalogCardBatchSize = 24;
 var _catalogSupplierCardToken = 0;
+var _supplierTurnoverCache = { key:'', bySupplier:{} };
 
 function renderSupSel(){}
 function togSup(){ renderCatalog(); }
@@ -1986,8 +2001,15 @@ function renderSuppliers(){
   var db=dbGet();
   var visibleOrders=getUserVisibleOrders(CU);
 
-  var cards=visible.map(function(s){
-    var i=SUPS_DATA.indexOf(s);
+  var token = ++_supplierRenderToken;
+  el.innerHTML='<div id="supGridWrap" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;"></div>'
+    +'<div id="supGridHint" style="padding:14px 6px;color:var(--t3);font-size:12px;">Подготавливаем карточки поставщиков…</div>';
+  var wrap=el.querySelector('#supGridWrap');
+  var hint=el.querySelector('#supGridHint');
+  var index=0;
+  var total=visible.length;
+
+  function buildCard(s, i){
     var supplierToken = encodeURIComponent(String(s.name || ''));
     var ratingSummary=getSupplierRatingSummary(s.name);
     var isPersonalHidden=hiddenLocal[s.name]===true;
@@ -2002,68 +2024,44 @@ function renderSuppliers(){
 
     var personalBtn='<button onclick="togglePersonalSup(\''+s.name+'\')" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">'
       +(isPersonalHidden?'✅ Работать с ним':'🚫 Не работать')+'</button>';
-
-    // Кнопки загрузки прайса — для всех пользователей
     var priceBtns=canManagePrices?'<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--br);">'
       +'<button type="button" onclick="supCardAction(this)" data-sup-action="prices" data-supplier-token="'+supplierToken+'" style="flex:1;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;font-weight:600;">Прайсы</button>'
       +'<button type="button" onclick="supCardAction(this)" data-sup-action="delete-price" data-supplier-token="'+supplierToken+'" style="flex:1;background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;">Удалить прайс</button>'
       +'<button type="button" onclick="supCardAction(this)" data-sup-action="main-price" data-supplier-token="'+supplierToken+'" style="flex:1;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;font-weight:600;">Основной прайс</button>'
       +'<button type="button" onclick="supCardAction(this)" data-sup-action="extra-price" data-supplier-token="'+supplierToken+'" style="flex:1;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;">+ Доп.прайс</button>'
       +'</div>':'';
-
-    var manageBtn=canManageSupplier?(
-      '<button onclick="openSupplierModal('+i+')" style="flex:1;background:var(--bg4);border:1px solid var(--br2);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Изменить карточку</button>'
-    ):'';
-
-    var adminBtns=canAdmin?(
-      '<button onclick="toggleSupHidden('+i+')" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">'+(s.hidden?'Показать':'Скрыть всем')+'</button>'
-      +'<button onclick="deleteSup('+i+')" style="flex:1;background:var(--rdD);border:1px solid var(--rd);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--rd);">Удалить</button>'
-    ):'';
-
+    var manageBtn=canManageSupplier?('<button onclick="openSupplierModal('+i+')" style="flex:1;background:var(--bg4);border:1px solid var(--br2);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Изменить карточку</button>'):'';
+    var adminBtns=canAdmin?('<button onclick="toggleSupHidden('+i+')" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">'+(s.hidden?'Показать':'Скрыть всем')+'</button>'+'<button onclick="deleteSup('+i+')" style="flex:1;background:var(--rdD);border:1px solid var(--rd);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--rd);">Удалить</button>'):'';
     var favoriteBtn='<button onclick="toggleFavoriteSupplier(\''+s.name+'\')" style="flex:1;background:'+(favoriteSuppliers.indexOf(s.name)>=0?'var(--aD)':'var(--bg3)')+';border:1px solid '+(favoriteSuppliers.indexOf(s.name)>=0?'var(--ac)':'var(--br)')+';border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:'+(favoriteSuppliers.indexOf(s.name)>=0?'var(--ac)':'var(--t2)')+';">'+(favoriteSuppliers.indexOf(s.name)>=0?'★ В избранном':'☆ В избранное')+'</button>';
-
     return '<div class="sup-card" style="'+cardStyle+'">'
-      +'<div class="sup-hd">'
-      +'<div><div class="sup-name">'+s.name+'</div><div class="sup-type">'+s.type+'</div></div>'
-      +'<span class="badge '+sm[s.status||'active']+'" style="margin-left:auto;">'+sl[s.status||'active']+'</span>'
-      +personalBadge
-      +'</div>'
+      +'<div class="sup-hd"><div><div class="sup-name">'+s.name+'</div><div class="sup-type">'+s.type+'</div></div><span class="badge '+sm[s.status||'active']+'" style="margin-left:auto;">'+sl[s.status||'active']+'</span>'+personalBadge+'</div>'
       +'<div style="font-size:11px;color:var(--t3);margin-bottom:10px;">Юр. лицо: '+(s.legalName||s.name)+'</div>'
       +'<div style="font-size:11px;color:var(--t3);margin-bottom:10px;">Организации: '+orgSummary+'</div>'
-      +'<div class="sup-sg">'
-      +'<div class="ss"><div class="ss-l">Рейтинг</div><div class="ss-v">'+formatSupplierRatingAverage(ratingSummary.average)+' <span style="font-size:10px;color:var(--t3);">('+ratingSummary.count+')</span></div></div>'
-      +'<div class="ss"><div class="ss-l">Заказов</div><div class="ss-v">'+s.orders+'</div></div>'
-      +'<div class="ss"><div class="ss-l">Доставка</div><div class="ss-v" style="font-size:11px;">'+s.delivery+'</div></div>'
-      +'<div class="ss"><div class="ss-l">Мин. заказ</div><div class="ss-v" style="font-size:11px;">'+s.min+'</div></div>'
-      +'</div>'
-      +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:8px 10px;border:1px solid var(--br);border-radius:8px;background:var(--bg3);">'
-      +'<div style="font-size:11px;color:var(--t3);">Ваша оценка</div>'
-      +'<div style="display:flex;gap:4px;">'+renderSupplierRatingStars(s.name, ratingSummary.mine)+'</div>'
-      +'</div>'
-      +'<div style="margin-top:10px;padding:10px;border:1px solid var(--br);border-radius:8px;background:var(--bg3);">'
-      +'<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:8px;">Оборот закупки</div>'
-      +'<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:8px;">'
-      +'<div><div style="font-size:10px;color:var(--t3);">30 дней</div><div style="font-size:13px;font-weight:800;">₽'+Math.round(turnover.by30).toLocaleString()+'</div></div>'
-      +'<div><div style="font-size:10px;color:var(--t3);">90 дней</div><div style="font-size:13px;font-weight:800;">₽'+Math.round(turnover.by90).toLocaleString()+'</div></div>'
-      +'<div><div style="font-size:10px;color:var(--t3);">Всё время</div><div style="font-size:13px;font-weight:800;">₽'+Math.round(turnover.all).toLocaleString()+'</div></div>'
-      +'</div>'
-      +'<div style="font-size:11px;color:var(--t3);margin-bottom:6px;">По организациям</div>'
-      +turnoverRows
-      +'</div>'
+      +'<div class="sup-sg"><div class="ss"><div class="ss-l">Рейтинг</div><div class="ss-v">'+formatSupplierRatingAverage(ratingSummary.average)+' <span style="font-size:10px;color:var(--t3);">('+ratingSummary.count+')</span></div></div><div class="ss"><div class="ss-l">Заказов</div><div class="ss-v">'+s.orders+'</div></div><div class="ss"><div class="ss-l">Доставка</div><div class="ss-v" style="font-size:11px;">'+s.delivery+'</div></div><div class="ss"><div class="ss-l">Мин. заказ</div><div class="ss-v" style="font-size:11px;">'+s.min+'</div></div></div>'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:8px 10px;border:1px solid var(--br);border-radius:8px;background:var(--bg3);"><div style="font-size:11px;color:var(--t3);">Ваша оценка</div><div style="display:flex;gap:4px;">'+renderSupplierRatingStars(s.name, ratingSummary.mine)+'</div></div>'
+      +'<div style="margin-top:10px;padding:10px;border:1px solid var(--br);border-radius:8px;background:var(--bg3);"><div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:8px;">Оборот закупки</div><div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:8px;"><div><div style="font-size:10px;color:var(--t3);">30 дней</div><div style="font-size:13px;font-weight:800;">₽'+Math.round(turnover.by30).toLocaleString()+'</div></div><div><div style="font-size:10px;color:var(--t3);">90 дней</div><div style="font-size:13px;font-weight:800;">₽'+Math.round(turnover.by90).toLocaleString()+'</div></div><div><div style="font-size:10px;color:var(--t3);">Всё время</div><div style="font-size:13px;font-weight:800;">₽'+Math.round(turnover.all).toLocaleString()+'</div></div></div><div style="font-size:11px;color:var(--t3);margin-bottom:6px;">По организациям</div>'+turnoverRows+'</div>'
       +(s.tags&&s.tags.length?'<div class="sup-tags">'+s.tags.map(function(t){return '<span class="sup-tag">'+t+'</span>';}).join('')+'</div>':'')
-      +'<div style="display:flex;gap:6px;margin-top:12px;border-top:1px solid var(--br);padding-top:10px;">'
-      +personalBtn
-      +favoriteBtn
-      +manageBtn
-      +adminBtns
-      +'</div>'
-      +priceBtns
-      +'</div>';
-  }).join('');
+      +'<div style="display:flex;gap:6px;margin-top:12px;border-top:1px solid var(--br);padding-top:10px;">'+personalBtn+favoriteBtn+manageBtn+adminBtns+'</div>'+priceBtns+'</div>';
+  }
 
-  var addBtn=canManageSupplierPage?'<div class="sup-card dsh" onclick="openSupplierModal()" style="display:flex;align-items:center;justify-content:center;min-height:170px;"><div style="text-align:center;color:var(--t3);"><div style="font-size:26px;margin-bottom:7px;">➕</div><div style="font-size:13px;font-weight:600;">Добавить поставщика</div></div></div>':'';
-  el.innerHTML=cards+addBtn;
-  bindSupplierCardActions(el);
+  function appendBatch(){
+    if(token !== _supplierRenderToken || !wrap) return;
+    var frag=document.createDocumentFragment();
+    var end=Math.min(index + 12, total);
+    for(; index<end; index++){
+      var s=visible[index];
+      var card=document.createElement('div');
+      card.innerHTML=buildCard(s, SUPS_DATA.indexOf(s));
+      frag.appendChild(card.firstChild);
+    }
+    wrap.appendChild(frag);
+    if(hint) hint.textContent='Показаны '+index+' из '+total+' поставщиков';
+    if(index < total) requestAnimationFrame(appendBatch);
+    else if(hint) hint.textContent='Показаны все поставщики: '+total;
+    bindSupplierCardActions(el);
+  }
+
+  requestAnimationFrame(appendBatch);
 }
 
 function supCardAction(btn){
