@@ -33,6 +33,25 @@ const PM={
 };
 const PT={order:'Заказ и Корзина',tender:'Тендер',owner:'Панель владельца',admin:'Управление пользователями',dashboard:'Дашборд',catalog:'Каталог товаров',cart:'Корзина',favorites:'Избранное',orders:'История заказов',suppliers:'Поставщики',analytics:'Аналитика','tender':'Тендер',techcards:'Технологические карты','chef-calc':'Калькулятор','sup-dashboard':'Панель поставщика','sup-products':'Мои товары','sup-orders':'Входящие заказы','sup-analytics':'Аналитика продаж'};
 const OWNER_EMAIL_HINTS=['owner@provision.ru','michaelkeepcalm@gmail.com','keepcalm3300@gmail.com','michaelkeepcalm3300gmail.com','keepcalm3300gmail.com','keepcalm3300gmail.com@MacBook-Air-Mihail.local'];
+function reportRuntimeIssue(message, detail){
+  try{
+    console.error(message, detail || '');
+  }catch(e){}
+  try{
+    toast('Страница открылась с ошибкой. Мы уже исправляем её.','err');
+  }catch(e){}
+}
+if(!window.__kalkaRuntimeGuardInstalled){
+  window.__kalkaRuntimeGuardInstalled = true;
+  window.addEventListener('error', function(ev){
+    var msg = ev && ev.message ? String(ev.message) : 'Unknown error';
+    reportRuntimeIssue(msg, ev && ev.error ? ev.error : null);
+  });
+  window.addEventListener('unhandledrejection', function(ev){
+    var reason = ev && ev.reason ? (ev.reason.message || ev.reason) : 'Unhandled rejection';
+    reportRuntimeIssue(reason, ev && ev.reason ? ev.reason : null);
+  });
+}
 function isOwnerUser(u){
   if(!u) return false;
   if(u.role==='owner') return true;
@@ -834,6 +853,9 @@ function setupUI(u){
   else if(['chef','manager','admin'].includes(u.role)){ta.textContent='+ Тех. карта';  ta.onclick=()=>openModal('newTC');}
   else if(u.role==='owner')                      {ta.textContent='🛡 Панель владельца';ta.onclick=()=>goPage('owner');}
   else                                           {ta.textContent='+ Заказ';            ta.onclick=()=>openModal('newOrder');}
+  if(!scopedRestaurants.length && !isS && !isAcc && u.role!=='owner' && u.role!=='admin'){
+    reportRuntimeIssue('No restaurant context for user '+(u.email||u.id||''), null);
+  }
   buildNav(u);
   renderOrgInviteBadge();
   var navFirst=document.querySelector('#sbNav .sb-item[data-page]');
