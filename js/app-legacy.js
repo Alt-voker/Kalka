@@ -452,6 +452,10 @@ function dbLoad(callback){
           _catalogDataRevision = Date.now();
           _catalogProductsCache = { key:'', bySupplier:{} };
           _catalogRatingCache = { key:'', bySupplier:{} };
+          _supplierTurnoverCache = { key:'', bySupplier:{} };
+          _dashboardOrdersCache = { key:'', orders:[] };
+          _productCategoryCache = { key:'', byName:{} };
+          _visibleOrdersCache = { key:'', orders:[] };
           if(callback) callback();
           return;
         }
@@ -479,6 +483,10 @@ function dbLoad(callback){
     _catalogDataRevision = Date.now();
     _catalogProductsCache = { key:'', bySupplier:{} };
     _catalogRatingCache = { key:'', bySupplier:{} };
+    _supplierTurnoverCache = { key:'', bySupplier:{} };
+    _dashboardOrdersCache = { key:'', orders:[] };
+    _productCategoryCache = { key:'', byName:{} };
+    _visibleOrdersCache = { key:'', orders:[] };
     if(callback) callback();
   };
   xhr.ontimeout = xhr.onerror = function(){
@@ -497,6 +505,10 @@ function dbLoad(callback){
     _catalogDataRevision = Date.now();
     _catalogProductsCache = { key:'', bySupplier:{} };
     _catalogRatingCache = { key:'', bySupplier:{} };
+    _supplierTurnoverCache = { key:'', bySupplier:{} };
+    _dashboardOrdersCache = { key:'', orders:[] };
+    _productCategoryCache = { key:'', byName:{} };
+    _visibleOrdersCache = { key:'', orders:[] };
     if(callback) callback();
   };
   xhr.send();
@@ -562,6 +574,9 @@ function dbSet(d){
   _catalogProductsCache = { key:'', bySupplier:{} };
   _catalogRatingCache = { key:'', bySupplier:{} };
   _supplierTurnoverCache = { key:'', bySupplier:{} };
+  _dashboardOrdersCache = { key:'', orders:[] };
+  _productCategoryCache = { key:'', byName:{} };
+  _visibleOrdersCache = { key:'', orders:[] };
   try{ localStorage.setItem('pv_cache', JSON.stringify(d)); }catch(e){}
   _writeToFirebase(d, null);
 }
@@ -966,6 +981,24 @@ function goPage(pg){
 }
 function getDashboardOrders(){
   ensureDashboardRestSelection();
+  var scopeKey = normalizeDashboardAccess(CU).scope || 'assigned';
+  var allowedKey = '';
+  if(CU && CU.role !== 'owner'){
+    allowedKey = getUserDashboardRestaurantIds(CU).slice().sort().join('|');
+  }
+  var restKey = activeRest && activeRest.id && activeRest.id !== 'r0' ? String(activeRest.id) : 'all';
+  var cacheKey = [
+    String(_catalogDataRevision || 0),
+    String(CU && CU.id || ''),
+    String(CU && CU.role || ''),
+    scopeKey,
+    allowedKey,
+    restKey,
+    String((ORDERS||[]).length || 0)
+  ].join('::');
+  if(_dashboardOrdersCache.key === cacheKey && Array.isArray(_dashboardOrdersCache.orders)){
+    return _dashboardOrdersCache.orders.slice();
+  }
   var orders=(ORDERS||[]).slice();
   if(CU && normalizeDashboardAccess(CU).scope!=='all_orgs' && CU.role!=='owner'){
     var allowedIds=getUserDashboardRestaurantIds(CU);
@@ -978,6 +1011,7 @@ function getDashboardOrders(){
       return String(order.restId||'')===String(activeRest.id) || String(order.rest||'')===String(activeRest.name||'');
     });
   }
+  _dashboardOrdersCache = { key:cacheKey, orders:orders.slice() };
   return orders;
 }
 function getOrderSupplierName(order){
@@ -1068,13 +1102,22 @@ function getDashboardCategoryData(orders){
   var colors={meat:'#5ba3f5',fish:'#4fc3f7',veg:'#4caf82',fruit:'#ffb74d',dairy:'#ffd54f',alcohol:'#ab7df8',dry:'#ff7043',other:'#8a9ba8'};
   var labels={meat:'Мясо',fish:'Рыба',veg:'Овощи',fruit:'Фрукты',dairy:'Молочное',alcohol:'Алкоголь',dry:'Бакалея',other:'Прочее'};
   var sums={};
+  var productIndexKey = String(_catalogDataRevision || 0) + '::' + String((PRODUCTS||[]).length || 0);
+  if(_productCategoryCache.key !== productIndexKey){
+    var byName = {};
+    (PRODUCTS||[]).forEach(function(prod){
+      if(!prod) return;
+      var key = String(prod.name||'').toLowerCase().trim();
+      if(key && !byName[key]) byName[key] = prod.cat || 'other';
+    });
+    _productCategoryCache = { key:productIndexKey, byName:byName };
+  }
   orders.forEach(function(order){
     var items=getOrderItemNames(order);
     if(!items.length) return;
     var perItem=(Number(order.sum)||0)/items.length;
     items.forEach(function(name){
-      var prod=PRODUCTS.find(function(p){ return String(p.name||'').toLowerCase()===String(name||'').toLowerCase(); });
-      var cat=prod&&prod.cat?prod.cat:'other';
+      var cat=_productCategoryCache.byName[String(name||'').toLowerCase().trim()] || 'other';
       if(!labels[cat]) cat='other';
       sums[cat]=(sums[cat]||0)+perItem;
     });
@@ -1271,6 +1314,9 @@ var _supplierRenderToken = 0;
 var _catalogCardBatchSize = 24;
 var _catalogSupplierCardToken = 0;
 var _supplierTurnoverCache = { key:'', bySupplier:{} };
+var _dashboardOrdersCache = { key:'', orders:[] };
+var _productCategoryCache = { key:'', byName:{} };
+var _visibleOrdersCache = { key:'', orders:[] };
 
 function renderSupSel(){}
 function togSup(){ renderCatalog(); }
@@ -2697,12 +2743,26 @@ function getUserScopedRestaurantIds(user, db){
 function getUserVisibleOrders(user){
   if(!user) return [];
   var db=dbGet();
-  var allowedIds=getUserScopedRestaurantIds(user, db);
+  var allowedIds=getUserScopedRestaurantIds(user, db).slice().sort().join('|');
+  var activeId=activeRest && activeRest.id && activeRest.id!=='r0' ? String(activeRest.id) : 'all';
+  var cacheKey=[
+    String(_catalogDataRevision || 0),
+    String(user.id || ''),
+    String(user.role || ''),
+    activeId,
+    allowedIds,
+    String((ORDERS||[]).length || 0)
+  ].join('::');
+  if(_visibleOrdersCache.key===cacheKey && Array.isArray(_visibleOrdersCache.orders)){
+    return _visibleOrdersCache.orders.slice();
+  }
   if(user.role==='owner') return (ORDERS||[]).slice();
   if(!allowedIds.length) return [];
-  return (ORDERS||[]).filter(function(order){
+  var orders=(ORDERS||[]).filter(function(order){
     return allowedIds.indexOf(String(order.restId||''))>=0;
   });
+  _visibleOrdersCache = { key:cacheKey, orders:orders.slice() };
+  return orders;
 }
 
 function getUserOutgoingOrders(user){
