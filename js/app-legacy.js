@@ -869,6 +869,31 @@ function buildNav(u){
     html+=`<div class="sb-item" data-page="${pg}" onclick="goPage('${pg}')"><span class="sb-ico">${m.ico}</span><span class="sb-lbl">${m.lbl}</span>${badge}<span class="sb-tip">${m.lbl}</span></div>`;
   });
   document.getElementById('sbNav').innerHTML=html;
+  bindNavActions();
+}
+function bindNavActions(){
+  var nav=document.getElementById('sbNav');
+  if(!nav || nav.dataset.navBound==='1') return;
+  nav.dataset.navBound='1';
+  nav.addEventListener('click', function(e){
+    var item=e.target && e.target.closest ? e.target.closest('.sb-item[data-page]') : null;
+    if(!item) return;
+    var pg=item.getAttribute('data-page');
+    if(!pg) return;
+    e.preventDefault();
+    e.stopPropagation();
+    try{ goPage(pg); }catch(err){ console.error('nav click failed for '+pg+':', err); }
+  }, true);
+  document.addEventListener('click', function(e){
+    var item=e.target && e.target.closest ? e.target.closest('.sb-item[data-page]') : null;
+    if(!item) return;
+    if(nav && nav.contains(item)) return;
+    var pg=item.getAttribute('data-page');
+    if(!pg) return;
+    e.preventDefault();
+    e.stopPropagation();
+    try{ goPage(pg); }catch(err){ console.error('global nav click failed for '+pg+':', err); }
+  }, true);
 }
 function goPage(pg){
   if(!CU)return;
