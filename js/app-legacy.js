@@ -549,6 +549,7 @@ function dbSet(d){
   d.orders   = ORDERS;
   d.techCards = TECH_CARDS;
   _dbCache = d;
+  _catalogProductsCache = { key:'', bySupplier:{} };
   try{ localStorage.setItem('pv_cache', JSON.stringify(d)); }catch(e){}
   _writeToFirebase(d, null);
 }
@@ -1228,6 +1229,7 @@ var _catalogSort = 'name';
 var _catalogSupplierId = '';
 var _catalogSupplierSort = 'asc';
 var _catalogSupplierQuery = '';
+var _catalogProductsCache = { key:'', bySupplier:{} };
 
 function renderSupSel(){}
 function togSup(){ renderCatalog(); }
@@ -1239,43 +1241,57 @@ function getCatalogVisibleSuppliers(){
 }
 
 function getSupplierCatalogProducts(supName){
-  var seen={};
-  var items=[];
-  (SUP_PRODS||[]).forEach(function(p){
-    var owner=p && (p._supplier||p.supplier||'');
-    if(owner!==supName) return;
-    if(p.hidden || p.active===false) return;
-    var key=String(p.name||'').trim().toLowerCase();
-    if(!key || seen[key]) return;
-    seen[key]=true;
-    items.push({
-      id:p.id,
-      name:String(p.name||'').trim(),
-      unit:p.unit||'',
-      category:p.cat||'',
-      source:'price'
+  var sig=[
+    String(supName||''),
+    String((SUP_PRODS||[]).length),
+    String((PRODUCTS||[]).length),
+    String(_catalogSupplierSort||'asc')
+  ].join('::');
+  if(_catalogProductsCache.key!==sig){
+    var index={};
+    var pushItem=function(owner, item){
+      if(!owner || !item) return;
+      if(!index[owner]) index[owner]={seen:{},items:[]};
+      var bucket=index[owner];
+      var key=String(item.name||'').trim().toLowerCase();
+      if(!key || bucket.seen[key]) return;
+      bucket.seen[key]=true;
+      bucket.items.push(item);
+    };
+    (SUP_PRODS||[]).forEach(function(p){
+      var owner=p && (p._supplier||p.supplier||'');
+      if(!owner || p.hidden || p.active===false) return;
+      pushItem(owner, {
+        id:p.id,
+        name:String(p.name||'').trim(),
+        unit:p.unit||'',
+        category:p.cat||'',
+        source:'price'
+      });
     });
-  });
-  (PRODUCTS||[]).forEach(function(prod){
-    if(!prod || !Array.isArray(prod.suppliers)) return;
-    var match=prod.suppliers.some(function(s){ return s && s.name===supName; });
-    if(!match) return;
-    var key=String(prod.name||'').trim().toLowerCase();
-    if(!key || seen[key]) return;
-    seen[key]=true;
-    items.push({
-      id:prod.id,
-      name:String(prod.name||'').trim(),
-      unit:prod.unit||'',
-      category:prod.cat||'',
-      source:'catalog'
+    (PRODUCTS||[]).forEach(function(prod){
+      if(!prod || !Array.isArray(prod.suppliers)) return;
+      var baseItem={
+        id:prod.id,
+        name:String(prod.name||'').trim(),
+        unit:prod.unit||'',
+        category:prod.cat||'',
+        source:'catalog'
+      };
+      prod.suppliers.forEach(function(s){
+        if(s && s.name) pushItem(s.name, baseItem);
+      });
     });
-  });
-  items.sort(function(a,b){
-    var cmp=String(a.name||'').localeCompare(String(b.name||''),'ru');
-    return _catalogSupplierSort==='desc' ? -cmp : cmp;
-  });
-  return items;
+    Object.keys(index).forEach(function(owner){
+      index[owner].items.sort(function(a,b){
+        var cmp=String(a.name||'').localeCompare(String(b.name||''),'ru');
+        return _catalogSupplierSort==='desc' ? -cmp : cmp;
+      });
+    });
+    _catalogProductsCache = { key:sig, bySupplier:index };
+  }
+  var bucket=_catalogProductsCache.bySupplier[String(supName||'')] || { items:[] };
+  return bucket.items.slice();
 }
 
 function getCatalogSupplierAssortmentCount(supName){
