@@ -2585,7 +2585,7 @@ function renderTechCards(){
   var idx=0;
   var html=[];
   (function paintTechCards(){
-    if(token !== _techCardsRenderToken) return;
+    if(token !== _supplierRenderToken) return;
     var end=Math.min(idx+4, list.length);
     for(; idx<end; idx++){
       var tc=list[idx];
@@ -2743,7 +2743,7 @@ function renderSupProducts(){
     el.innerHTML='<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--t3);">Нет товаров. Загрузите прайс кнопкой выше.</td></tr>';
     return;
   }
-  var token = ++_techCardsRenderToken;
+  var token = ++_supplierRenderToken;
   el.innerHTML='<tr><td colspan="9" style="text-align:center;padding:22px;color:var(--t3);">Загрузка товаров…</td></tr>';
   var rows=SUP_PRODS.filter(function(p){
     return !(q&&p.name.toLowerCase().indexOf(q)<0&&(p.cat||'').toLowerCase().indexOf(q)<0);
@@ -2751,38 +2751,39 @@ function renderSupProducts(){
   var idx=0;
   var html=[];
   (function paintSupProducts(){
-    if(token !== _techCardsRenderToken) return;
+    if(token !== _supplierRenderToken) return;
     var end=Math.min(idx+12, rows.length);
     for(; idx<end; idx++){
       var p=rows[idx];
-    var canSee=canSeePrices(p);
-    var hidStyle=p.hidden?'opacity:0.45;':'';
-    var hidBadge=p.hidden?'<span style="font-size:10px;background:var(--rdD);color:var(--rd);border-radius:3px;padding:1px 5px;margin-left:4px;">скрыт</span>':'';
-    var companies=(p.allowedCompanies&&p.allowedCompanies.length)?p.allowedCompanies.join(', '):'Все';
-    var compBadge=(CU&&(CU.role==='owner'||CU.role==='admin'))?'<div style="font-size:10px;color:var(--t3);">👥 '+companies+'</div>':'';
-    var dash='<span style="color:var(--t4);">—</span>';
-    function priceCell(val,field){
-      if(!canSee) return dash;
-      return '<input class="pi" type="number" value="'+val+'" onchange="SUP_PRODS['+i+'].'+field+'=parseFloat(this.value)||0;">';
-    }
-    var actionBtns='';
-    if(canSee){
-      actionBtns+=
-        '<button onclick="SUP_PRODS['+i+'].hidden=!SUP_PRODS['+i+'].hidden;renderSupProducts();" style="background:var(--bg3);border:1px solid var(--br);border-radius:5px;padding:3px 8px;font-size:11px;cursor:pointer;color:var(--t2);">'+(p.hidden?'👁':'🙈')+'</button>'
-       +'<button onclick="SUP_PRODS['+i+'].active=!SUP_PRODS['+i+'].active;renderSupProducts();" style="background:'+(p.active?'var(--rdD)':'var(--grD)')+';color:'+(p.active?'var(--rd)':'var(--gr)')+';border:1px solid '+(p.active?'var(--rd)':'var(--gr)')+';border-radius:5px;padding:3px 8px;font-size:11px;cursor:pointer;">'+(p.active?'Откл.':'Вкл.')+'</button>'
-       +'<button onclick="delSupProd('+i+')" style="background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:5px;padding:3px 7px;font-size:11px;cursor:pointer;">✕</button>';
-    }
-    return '<tr style="'+hidStyle+'">'
-      +'<td><div style="font-weight:600;">'+p.name+hidBadge+'</div>'+compBadge+'</td>'
-      +'<td><span class="badge bb" style="font-size:11px;">'+p.cat+'</span></td>'
-      +'<td>'+priceCell(p.pKg,'pKg')+'</td>'
-      +'<td>'+priceCell(p.pSh,'pSh')+'</td>'
-      +'<td>'+priceCell(p.pL,'pL')+'</td>'
-      +'<td>'+priceCell(p.pMl,'pMl')+'</td>'
-      +'<td><span style="color:'+(p.stock<50?'var(--rd)':p.stock<100?'var(--ac)':'var(--gr)')+';">'+p.stock+'</span></td>'
-      +'<td><span class="badge '+(p.active?'bg':'bgr')+'">'+(p.active?'Активен':'Скрыт')+'</span></td>'
-      +'<td style="display:flex;gap:4px;justify-content:flex-end;">'+actionBtns+'</td>'
-      +'</tr>';
+      var canSee=canSeePrices(p);
+      var hidStyle=p.hidden?'opacity:0.45;':'';
+      var hidBadge=p.hidden?'<span style="font-size:10px;background:var(--rdD);color:var(--rd);border-radius:3px;padding:1px 5px;margin-left:4px;">скрыт</span>':'';
+      var companies=(p.allowedCompanies&&p.allowedCompanies.length)?p.allowedCompanies.join(', '):'Все';
+      var compBadge=(CU&&(CU.role==='owner'||CU.role==='admin'))?'<div style="font-size:10px;color:var(--t3);">👥 '+companies+'</div>':'';
+      var dash='<span style="color:var(--t4);">—</span>';
+      var supIndex=SUP_PRODS.indexOf(p);
+      function priceCell(val,field){
+        if(!canSee) return dash;
+        return '<input class="pi" type="number" value="'+val+'" onchange="SUP_PRODS['+supIndex+'].'+field+'=parseFloat(this.value)||0;">';
+      }
+      var actionBtns='';
+      if(canSee){
+        actionBtns+=
+          '<button onclick="SUP_PRODS['+supIndex+'].hidden=!SUP_PRODS['+supIndex+'].hidden;renderSupProducts();" style="background:var(--bg3);border:1px solid var(--br);border-radius:5px;padding:3px 8px;font-size:11px;cursor:pointer;color:var(--t2);">'+(p.hidden?'👁':'🙈')+'</button>'
+         +'<button onclick="SUP_PRODS['+supIndex+'].active=!SUP_PRODS['+supIndex+'].active;renderSupProducts();" style="background:'+(p.active?'var(--rdD)':'var(--grD)')+';color:'+(p.active?'var(--rd)':'var(--gr)')+';border:1px solid '+(p.active?'var(--rd)':'var(--gr)')+';border-radius:5px;padding:3px 8px;font-size:11px;cursor:pointer;">'+(p.active?'Откл.':'Вкл.')+'</button>'
+         +'<button onclick="delSupProd('+supIndex+')" style="background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:5px;padding:3px 7px;font-size:11px;cursor:pointer;">✕</button>';
+      }
+      html.push('<tr style="'+hidStyle+'">'
+        +'<td><div style="font-weight:600;">'+p.name+hidBadge+'</div>'+compBadge+'</td>'
+        +'<td><span class="badge bb" style="font-size:11px;">'+p.cat+'</span></td>'
+        +'<td>'+priceCell(p.pKg,'pKg')+'</td>'
+        +'<td>'+priceCell(p.pSh,'pSh')+'</td>'
+        +'<td>'+priceCell(p.pL,'pL')+'</td>'
+        +'<td>'+priceCell(p.pMl,'pMl')+'</td>'
+        +'<td><span style="color:'+(p.stock<50?'var(--rd)':p.stock<100?'var(--ac)':'var(--gr)')+';">'+p.stock+'</span></td>'
+        +'<td><span class="badge '+(p.active?'bg':'bgr')+'">'+(p.active?'Активен':'Скрыт')+'</span></td>'
+        +'<td style="display:flex;gap:4px;justify-content:flex-end;">'+actionBtns+'</td>'
+        +'</tr>');
     }
     el.innerHTML=html.length ? html.join('') : '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--t3);">Ничего не найдено</td></tr>';
     if(idx < rows.length) requestAnimationFrame(paintSupProducts);
@@ -9136,105 +9137,103 @@ function _renderOrderTable(filter){
       +'color:var(--t3);padding:40px;">'+(q?'Ничего не найдено по «'+q+'»':'Введите товары в поиске выше')+'</td></tr>';
     return;
   }
-
-  tbody.innerHTML = rows.map(function(row, ri){
-    var displayItems = sups.map(function(sup){
-      var baseCell = row.cells[sup];
-      return baseCell ? _orderDisplayEntry(row.query, sup, baseCell) : null;
-    });
-    var allPrices = displayItems.map(function(item){ return item ? parseFloat(item.price) || 0 : 0; }).filter(Boolean);
-    var minP = allPrices.length ? Math.min.apply(null, allPrices) : 0;
-    var rowBg = ri%2===0 ? 'var(--bg2)' : 'var(--bg)';
-
-    var cells = sups.map(function(sup){
-      var hKey = row.query+':'+sup;
-      if(_orderHidden[hKey]){
-        return '<td style="border:1px solid var(--br);padding:6px;background:'+rowBg+';">'
-          +'<div style="text-align:center;">'
-          +'<button onclick="orderShowCell(\''+_esc(row.query)+'\',\''+_esc(sup)+'\')"'
-          +' style="font-size:10px;color:var(--t4);background:none;border:none;cursor:pointer;padding:4px;">показать</button>'
-          +'</div></td>';
-      }
-
-      var cell = row.cells[sup];
-      if(!cell){
-        return '<td style="border:1px solid var(--br);padding:8px;text-align:center;'
-          +'color:var(--t4);font-size:12px;background:'+rowBg+';">—</td>';
-      }
-
-      var currentOrderItem = _orderDisplayEntry(row.query, sup, cell);
-      var currentPrice = parseFloat(currentOrderItem ? currentOrderItem.price : cell.price) || 0;
-      var isBest = currentPrice && currentPrice===minP && allPrices.length>1;
-      var cellBg = isBest ? 'var(--grD)' : rowBg;
-      var currentCartItem = _orderCartEntryByQuery(row.query, sup);
-      var inCart = !!currentCartItem;
-      var replacedFrom = currentOrderItem && currentOrderItem.replacedFrom ? currentOrderItem.replacedFrom : '';
-      var activeBorder = inCart ? 'var(--ac)' : (isBest ? 'var(--gr)' : 'var(--br)');
-      var activeBg = inCart ? 'rgba(91,163,245,.11)' : cellBg;
-
-      return '<td data-order-row="'+_cssAttrVal(row.query)+'" data-order-sup="'+_cssAttrVal(sup)+'" style="padding:6px 8px;border:1px solid '+activeBorder+';'
-        +'background:'+activeBg+';vertical-align:top;position:relative;">'
-        // Метка лучшей цены
-        +(isBest?'<div style="position:absolute;top:0;right:0;background:var(--gr);color:#fff;'
-          +'font-size:9px;font-weight:700;padding:2px 6px;border-radius:0 0 0 4px;">лучшая</div>':'')
-        +(inCart?'<div style="position:absolute;top:0;left:0;background:var(--ac);color:#fff;'
-          +'font-size:9px;font-weight:700;padding:2px 6px;border-radius:0 0 4px 0;">в корзине</div>':'')
-        // Карточка товара
-        +'<div style="font-size:11px;color:var(--t3);margin-bottom:2px;padding-right:'+(isBest?'36':'0')+'px;'
-          +(inCart?'font-weight:700;color:var(--ac);':'')+'">'
+  var token = ++_ordersRenderToken;
+  tbody.innerHTML='<tr><td colspan="'+(sups.length+1)+'" style="text-align:center;color:var(--t3);padding:24px;">Загрузка таблицы…</td></tr>';
+  var idx=0;
+  var batch=6;
+  var html=[];
+  thead.innerHTML = '<tr style="background:var(--bg3);">'
+    +'<th style="padding:10px 14px;text-align:left;font-size:12px;font-weight:700;'
+    +'border:1px solid var(--br);min-width:160px;position:sticky;left:0;background:var(--bg3);z-index:2;">Наименование</th>'
+    + sups.map(function(s){
+        return '<th style="padding:10px 12px;text-align:center;font-size:12px;font-weight:700;'
+          +'border:1px solid var(--br);min-width:180px;">'+s+'</th>';
+      }).join('')
+    +'</tr>';
+  (function paintOrderRows(){
+    if(token !== _ordersRenderToken) return;
+    var end=Math.min(idx+batch, rows.length);
+    for(; idx<end; idx++){
+      var row=rows[idx];
+      var displayItems = sups.map(function(sup){
+        var baseCell = row.cells[sup];
+        return baseCell ? _orderDisplayEntry(row.query, sup, baseCell) : null;
+      });
+      var allPrices = displayItems.map(function(item){ return item ? parseFloat(item.price) || 0 : 0; }).filter(Boolean);
+      var minP = allPrices.length ? Math.min.apply(null, allPrices) : 0;
+      var rowBg = idx%2===0 ? 'var(--bg2)' : 'var(--bg)';
+      var cells = sups.map(function(sup){
+        var hKey = row.query+':'+sup;
+        if(_orderHidden[hKey]){
+          return '<td style="border:1px solid var(--br);padding:6px;background:'+rowBg+';">'
+            +'<div style="text-align:center;">'
+            +'<button onclick="orderShowCell(\''+_esc(row.query)+'\',\''+_esc(sup)+'\')"'
+            +' style="font-size:10px;color:var(--t4);background:none;border:none;cursor:pointer;padding:4px;">показать</button>'
+            +'</div></td>';
+        }
+        var cell = row.cells[sup];
+        if(!cell){
+          return '<td style="border:1px solid var(--br);padding:8px;text-align:center;'
+            +'color:var(--t4);font-size:12px;background:'+rowBg+';">—</td>';
+        }
+        var currentOrderItem = _orderDisplayEntry(row.query, sup, cell);
+        var currentPrice = parseFloat(currentOrderItem ? currentOrderItem.price : cell.price) || 0;
+        var isBest = currentPrice && currentPrice===minP && allPrices.length>1;
+        var cellBg = isBest ? 'var(--grD)' : rowBg;
+        var currentCartItem = _orderCartEntryByQuery(row.query, sup);
+        var inCart = !!currentCartItem;
+        var replacedFrom = currentOrderItem && currentOrderItem.replacedFrom ? currentOrderItem.replacedFrom : '';
+        var activeBorder = inCart ? 'var(--ac)' : (isBest ? 'var(--gr)' : 'var(--br)');
+        var activeBg = inCart ? 'rgba(91,163,245,.11)' : cellBg;
+        return '<td data-order-row="'+_cssAttrVal(row.query)+'" data-order-sup="'+_cssAttrVal(sup)+'" style="padding:6px 8px;border:1px solid '+activeBorder+';'
+          +'background:'+activeBg+';vertical-align:top;position:relative;">'
+          +(isBest?'<div style="position:absolute;top:0;right:0;background:var(--gr);color:#fff;'
+            +'font-size:9px;font-weight:700;padding:2px 6px;border-radius:0 0 0 4px;">лучшая</div>':'')
+          +(inCart?'<div style="position:absolute;top:0;left:0;background:var(--ac);color:#fff;'
+            +'font-size:9px;font-weight:700;padding:2px 6px;border-radius:0 0 4px 0;">в корзине</div>':'')
+          +'<div style="font-size:11px;color:var(--t3);margin-bottom:2px;padding-right:'+(isBest?'36':'0')+'px;'
+            +(inCart?'font-weight:700;color:var(--ac);':'')+'">'
+            +(replacedFrom
+              ? '<span style="display:inline-block;padding:2px 6px;margin-right:6px;border-radius:999px;background:var(--orD);color:var(--or);font-size:9px;font-weight:800;">замена</span>'
+              : '')
+            +(currentOrderItem ? currentOrderItem.name : cell.item.name)
+          +'</div>'
           +(replacedFrom
-            ? '<span style="display:inline-block;padding:2px 6px;margin-right:6px;border-radius:999px;background:var(--orD);color:var(--or);font-size:9px;font-weight:800;">замена</span>'
+            ? '<div style="font-size:10px;color:var(--or);font-weight:800;margin-bottom:3px;line-height:1.35;">'
+              +'было: '+_esc(replacedFrom)+'<br>стало: '+_esc(currentOrderItem.name)
+              +'</div>'
             : '')
-          +(currentOrderItem ? currentOrderItem.name : cell.item.name)
-        +'</div>'
-        +(replacedFrom
-          ? '<div style="font-size:10px;color:var(--or);font-weight:800;margin-bottom:3px;line-height:1.35;">'
-            +'было: '+_esc(replacedFrom)+'<br>стало: '+_esc(currentOrderItem.name)
-            +'</div>'
-          : '')
-        +'<div style="font-size:15px;font-weight:800;color:'+(isBest?'var(--gr)':'var(--ac)')+';margin-bottom:6px;">'
-          +'₽'+_fmtPrice(currentPrice)
-          +'<span style="font-size:11px;font-weight:400;color:var(--t3);"> / '+(currentOrderItem ? currentOrderItem.unit : cell.item.unit)+'</span>'
-        +'</div>'
-        // Кнопки
-        +'<div style="display:flex;gap:4px;align-items:center;">'
-          // Лупа
-          +'<button onclick="openOrderSupSearch(\''+_esc(row.query)+'\',\''+_esc(sup)+'\')"'
-            +' title="Поиск в прайсе '+sup+'"'
-            +' style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);'
-              +'padding:4px 7px;font-size:13px;cursor:pointer;">🔍</button>'
-          +'<button onclick="_orderToggleInvoiceGroup(\''+_esc(row.query)+'\',\''+_esc(sup)+'\')"'
-            +' title="Переключить на доп. накладную"'
-            +' style="background:'+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--orD)':'var(--bg2)')+';color:'+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--or)':'var(--t2)')+';'
-              +'border:1px solid '+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--or)':'var(--br)')+';border-radius:var(--r);'
-              +'padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">'
-            +((currentOrderItem && currentOrderItem.invoiceGroup==='extra')?'Доп. накладная':'Основная')
-          +'</button>'
-          // В корзину / В корзине
-          +(inCart
-            ?'<button onclick="orderRemove(\''+_esc(currentCartItem.name)+'\',\''+_esc(sup)+'\',\''+_esc(row.query)+'\')"'
-               +' style="flex:1;background:var(--ac);color:#fff;border:none;border-radius:var(--r);'
-                 +'padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">✓ В заказе</button>'
-            :'<button onclick="orderAddFromTable(\''+_esc(row.query)+'\',\''+_esc(currentOrderItem.name)+'\',\''+_esc(sup)+'\','+currentOrderItem.price+',\''+_esc(currentOrderItem.unit)+'\')"'
-               +' style="flex:1;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:var(--r);'
-                 +'padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;" title="+ В заказ">🛒 В заказ</button>')
-          // Скрыть
-          +'<button onclick="orderHideCell(\''+_esc(row.query)+'\',\''+_esc(sup)+'\')"'
-            +' title="Скрыть от закупщика"'
-            +' style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);'
-              +'padding:4px 6px;font-size:11px;cursor:pointer;color:var(--t4);">✕</button>'
-        +'</div>'
-      +'</td>';
-    }).join('');
-
-    return '<tr data-query="'+_esc(row.query)+'">'
-      +'<td style="border:1px solid var(--br);padding:10px 14px;font-size:13px;font-weight:700;'
-        +'position:sticky;left:0;background:'+rowBg+';z-index:1;vertical-align:middle;">'
+          +'<div style="font-size:15px;font-weight:800;color:'+(isBest?'var(--gr)':'var(--ac)')+';margin-bottom:6px;">'
+            +'₽'+_fmtPrice(currentPrice)
+            +'<span style="font-size:11px;font-weight:400;color:var(--t3);"> / '+(currentOrderItem ? currentOrderItem.unit : cell.item.unit)+'</span>'
+          +'</div>'
+          +'<div style="display:flex;gap:4px;align-items:center;">'
+            +'<button onclick="openOrderSupSearch(\''+_esc(row.query)+'\',\''+_esc(sup)+'\')"'
+              +' title="Поиск в прайсе '+sup+'"'
+              +' style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);padding:4px 7px;font-size:13px;cursor:pointer;">🔍</button>'
+            +'<button onclick="_orderToggleInvoiceGroup(\''+_esc(row.query)+'\',\''+_esc(sup)+'\')"'
+              +' title="Переключить на доп. накладную"'
+              +' style="background:'+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--orD)':'var(--bg2)')+';color:'+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--or)':'var(--t2)')+';'
+                +'border:1px solid '+(currentOrderItem && currentOrderItem.invoiceGroup==='extra'?'var(--or)':'var(--br)')+';border-radius:var(--r);padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">'
+              +((currentOrderItem && currentOrderItem.invoiceGroup==='extra')?'Доп. накладная':'Основная')
+            +'</button>'
+            +(inCart
+              ?'<button onclick="orderRemove(\''+_esc(currentCartItem.name)+'\',\''+_esc(sup)+'\',\''+_esc(row.query)+'\')" style="flex:1;background:var(--ac);color:#fff;border:none;border-radius:var(--r);padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">✓ В заказе</button>'
+              :'<button onclick="orderAddFromTable(\''+_esc(row.query)+'\',\''+_esc(currentOrderItem.name)+'\',\''+_esc(sup)+'\','+currentOrderItem.price+',\''+_esc(currentOrderItem.unit)+'\')" style="flex:1;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:var(--r);padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;" title="+ В заказ">🛒 В заказ</button>')
+            +'<button onclick="orderHideCell(\''+_esc(row.query)+'\',\''+_esc(sup)+'\')" title="Скрыть от закупщика" style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r);padding:4px 6px;font-size:11px;cursor:pointer;color:var(--t4);">✕</button>'
+          +'</div>'
+        +'</td>';
+      }).join('');
+      html.push('<tr data-query="'+_esc(row.query)+'">'
+        +'<td style="border:1px solid var(--br);padding:10px 14px;font-size:13px;font-weight:700;position:sticky;left:0;background:'+rowBg+';z-index:1;vertical-align:middle;">'
         +row.query
-      +'</td>'
-      +cells
-      +'</tr>';
-  }).join('');
+        +'</td>'
+        +cells
+        +'</tr>');
+    }
+    tbody.innerHTML = html.join('');
+    if(idx < rows.length) requestAnimationFrame(paintOrderRows);
+  })();
 }
 
 // Собрать строки для таблицы
