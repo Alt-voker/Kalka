@@ -185,7 +185,7 @@ function dbLoad(callback){
     if(xhr.status===200){
       try{
         var d = JSON.parse(xhr.responseText);
-        if(d && Array.isArray(d.users) && Array.isArray(d.restaurants)){
+        if(d && Array.isArray(d.users)){
           d = _migrateOwner(d);
           _dbCache = d;
           // Загрузить прайсы и каталог из Firebase если есть
@@ -296,7 +296,7 @@ function _getLocal(){
     var r = localStorage.getItem('pv_cache');
     if(r){
       var d=JSON.parse(r);
-      if(d&&Array.isArray(d.users) && Array.isArray(d.restaurants) && Number(d.__clientStateVersion||0)===2) return d;
+      if(d&&Array.isArray(d.users) && Number(d.__clientStateVersion||0)===2) return d;
     }
   }catch(e){}
   return _getDefaults();
@@ -573,7 +573,7 @@ function doLogin(){
   xhr.open('GET',_FB_URL,true); xhr.timeout=7000;
   xhr.onload=function(){
     if(xhr.status===200){
-      try{var d=JSON.parse(xhr.responseText);if(d&&Array.isArray(d.users)&&Array.isArray(d.restaurants)){_dbCache=d;try{localStorage.setItem('pv_cache',JSON.stringify(d));}catch(e){}check(d);return;}}catch(e){}
+      try{var d=JSON.parse(xhr.responseText);if(d&&Array.isArray(d.users)){_dbCache=d;try{localStorage.setItem('pv_cache',JSON.stringify(d));}catch(e){}check(d);return;}}catch(e){}
     }
     check(dbGet());
   };
@@ -2619,24 +2619,6 @@ function ownerDistinctCompanies(db){
     var name=(u&&u.company||'').trim();
     if(name) map[name.toLowerCase()]=name;
   });
-  (db.restaurants||[]).forEach(function(rest){
-    var names=[
-      rest&&rest.brandName,
-      rest&&rest.legalName,
-      rest&&rest.name,
-      rest&&rest.organizationId
-    ].map(function(v){ return String(v||'').trim(); }).filter(Boolean);
-    names.forEach(function(name){
-      map[name.toLowerCase()]=name;
-    });
-  });
-  if(db.companySettings){
-    Object.keys(db.companySettings).forEach(function(key){
-      var item=db.companySettings[key]||{};
-      var title=String(item.title||item.name||key||'').trim();
-      if(title) map[title.toLowerCase()]=title;
-    });
-  }
   return Object.keys(map).map(function(k){return map[k];});
 }
 
@@ -3303,7 +3285,7 @@ function submitCreateUser(forceCreate){
   xhr.open('GET',_FB_URL,true); xhr.timeout=6000;
   xhr.onload=function(){
     var fresh=null;
-    if(xhr.status===200){try{var d=JSON.parse(xhr.responseText);if(d&&Array.isArray(d.users)&&Array.isArray(d.restaurants)){fresh=d;_dbCache=d;try{localStorage.setItem('pv_cache',JSON.stringify(d));}catch(e){}}}catch(e){}}
+    if(xhr.status===200){try{var d=JSON.parse(xhr.responseText);if(d&&Array.isArray(d.users)){fresh=d;_dbCache=d;try{localStorage.setItem('pv_cache',JSON.stringify(d));}catch(e){}}}catch(e){}}
     create(fresh||dbGet());
   };
   xhr.ontimeout=xhr.onerror=function(){create(dbGet());};
