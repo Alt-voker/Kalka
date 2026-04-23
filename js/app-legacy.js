@@ -633,7 +633,11 @@ function setupUI(u){
   renderOrgInviteBadge();
   var firstPage=((ROLES[u.role]||{}).pages||[]).find(function(pg){ return canAccessPage(u, pg); })||'dashboard';
   if(!canAccessPage(u, firstPage)) firstPage='orders';
-  goPage(firstPage);
+  setTimeout(function(){
+    requestAnimationFrame(function(){
+      goPage(firstPage);
+    });
+  }, 0);
   renderDemoG();
 }
 function doLogout(){

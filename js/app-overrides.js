@@ -91,6 +91,18 @@
     return normalized;
   }
 
+  function markLoginStage(stage, extra) {
+    try {
+      if (!window.__loginPerf) window.__loginPerf = [];
+      window.__loginPerf.push({
+        ts: Date.now(),
+        stage: stage,
+        extra: extra || ''
+      });
+      if (window.__loginPerf.length > 20) window.__loginPerf.shift();
+    } catch (error) {}
+  }
+
   function readLocalState() {
     try {
       var raw = localStorage.getItem(LOCAL_DB_KEY) || localStorage.getItem('pv_cache');
@@ -246,6 +258,31 @@
 
     upsertUserInDb(user);
     return user;
+  }
+
+  function fastResolveAppUser(authUser) {
+    var db = ensureArrays(window._dbCache || readLocalState() || getDefaults());
+    var existing = db.users.find(function (item) {
+      return item && item.email && item.email.toLowerCase() === String(authUser.email || '').toLowerCase();
+    });
+    var meta = authUser.user_metadata || {};
+    var first = (existing && existing.first) || meta.first_name || meta.first || 'Пользователь';
+    var last = (existing && existing.last) || meta.last_name || meta.last || '';
+    var company = (existing && existing.company) || meta.company || 'КальКа';
+    var role = (existing && existing.role) || meta.role || meta.app_role || 'manager';
+    var status = (existing && existing.status) || 'active';
+
+    return Object.assign({}, existing || {}, {
+      id: authUser.id,
+      first: first,
+      last: last,
+      company: company,
+      email: String(authUser.email || '').toLowerCase(),
+      role: role,
+      status: status,
+      ev: existing && typeof existing.ev !== 'undefined' ? existing.ev : true,
+      created: (existing && existing.created) || new Date().toISOString().slice(0, 10)
+    });
   }
 
   function bindAuthListener() {
@@ -404,6 +441,7 @@
     }
 
     try {
+      markLoginStage('login:start', email);
       bindAuthListener();
       var client = app.supabase.getClient();
       var response = await client.auth.signInWithPassword({ email: email, password: password });
@@ -411,8 +449,10 @@
         throw response.error;
       }
 
-      await hydrateStateFromSupabase();
-      var user = await resolveAppUser(response.data.user);
+      var authUser = (response.data && response.data.user) || (response.data && response.data.session && response.data.session.user) || null;
+      var user = authUser ? fastResolveAppUser(authUser) : null;
+      if (!user) throw new Error('Не удалось определить пользователя');
+      markLoginStage('login:auth-ok', user.email || '');
       if (user.status === 'blocked') {
         await client.auth.signOut();
         if (errEl) errEl.textContent = 'Аккаунт заблокирован';
@@ -429,6 +469,26 @@
         return;
       }
       if (typeof window.enterApp === 'function') window.enterApp(user);
+
+      setTimeout(function () {
+        hydrateStateFromSupabase().then(function (loaded) {
+          if (!loaded) return;
+          try { markLoginStage('login:state-hydrated', 'ok'); } catch (error) {}
+        }).catch(function (error) {
+          console.error('Deferred state hydrate after login failed:', error);
+        });
+      }, 0);
+
+      setTimeout(function () {
+        resolveAppUser(authUser).then(function (resolvedUser) {
+          if (!resolvedUser) return;
+          if (typeof window.CU !== 'undefined' && window.CU && window.CU.id === resolvedUser.id) {
+            window.CU = Object.assign({}, window.CU, resolvedUser);
+          }
+        }).catch(function (error) {
+          console.error('Deferred user resolve after login failed:', error);
+        });
+      }, 0);
     } catch (error) {
       if (errEl) errEl.textContent = error && error.message ? error.message : 'Ошибка входа';
     } finally {
@@ -702,13 +762,22 @@
         return false;
       }
 
-      await hydrateStateFromSupabase();
-      var user = await resolveAppUser(response.data.session.user);
+      var user = fastResolveAppUser(response.data.session.user);
       var currentUser = null;
       try { currentUser = CU; } catch (error) { currentUser = window.CU || null; }
       if (typeof window.enterApp === 'function' && (!currentUser || currentUser.id !== user.id)) {
         window.enterApp(user);
       }
+      setTimeout(function () {
+        hydrateStateFromSupabase().catch(function (error) {
+          console.error('Deferred state hydrate after restore failed:', error);
+        });
+      }, 0);
+      setTimeout(function () {
+        resolveAppUser(response.data.session.user).catch(function (error) {
+          console.error('Deferred user resolve after restore failed:', error);
+        });
+      }, 0);
       restoreInFlight = false;
       return true;
     }
