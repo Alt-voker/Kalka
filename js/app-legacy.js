@@ -456,6 +456,8 @@ function dbLoad(callback){
           _dashboardOrdersCache = { key:'', orders:[] };
           _productCategoryCache = { key:'', byName:{} };
           _visibleOrdersCache = { key:'', orders:[] };
+          _techCardsRenderCache = { key:'', html:'' };
+          _tenderAffCache = { key:'', byPid:{} };
           if(callback) callback();
           return;
         }
@@ -487,6 +489,8 @@ function dbLoad(callback){
     _dashboardOrdersCache = { key:'', orders:[] };
     _productCategoryCache = { key:'', byName:{} };
     _visibleOrdersCache = { key:'', orders:[] };
+    _techCardsRenderCache = { key:'', html:'' };
+    _tenderAffCache = { key:'', byPid:{} };
     if(callback) callback();
   };
   xhr.ontimeout = xhr.onerror = function(){
@@ -509,6 +513,8 @@ function dbLoad(callback){
     _dashboardOrdersCache = { key:'', orders:[] };
     _productCategoryCache = { key:'', byName:{} };
     _visibleOrdersCache = { key:'', orders:[] };
+    _techCardsRenderCache = { key:'', html:'' };
+    _tenderAffCache = { key:'', byPid:{} };
     if(callback) callback();
   };
   xhr.send();
@@ -577,6 +583,8 @@ function dbSet(d){
   _dashboardOrdersCache = { key:'', orders:[] };
   _productCategoryCache = { key:'', byName:{} };
   _visibleOrdersCache = { key:'', orders:[] };
+  _techCardsRenderCache = { key:'', html:'' };
+  _tenderAffCache = { key:'', byPid:{} };
   try{ localStorage.setItem('pv_cache', JSON.stringify(d)); }catch(e){}
   _writeToFirebase(d, null);
 }
@@ -1354,6 +1362,10 @@ var _ordersRenderToken = 0;
 var _analyticsRenderToken = 0;
 var _dashRenderToken = 0;
 var _dashChartCache = { key:'', html:'' };
+var _techCardsRenderToken = 0;
+var _techCardsRenderCache = { key:'', html:'' };
+var _tenderRenderToken = 0;
+var _tenderAffCache = { key:'', byPid:{} };
 
 function renderSupSel(){}
 function togSup(){ renderCatalog(); }
@@ -2405,8 +2417,39 @@ function renderTender(){
   var _tdl=document.getElementById('tDateLbl');if(_tdl)_tdl.textContent=tenderLoaded?'Тендер от '+today():'Не загружен';
   const body=document.getElementById('tBody');if(!body)return;
   if(!tenderLoaded){body.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:40px;">Загрузите тендер</td></tr>';return;}
-  const affD=pid=>TECH_CARDS.filter(tc=>tc.ings.some(i=>i.pid===pid)).map(tc=>tc.name);
-  body.innerHTML=tenderChanges.map(t=>{const diff=t.newPrice-t.oldPrice,isUp=diff>0,pct=Math.round(Math.abs(diff)/t.oldPrice*100);const prod=PRODUCTS.find(p=>p.id===t.pid);const alt=prod?prod.suppliers.filter(s=>s.name!==t.sup).sort((a,b)=>a.price-b.price)[0]:null;const dishes=affD(t.pid);return`<tr><td><b>${t.name}</b></td><td>${t.sup}</td><td>₽${t.oldPrice.toLocaleString()}</td><td><b>₽${t.newPrice.toLocaleString()}</b></td><td style="color:${isUp?'var(--rd)':'var(--gr)'};font-weight:700;">${isUp?'▲ +':'▼ −'}${pct}%<br><small class="c3">₽${Math.abs(diff).toLocaleString()}</small></td><td>${dishes.map(d=>`<span class="badge ${isUp?'br':'bg'}" style="margin-right:3px;">${d}</span>`).join('')||'<span class="c3 fs11">—</span>'}</td><td>${isUp&&alt?`<span class="badge bb">💡 ${alt.name} ₽${alt.price.toLocaleString()}</span>`:'<span class="c3 fs11">—</span>'}</td></tr>`;}).join('');
+  var token = ++_tenderRenderToken;
+  var affSig = String(_catalogDataRevision || 0) + '::' + String((TECH_CARDS||[]).length || 0);
+  if(_tenderAffCache.key !== affSig){
+    var byPid = {};
+    TECH_CARDS.forEach(function(tc){
+      (tc.ings||[]).forEach(function(ing){
+        if(!ing || !ing.pid) return;
+        if(!byPid[ing.pid]) byPid[ing.pid]=[];
+        if(byPid[ing.pid].indexOf(tc.name)<0) byPid[ing.pid].push(tc.name);
+      });
+    });
+    _tenderAffCache = { key:affSig, byPid:byPid };
+  }
+  body.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:18px;">Загрузка тендера…</td></tr>';
+  var rows=tenderChanges.slice();
+  var idx=0;
+  var html=[];
+  (function paintTenderRows(){
+    if(token !== _tenderRenderToken) return;
+    var end=Math.min(idx+8, rows.length);
+    for(; idx<end; idx++){
+      var t=rows[idx];
+      var diff=t.newPrice-t.oldPrice,isUp=diff>0,pct=Math.round(Math.abs(diff)/t.oldPrice*100);
+      var prod=PRODUCTS.find(function(p){ return p.id===t.pid; });
+      var alt=prod?prod.suppliers.filter(function(s){ return s.name!==t.sup; }).sort(function(a,b){return a.price-b.price;})[0]:null;
+      var dishes=(_tenderAffCache.byPid[t.pid]||[]);
+      html.push('<tr><td><b>'+t.name+'</b></td><td>'+t.sup+'</td><td>₽'+t.oldPrice.toLocaleString()+'</td><td><b>₽'+t.newPrice.toLocaleString()+'</b></td><td style="color:'+(isUp?'var(--rd)':'var(--gr)')+';font-weight:700;">'+(isUp?'▲ +':'▼ −')+pct+'%<br><small class="c3">₽'+Math.abs(diff).toLocaleString()+'</small></td><td>'+(dishes.length?dishes.map(function(d){return'<span class="badge '+(isUp?'br':'bg')+'" style="margin-right:3px;">'+d+'</span>';}).join(''):'<span class="c3 fs11">—</span>')+'</td><td>'+(isUp&&alt?'<span class="badge bb">💡 '+alt.name+' ₽'+alt.price.toLocaleString()+'</span>':'<span class="c3 fs11">—</span>')+'</td></tr>');
+    }
+    body.innerHTML=html.length ? html.join('') : '<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:18px;">Нет данных</td></tr>';
+    if(idx < rows.length){
+      requestAnimationFrame(paintTenderRows);
+    }
+  })();
 }
 function exportTender(){if(!tenderLoaded){toast('Загрузите тендер','err');return;}dlFile('Продукт,Поставщик,Старая цена,Новая цена\n'+tenderChanges.map(t=>`${t.name},${t.sup},${t.oldPrice},${t.newPrice}`).join('\n'),'text/csv','tender.csv');toast('📥 Тендер экспортирован','ok');}
 function calcTCC(tc,useTender=true){return Math.round(tc.ings.reduce((s,ing)=>{const bP=useTender?curP(ing.pid):(()=>{const p=PRODUCTS.find(x=>x.id===ing.pid);return p?minP(p):0;})();const uP=ing.unit==='мл'?bP/1000:ing.unit==='л'?bP:bP/1000;return s+uP*ing.qty;},0));}
@@ -2428,17 +2471,37 @@ function renderTechCards(){
   const el=document.getElementById('tcGrid');if(!el)return;const list=tcFilter==='all'?TECH_CARDS:TECH_CARDS.filter(t=>t.cat===tcFilter);
   const catM={hot:{e:'🍲',l:'Горячее'},cold:{e:'🥗',l:'Холодное'},dessert:{e:'🍮',l:'Десерт'},drinks:{e:'🍸',l:'Напиток'},alcohol:{e:'🍷',l:'Алкоголь'},coffee:{e:'☕',l:'Кофе/чай'}};
   if(!list.length){el.innerHTML='<div class="empty" style="grid-column:1/-1"><div class="empty-ico">📋</div><div class="empty-txt">Нет тех. карт</div><button class="empty-btn" onclick="openModal(\'newTC\')">Создать</button></div>';return;}
-  el.innerHTML=list.map(tc=>{
-    const cost=calcTCC(tc,true),oldC=calcTCC(tc,false),diff=cost-oldC;const sell=Math.round(cost*(1+tc.markup/100));
-    const hasC=tenderLoaded&&diff!==0,pct=oldC>0?Math.round(Math.abs(diff)/oldC*100):0;const m=catM[tc.cat]||{e:'',l:tc.cat};
-    return`<div class="tc" style="${hasC&&diff>0?'border-color:rgba(239,83,80,.3);':''}">
-      <div class="tc-hd"><div><div class="tc-name">${tc.name}</div><div class="tc-meta">${m.e} ${m.l} · Вход ${tc.inputG}г → Выход ${tc.yieldG}г (потери ${tc.lossP}%)</div></div>
-        <div class="tc-cost"><div class="tc-cost-lbl">Себестоимость</div><div class="tc-cost-val" style="color:${hasC&&diff>0?'var(--rd)':hasC&&diff<0?'var(--gr)':'var(--ac)'};">₽${cost}</div>${hasC?`<div class="tc-delta" style="color:${diff>0?'var(--rd)':'var(--gr)'};">${diff>0?'▲':'▼'} ${pct}% (${diff>0?'+':''}₽${diff})</div>`:''}</div></div>
-      <div class="tc-bd">${tc.ings.map(ing=>{const pp=curP(ing.pid),ic=Math.round((pp/(ing.unit==='мл'?1000:ing.unit==='л'?1:1000))*ing.qty);const chg=tenderChanges.find(t=>t.pid===ing.pid);const pn=PRODUCTS.find(p=>p.id===ing.pid)?.name||'?';return`<div class="tc-ir"><span class="tc-in">${pn}</span><span class="tc-iq">${ing.qty}${ing.unit}</span><span class="tc-ic" style="${chg?(chg.newPrice>chg.oldPrice?'color:var(--rd)':'color:var(--gr)'):''}">₽${ic}</span></div>`;}).join('')}</div>
-      <div class="tc-ft"><span class="c3">Цена продажи ×${(tc.markup/100+1).toFixed(1)}</span><span style="color:var(--ac);font-weight:700;">₽${sell.toLocaleString()}</span>
-        <div style="display:flex;gap:5px;"><button onclick="openEditTC(${tc.id})" style="background:var(--aD);border:1px solid rgba(200,240,80,.2);border-radius:5px;padding:3px 8px;color:var(--ac);font-size:11px;cursor:pointer;font-weight:600;">✏️</button><button onclick="dlTC(${tc.id})" style="background:var(--blD);border:1px solid rgba(79,195,247,.2);border-radius:5px;padding:3px 8px;color:var(--bl);font-size:11px;cursor:pointer;">📥</button></div>
-      </div></div>`;
-  }).join('');
+  var token = ++_techCardsRenderToken;
+  var sig = String(_catalogDataRevision || 0) + '::' + String((TECH_CARDS||[]).length || 0) + '::' + String(tenderLoaded ? 1 : 0) + '::' + String((tenderChanges||[]).length || 0) + '::' + String(tcFilter||'all');
+  if(_techCardsRenderCache.key === sig && _techCardsRenderCache.html){
+    el.innerHTML = _techCardsRenderCache.html;
+    return;
+  }
+  el.innerHTML='<div style="padding:16px;color:var(--t3);font-size:12px;">Загрузка тех. карт…</div>';
+  var idx=0;
+  var html=[];
+  (function paintTechCards(){
+    if(token !== _techCardsRenderToken) return;
+    var end=Math.min(idx+4, list.length);
+    for(; idx<end; idx++){
+      var tc=list[idx];
+      var cost=calcTCC(tc,true),oldC=calcTCC(tc,false),diff=cost-oldC;var sell=Math.round(cost*(1+tc.markup/100));
+      var hasC=tenderLoaded&&diff!==0,pct=oldC>0?Math.round(Math.abs(diff)/oldC*100):0;var m=catM[tc.cat]||{e:'',l:tc.cat};
+      html.push('<div class="tc" style="'+(hasC&&diff>0?'border-color:rgba(239,83,80,.3);':'')+'">'
+        +'<div class="tc-hd"><div><div class="tc-name">'+tc.name+'</div><div class="tc-meta">'+m.e+' '+m.l+' · Вход '+tc.inputG+'г → Выход '+tc.yieldG+'г (потери '+tc.lossP+'%)</div></div>'
+        +'<div class="tc-cost"><div class="tc-cost-lbl">Себестоимость</div><div class="tc-cost-val" style="color:'+(hasC&&diff>0?'var(--rd)':hasC&&diff<0?'var(--gr)':'var(--ac)')+';">₽'+cost+'</div>'+(hasC?'<div class="tc-delta" style="color:'+(diff>0?'var(--rd)':'var(--gr)')+';">'+(diff>0?'▲':'▼')+' '+pct+'% ('+(diff>0?'+':'')+'₽'+diff+')</div>':'')+'</div></div>'
+        +'<div class="tc-bd">'+tc.ings.map(function(ing){var pp=curP(ing.pid),ic=Math.round((pp/(ing.unit==='мл'?1000:ing.unit==='л'?1:1000))*ing.qty);var chg=tenderChanges.find(function(t){return t.pid===ing.pid;});var pn=PRODUCTS.find(function(p){return p.id===ing.pid;})?.name||'?';return'<div class="tc-ir"><span class="tc-in">'+pn+'</span><span class="tc-iq">'+ing.qty+ing.unit+'</span><span class="tc-ic" style="'+(chg?(chg.newPrice>chg.oldPrice?'color:var(--rd)':'color:var(--gr)'):'')+'">₽'+ic+'</span></div>';}).join('')+'</div>'
+        +'<div class="tc-ft"><span class="c3">Цена продажи ×'+(tc.markup/100+1).toFixed(1)+'</span><span style="color:var(--ac);font-weight:700;">₽'+sell.toLocaleString()+'</span>'
+          +'<div style="display:flex;gap:5px;"><button onclick="openEditTC('+tc.id+')" style="background:var(--aD);border:1px solid rgba(200,240,80,.2);border-radius:5px;padding:3px 8px;color:var(--ac);font-size:11px;cursor:pointer;font-weight:600;">✏️</button><button onclick="dlTC('+tc.id+')" style="background:var(--blD);border:1px solid rgba(79,195,247,.2);border-radius:5px;padding:3px 8px;color:var(--bl);font-size:11px;cursor:pointer;">📥</button></div>'
+        +'</div></div>');
+    }
+    el.innerHTML=html.join('');
+    if(idx < list.length){
+      requestAnimationFrame(paintTechCards);
+    } else {
+      _techCardsRenderCache = { key:sig, html:html.join('') };
+    }
+  })();
 }
 function addTCRow(){const i=tcRC++;const o=PRODUCTS.map(p=>`<option value="${p.id}">${p.emoji} ${p.name}</option>`).join('');const d=document.createElement('div');d.className='ir-calc';d.innerHTML=`<select class="fS" style="margin:0;font-size:12px;">${o}</select><input class="fI" type="number" value="100" style="margin:0;"><select class="fS" style="margin:0;font-size:12px;"><option>г</option><option>мл</option><option>л</option><option>шт</option></select><div></div><button class="del-btn" onclick="this.closest('.ir-calc').remove()">✕</button>`;document.getElementById('tcRows').appendChild(d);}
 function submitTC(){
