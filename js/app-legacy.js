@@ -1128,6 +1128,7 @@ function getDashboardCategoryData(orders){
 }
 function renderDash(){
   function setEl(id,v){var e=document.getElementById(id);if(e)e.innerHTML=v;}
+  var token = ++_dashRenderToken;
   var dashPeriod=parseInt(document.getElementById('dashPeriod')?.value||'6',10)||6;
   var orders=getOrdersForMonths(getDashboardOrders(), dashPeriod).slice().sort(function(a,b){
     return _parseOrderDateValue(b.date)-_parseOrderDateValue(a.date);
@@ -1178,85 +1179,111 @@ function renderDash(){
   }).join('');
   pulseHtml+='<div style="margin-top:10px;padding:10px 12px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);font-size:12px;color:var(--t2);">Активных поставщиков: <b>'+Object.keys(activeSuppliers).length+'</b> · Рисков по ценам: <b>'+atRisk+'</b> · Заказов в работе: <b>'+pendingMinCheck+'</b></div>';
   setEl('dashPulse', pulseHtml);
-  // Топ поставщики
-  var supMap={};
-  orders.forEach(function(o){
-    var sn=getOrderSupplierName(o);
-    supMap[sn]=(supMap[sn]||0)+(o.sum||0);
+  requestAnimationFrame(function(){
+    if(token !== _dashRenderToken) return;
+    var supMap={};
+    orders.forEach(function(o){
+      var sn=getOrderSupplierName(o);
+      supMap[sn]=(supMap[sn]||0)+(o.sum||0);
+    });
+    var tops=Object.entries(supMap).sort(function(a,b){return b[1]-a[1];}).slice(0,5);
+    setEl('dashTopSup', tops.length ? tops.map(function(x){
+      var pct=tops[0][1]?Math.round(x[1]/tops[0][1]*100):0;
+      return '<div style="margin-bottom:8px;">'
+        +'<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">'
+        +'<span>'+x[0]+'</span><span style="font-weight:700;">₽'+Math.round(x[1]/1000)+'к</span></div>'
+        +'<div style="background:var(--bg3);border-radius:3px;height:5px;">'
+        +'<div style="background:var(--ac);border-radius:3px;height:5px;width:'+pct+'%;"></div>'
+        +'</div></div>';
+    }).join('') : '<div style="color:var(--t3);font-size:12px;padding:10px;">Нет данных о заказах</div>');
   });
-  var tops=Object.entries(supMap).sort(function(a,b){return b[1]-a[1];}).slice(0,5);
-  setEl('dashTopSup', tops.length ? tops.map(function(x){
-    var pct=tops[0][1]?Math.round(x[1]/tops[0][1]*100):0;
-    return '<div style="margin-bottom:8px;">'
-      +'<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">'
-      +'<span>'+x[0]+'</span><span style="font-weight:700;">₽'+Math.round(x[1]/1000)+'к</span></div>'
-      +'<div style="background:var(--bg3);border-radius:3px;height:5px;">'
-      +'<div style="background:var(--ac);border-radius:3px;height:5px;width:'+pct+'%;"></div>'
-      +'</div></div>';
-  }).join('') : '<div style="color:var(--t3);font-size:12px;padding:10px;">Нет данных о заказах</div>');
-  // Структура закупок
-  var catData=getDashboardCategoryData(orders).slice(0,5);
-  var catTotal=catData.reduce(function(sum,item){ return sum+item.sum; },0);
-  setEl('dashStructure', catData.length?catData.map(function(item){
-    var pct=catTotal?Math.round(item.sum/catTotal*100):0;
-    return '<div style="margin-bottom:10px;">'
-      +'<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;"><span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+item.color+';margin-right:6px;"></span>'+item.label+'</span><span style="font-weight:700;">'+pct+'%</span></div>'
-      +'<div style="background:var(--bg3);border-radius:999px;height:7px;overflow:hidden;"><div style="height:7px;border-radius:999px;background:'+item.color+';width:'+pct+'%;"></div></div>'
-      +'</div>';
-  }).join(''):'<div style="color:var(--t3);font-size:12px;padding:10px;">Пока недостаточно данных для структуры закупок</div>');
-  // Изменения цен / экономия
-  var changes=(typeof tenderChanges!=='undefined'&&Array.isArray(tenderChanges))?tenderChanges:[];
-  setEl('dashSavings', changes.length ?
-    '<div style="padding:10px 12px;margin-bottom:10px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);font-size:12px;color:var(--t2);">Потенциальная экономия: <b style="color:var(--gr);">₽'+Math.round(tenderSavings).toLocaleString()+'</b> · Ростов цен: <b style="color:var(--rd);">'+atRisk+'</b></div>'
-    +changes.slice(0,5).map(function(t){
-      var diff=t.newPrice-t.oldPrice,isUp=diff>0;
-      var pct=t.oldPrice?Math.round(Math.abs(diff)/t.oldPrice*100):0;
-      return '<div style="display:flex;justify-content:space-between;padding:6px 0;'
-        +'border-bottom:1px solid var(--br);font-size:12px;">'
-        +'<span>'+t.name+' ('+t.sup+')</span>'
-        +'<span style="color:'+(isUp?'var(--rd)':'var(--gr)')+';font-weight:700;">'
-        +(isUp?'+':'')+diff.toLocaleString()+' ₽ ('+pct+'%)</span></div>';
-    }).join('')
-    : '<div style="color:var(--t3);font-size:12px;padding:10px;">Загрузите тендер для анализа экономии и рисков цен</div>');
-  var orgTurnover=getOrganizationTurnoverRows(orders).slice(0,5);
-  var insights=[];
-  if(orgTurnover.length){
-    insights.push('<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:8px;">Оборот по организациям</div>'
-      +orgTurnover.map(function(row){
-        return '<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--br);font-size:12px;">'
-          +'<span>'+row[0]+'</span><b>₽'+Math.round(row[1]).toLocaleString()+'</b></div>';
-      }).join(''));
-  }
-  if(orders.length){
-    var topSupplier=tops[0];
-    if(topSupplier) insights.push('Самый дорогой поставщик периода: <b>'+topSupplier[0]+'</b> на ₽'+Math.round(topSupplier[1]).toLocaleString());
-    if(statusCounts.processing>0) insights.push('В обработке сейчас <b>'+statusCounts.processing+'</b> заказ'+(statusCounts.processing===1?'':'ов')+'.');
-    if(extraInvoices>0) insights.push('Используется разделение на накладные: <b>'+extraInvoices+'</b> доп. накладных.');
-    if(catData[0]) insights.push('Главная категория закупки: <b>'+catData[0].label+'</b> ('+(catTotal?Math.round(catData[0].sum/catTotal*100):0)+'%).');
-  } else {
-    insights.push('По текущей точке ещё нет заказов. Начните с создания первого заказа или применения шаблона.');
-  }
-  if(atRisk>0) insights.push('После последнего тендера выросли цены по <b>'+atRisk+'</b> позициям.');
-  setEl('dashInsights', insights.map(function(text){
-    return '<div style="padding:10px 12px;margin-bottom:8px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);font-size:12px;color:var(--t2);">'+text+'</div>';
-  }).join(''));
-  // Последние заказы
-  setEl('dashOrders', orders.length ? orders.slice(0,7).map(function(o){
-    var s=SM[o.status]||['bg','—'];
-    return '<tr>'
-      +'<td>'+o.id+'</td>'
-      +'<td>'+(o.rest||'—')+'</td>'
-      +'<td>'+getOrderSupplierName(o)+'</td>'
-      +'<td>'+getOrderItemNames(o).slice(0,3).join(', ')+(getOrderItemNames(o).length>3?' ...':'')+'</td>'
-      +'<td>₽'+(o.sum||0).toLocaleString()+'</td>'
-      +'<td>'+String(o.date||'')+'</td>'
-      +'<td><span class="badge '+s[0]+'">'+s[1]+'</span></td>'
-      +'</tr>';
-  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:18px;">Заказов пока нет</td></tr>');
-  renderDashChart();
+  requestAnimationFrame(function(){
+    if(token !== _dashRenderToken) return;
+    var catData=getDashboardCategoryData(orders).slice(0,5);
+    var catTotal=catData.reduce(function(sum,item){ return sum+item.sum; },0);
+    setEl('dashStructure', catData.length?catData.map(function(item){
+      var pct=catTotal?Math.round(item.sum/catTotal*100):0;
+      return '<div style="margin-bottom:10px;">'
+        +'<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;"><span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+item.color+';margin-right:6px;"></span>'+item.label+'</span><span style="font-weight:700;">'+pct+'%</span></div>'
+        +'<div style="background:var(--bg3);border-radius:999px;height:7px;overflow:hidden;"><div style="height:7px;border-radius:999px;background:'+item.color+';width:'+pct+'%;"></div></div>'
+        +'</div>';
+    }).join(''):'<div style="color:var(--t3);font-size:12px;padding:10px;">Пока недостаточно данных для структуры закупок</div>');
+  });
+  requestAnimationFrame(function(){
+    if(token !== _dashRenderToken) return;
+    var changes=(typeof tenderChanges!=='undefined'&&Array.isArray(tenderChanges))?tenderChanges:[];
+    setEl('dashSavings', changes.length ?
+      '<div style="padding:10px 12px;margin-bottom:10px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);font-size:12px;color:var(--t2);">Потенциальная экономия: <b style="color:var(--gr);">₽'+Math.round(tenderSavings).toLocaleString()+'</b> · Ростов цен: <b style="color:var(--rd);">'+atRisk+'</b></div>'
+      +changes.slice(0,5).map(function(t){
+        var diff=t.newPrice-t.oldPrice,isUp=diff>0;
+        var pct=t.oldPrice?Math.round(Math.abs(diff)/t.oldPrice*100):0;
+        return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--br);font-size:12px;">'
+          +'<span>'+t.name+' ('+t.sup+')</span>'
+          +'<span style="color:'+(isUp?'var(--rd)':'var(--gr)')+';font-weight:700;">'
+          +(isUp?'+':'')+diff.toLocaleString()+' ₽ ('+pct+'%)</span></div>';
+      }).join('')
+      : '<div style="color:var(--t3);font-size:12px;padding:10px;">Загрузите тендер для анализа экономии и рисков цен</div>');
+  });
+  requestAnimationFrame(function(){
+    if(token !== _dashRenderToken) return;
+    var orgTurnover=getOrganizationTurnoverRows(orders).slice(0,5);
+    var insights=[];
+    if(orgTurnover.length){
+      insights.push('<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:8px;">Оборот по организациям</div>'
+        +orgTurnover.map(function(row){
+          return '<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--br);font-size:12px;">'
+            +'<span>'+row[0]+'</span><b>₽'+Math.round(row[1]).toLocaleString()+'</b></div>';
+        }).join(''));
+    }
+    if(orders.length){
+      var supMap2={}; orders.forEach(function(o){ var sn=getOrderSupplierName(o); supMap2[sn]=(supMap2[sn]||0)+(o.sum||0); });
+      var topSupplier=Object.entries(supMap2).sort(function(a,b){return b[1]-a[1];})[0];
+      if(topSupplier) insights.push('Самый дорогой поставщик периода: <b>'+topSupplier[0]+'</b> на ₽'+Math.round(topSupplier[1]).toLocaleString());
+      if(statusCounts.processing>0) insights.push('В обработке сейчас <b>'+statusCounts.processing+'</b> заказ'+(statusCounts.processing===1?'':'ов')+'.');
+      if(extraInvoices>0) insights.push('Используется разделение на накладные: <b>'+extraInvoices+'</b> доп. накладных.');
+      if(catData[0]) insights.push('Главная категория закупки: <b>'+catData[0].label+'</b> ('+(catTotal?Math.round(catData[0].sum/catTotal*100):0)+'%).');
+    } else {
+      insights.push('По текущей точке ещё нет заказов. Начните с создания первого заказа или применения шаблона.');
+    }
+    if(atRisk>0) insights.push('После последнего тендера выросли цены по <b>'+atRisk+'</b> позициям.');
+    setEl('dashInsights', insights.map(function(text){
+      return '<div style="padding:10px 12px;margin-bottom:8px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);font-size:12px;color:var(--t2);">'+text+'</div>';
+    }).join(''));
+  });
+  requestAnimationFrame(function(){
+    if(token !== _dashRenderToken) return;
+    var dashOrdersWrap=document.getElementById('dashOrders');
+    if(dashOrdersWrap) dashOrdersWrap.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:18px;">Загрузка заказов…</td></tr>';
+    var dashOrdersRows = orders.slice(0,7);
+    var rowHtml=[];
+    var rowIndex=0;
+    (function paintRows(){
+      if(token !== _dashRenderToken) return;
+      var end=Math.min(rowIndex+3, dashOrdersRows.length);
+      for(; rowIndex<end; rowIndex++){
+        var o=dashOrdersRows[rowIndex];
+        var s=SM[o.status]||['bg','—'];
+        var names=getOrderItemNames(o);
+        rowHtml.push('<tr><td>'+o.id+'</td><td>'+(o.rest||'—')+'</td><td>'+getOrderSupplierName(o)+'</td><td>'+names.slice(0,3).join(', ')+(names.length>3?' ...':'')+'</td><td>₽'+(o.sum||0).toLocaleString()+'</td><td>'+String(o.date||'')+'</td><td><span class="badge '+s[0]+'">'+s[1]+'</span></td></tr>');
+      }
+      if(dashOrdersWrap) dashOrdersWrap.innerHTML=rowHtml.length ? rowHtml.join('') : '<tr><td colspan="7" style="text-align:center;color:var(--t3);padding:18px;">Заказов пока нет</td></tr>';
+      if(rowIndex<dashOrdersRows.length){
+        requestAnimationFrame(paintRows);
+      } else {
+        renderDashChart();
+      }
+    })();
+  });
 }
 function renderDashChart(){
+  var token = _dashRenderToken;
   var monthsCount=parseInt(document.getElementById('dashPeriod')?.value||'6',10)||6;
+  var cacheKey=[String(_catalogDataRevision||0), String((ORDERS||[]).length||0), String(monthsCount), String(CU&&CU.id||''), String(CU&&CU.role||''), String(activeRest&&activeRest.id||'r0')].join('::');
+  if(_dashChartCache && _dashChartCache.key === cacheKey && _dashChartCache.html){
+    var cached=document.getElementById('dashChart');
+    if(cached) cached.innerHTML=_dashChartCache.html;
+    return;
+  }
   var orders=getOrdersForMonths(getDashboardOrders(), monthsCount);
   var now=new Date();
   var months=[];
@@ -1277,10 +1304,14 @@ function renderDashChart(){
     if(found) found.v+=(Number(order.sum)||0);
   });
   var max=Math.max.apply(null, months.map(function(item){ return item.v; }).concat([1]));
-  document.getElementById('dashChart').innerHTML=months.map(function(d){
+  var html=months.map(function(d){
     var label=Math.round(d.v/1000);
     return `<div class="bc-col"><div class="bc-v">${label?label+'К':'0'}</div><div class="bc-bar" style="height:${Math.max(8,Math.round(d.v/max*100))}%;background:linear-gradient(180deg,var(--ac),rgba(200,240,80,.15));"></div><div class="bc-l">${d.l}</div></div>`;
   }).join('');
+  if(token !== _dashRenderToken) return;
+  _dashChartCache = { key:cacheKey, html:html };
+  var chart=document.getElementById('dashChart');
+  if(chart) chart.innerHTML=html;
 }
 function renderRestPick(){
   const db=dbGet();
@@ -1317,6 +1348,8 @@ var _supplierTurnoverCache = { key:'', bySupplier:{} };
 var _dashboardOrdersCache = { key:'', orders:[] };
 var _productCategoryCache = { key:'', byName:{} };
 var _visibleOrdersCache = { key:'', orders:[] };
+var _dashRenderToken = 0;
+var _dashChartCache = { key:'', html:'' };
 
 function renderSupSel(){}
 function togSup(){ renderCatalog(); }
