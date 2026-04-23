@@ -453,9 +453,11 @@ function dbLoad(callback){
           _catalogProductsCache = { key:'', bySupplier:{} };
           _catalogRatingCache = { key:'', bySupplier:{} };
           _supplierTurnoverCache = { key:'', bySupplier:{} };
+          _supplierTurnoverIndexCache = { key:'', bySupplier:{} };
           _dashboardOrdersCache = { key:'', orders:[] };
           _productCategoryCache = { key:'', byName:{} };
           _visibleOrdersCache = { key:'', orders:[] };
+          _visibleSuppliersCache = { key:'', items:[] };
           _techCardsRenderCache = { key:'', html:'' };
           _tenderAffCache = { key:'', byPid:{} };
           if(callback) callback();
@@ -486,9 +488,11 @@ function dbLoad(callback){
     _catalogProductsCache = { key:'', bySupplier:{} };
     _catalogRatingCache = { key:'', bySupplier:{} };
     _supplierTurnoverCache = { key:'', bySupplier:{} };
+    _supplierTurnoverIndexCache = { key:'', bySupplier:{} };
     _dashboardOrdersCache = { key:'', orders:[] };
     _productCategoryCache = { key:'', byName:{} };
     _visibleOrdersCache = { key:'', orders:[] };
+    _visibleSuppliersCache = { key:'', items:[] };
     _techCardsRenderCache = { key:'', html:'' };
     _tenderAffCache = { key:'', byPid:{} };
     if(callback) callback();
@@ -510,9 +514,11 @@ function dbLoad(callback){
     _catalogProductsCache = { key:'', bySupplier:{} };
     _catalogRatingCache = { key:'', bySupplier:{} };
     _supplierTurnoverCache = { key:'', bySupplier:{} };
+    _supplierTurnoverIndexCache = { key:'', bySupplier:{} };
     _dashboardOrdersCache = { key:'', orders:[] };
     _productCategoryCache = { key:'', byName:{} };
     _visibleOrdersCache = { key:'', orders:[] };
+    _visibleSuppliersCache = { key:'', items:[] };
     _techCardsRenderCache = { key:'', html:'' };
     _tenderAffCache = { key:'', byPid:{} };
     if(callback) callback();
@@ -580,9 +586,11 @@ function dbSet(d){
   _catalogProductsCache = { key:'', bySupplier:{} };
   _catalogRatingCache = { key:'', bySupplier:{} };
   _supplierTurnoverCache = { key:'', bySupplier:{} };
+  _supplierTurnoverIndexCache = { key:'', bySupplier:{} };
   _dashboardOrdersCache = { key:'', orders:[] };
   _productCategoryCache = { key:'', byName:{} };
   _visibleOrdersCache = { key:'', orders:[] };
+  _visibleSuppliersCache = { key:'', items:[] };
   _techCardsRenderCache = { key:'', html:'' };
   _tenderAffCache = { key:'', byPid:{} };
   try{ localStorage.setItem('pv_cache', JSON.stringify(d)); }catch(e){}
@@ -1094,6 +1102,37 @@ function getSupplierTurnoverSummary(supplierName, orders){
   _supplierTurnoverCache.bySupplier[supplierName] = summary;
   return summary;
 }
+
+function getSupplierTurnoverIndex(orders){
+  var sig = [
+    String(_catalogDataRevision || 0),
+    String((orders||[]).length || 0)
+  ].join('::');
+  if(_supplierTurnoverIndexCache.key === sig && _supplierTurnoverIndexCache.bySupplier){
+    return _supplierTurnoverIndexCache.bySupplier;
+  }
+  var now = Date.now();
+  var th30 = now - 30*24*60*60*1000;
+  var th90 = now - 90*24*60*60*1000;
+  var index = {};
+  (orders||[]).forEach(function(order){
+    var supplier = getOrderSupplierName(order);
+    if(!supplier) return;
+    if(!index[supplier]){
+      index[supplier] = { count:0, by30:0, by90:0, all:0, organizations:{} };
+    }
+    var bucket = index[supplier];
+    var sum = Number(order.sum)||0;
+    var time = _parseOrderDateValue(order.date);
+    bucket.count += 1;
+    bucket.all += sum;
+    if(!time || time >= th30) bucket.by30 += sum;
+    if(!time || time >= th90) bucket.by90 += sum;
+    if(order.rest) bucket.organizations[order.rest] = (bucket.organizations[order.rest] || 0) + sum;
+  });
+  _supplierTurnoverIndexCache = { key:sig, bySupplier:index };
+  return index;
+}
 function getAnalyticsPeriodValue(){
   var value=document.getElementById('analyticsPeriod');
   return value?String(value.value||'90'):'90';
@@ -1355,9 +1394,11 @@ var _supplierRenderToken = 0;
 var _catalogCardBatchSize = 24;
 var _catalogSupplierCardToken = 0;
 var _supplierTurnoverCache = { key:'', bySupplier:{} };
+var _supplierTurnoverIndexCache = { key:'', bySupplier:{} };
 var _dashboardOrdersCache = { key:'', orders:[] };
 var _productCategoryCache = { key:'', byName:{} };
 var _visibleOrdersCache = { key:'', orders:[] };
+var _visibleSuppliersCache = { key:'', items:[] };
 var _ordersRenderToken = 0;
 var _analyticsRenderToken = 0;
 var _dashRenderToken = 0;
@@ -2109,6 +2150,7 @@ function renderSuppliers(){
   var favoriteSuppliers=(fav.suppliers||[]);
   var db=dbGet();
   var visibleOrders=getUserVisibleOrders(CU);
+  var turnoverIndex=getSupplierTurnoverIndex(visibleOrders);
 
   var token = ++_supplierRenderToken;
   el.innerHTML='<div id="supGridWrap" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;"></div>'
@@ -2126,8 +2168,8 @@ function renderSuppliers(){
     var personalBadge=isPersonalHidden?'<span class="badge bgr" style="margin-left:4px;font-size:10px;">Скрыт вами</span>':'';
     var canManageSupplier=canManageSupplierRecord(CU, s, db);
     var orgSummary=getSupplierVisibleOrganizationsForUser(s, CU, db).map(function(rest){ return rest.name; }).join(' · ') || 'Без привязки';
-    var turnover=getSupplierTurnoverSummary(s.name, visibleOrders);
-    var turnoverRows=turnover.organizations.slice(0,3).map(function(row){
+    var turnover=turnoverIndex[s.name] || { count:0, by30:0, by90:0, all:0, organizations:{} };
+    var turnoverRows=Object.entries(turnover.organizations || {}).sort(function(a,b){ return b[1]-a[1]; }).slice(0,3).map(function(row){
       return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--t2);padding:4px 0;border-bottom:1px solid var(--br);"><span>'+row[0]+'</span><b>₽'+Math.round(row[1]).toLocaleString()+'</b></div>';
     }).join('') || '<div style="font-size:11px;color:var(--t3);">Пока нет заказов по этому поставщику.</div>';
 
@@ -2945,20 +2987,33 @@ function canManageSupplierRecord(user, supplier, db){
 
 function getUserVisibleSuppliers(user){
   var db=dbGet();
+  var allowedIds=getUserScopedRestaurantIds(user, db);
+  var visibleOrders=getUserVisibleOrders(user);
+  var cacheKey=[
+    String(_catalogDataRevision || 0),
+    String(user && user.id || ''),
+    String(user && user.role || ''),
+    allowedIds.slice().sort().join('|'),
+    String(visibleOrders.length || 0),
+    String((SUP_PRODS||[]).length || 0),
+    String((SUPS_DATA||[]).length || 0)
+  ].join('::');
+  if(_visibleSuppliersCache.key === cacheKey && Array.isArray(_visibleSuppliersCache.items)){
+    return _visibleSuppliersCache.items.slice();
+  }
   var base=(SUPS_DATA||[]).filter(function(s){ return s && !s.hidden; });
   if(!user) return [];
-  if(user.role==='owner') return base;
-  if(user.role==='admin' && normalizeDashboardAccess(user).scope==='all_orgs') return base;
+  if(user.role==='owner'){ _visibleSuppliersCache = { key:cacheKey, items:base.slice() }; return base; }
+  if(user.role==='admin' && normalizeDashboardAccess(user).scope==='all_orgs'){ _visibleSuppliersCache = { key:cacheKey, items:base.slice() }; return base; }
 
   var visibleNames={};
-  var allowedIds=getUserScopedRestaurantIds(user, db);
   base.forEach(function(supplier){
     var orgIds=normalizeSupplierOrganizationIds(supplier, db);
     if(orgIds.some(function(id){ return allowedIds.indexOf(String(id))>=0; })){
       visibleNames[supplier.name]=true;
     }
   });
-  getUserVisibleOrders(user).forEach(function(order){
+  visibleOrders.forEach(function(order){
     var name=getOrderSupplierName(order);
     if(name) visibleNames[name]=true;
   });
@@ -2969,7 +3024,9 @@ function getUserVisibleSuppliers(user){
       if(supName) visibleNames[supName]=true;
     }
   });
-  return base.filter(function(s){ return !!visibleNames[s.name]; });
+  var items = base.filter(function(s){ return !!visibleNames[s.name]; });
+  _visibleSuppliersCache = { key:cacheKey, items:items.slice() };
+  return items;
 }
 
 function isRestaurantParticipant(user, rest){
