@@ -835,8 +835,9 @@ function setupUI(u){
   else                                           {ta.textContent='+ Заказ';            ta.onclick=()=>openModal('newOrder');}
   buildNav(u);
   renderOrgInviteBadge();
-  var firstPage=((ROLES[u.role]||{}).pages||[]).find(function(pg){ return canAccessPage(u, pg); })||'dashboard';
-  if(!canAccessPage(u, firstPage)) firstPage='orders';
+  var navFirst=document.querySelector('#sbNav .sb-item[data-page]');
+  var firstPage=navFirst ? navFirst.getAttribute('data-page') : (((ROLES[u.role]||{}).pages||[]).find(function(pg){ return canAccessPage(u, pg); })||'orders');
+  if(!firstPage) firstPage='orders';
   goPage(firstPage);
   renderDemoG();
 }
@@ -872,7 +873,8 @@ function buildNav(u){
 function goPage(pg){
   if(!CU)return;
   CU = Object.assign({}, CU, { role: normalizeUserRole(CU && CU.role, CU), status: (isOwnerUser(CU) ? 'active' : (CU && CU.status) || 'active') });
-  if(!canAccessPage(CU, pg)){toast('🚫 Нет доступа к этому разделу','err');return;}
+  var navVisible=document.querySelector('#sbNav .sb-item[data-page="'+String(pg).replace(/"/g,'&quot;')+'"]');
+  if(!canAccessPage(CU, pg) && !navVisible){toast('🚫 Нет доступа к этому разделу','err');return;}
   try{
     document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
     document.querySelectorAll('.sb-item').forEach(i=>i.classList.remove('on'));
