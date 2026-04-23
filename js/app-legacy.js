@@ -1348,6 +1348,8 @@ var _supplierTurnoverCache = { key:'', bySupplier:{} };
 var _dashboardOrdersCache = { key:'', orders:[] };
 var _productCategoryCache = { key:'', byName:{} };
 var _visibleOrdersCache = { key:'', orders:[] };
+var _ordersRenderToken = 0;
+var _analyticsRenderToken = 0;
 var _dashRenderToken = 0;
 var _dashChartCache = { key:'', html:'' };
 
@@ -2002,6 +2004,7 @@ function exportOrderExcel(orderId){
 }
 function renderOrders(){
   const el=document.getElementById('ordersList');if(!el)return;
+  var token = ++_ordersRenderToken;
   renderOrdersRestaurantFilter();
   const scoped=getUserVisibleOrders(CU);
   const orgScoped=ordersRestFilter==='all'?scoped:scoped.filter(function(o){
@@ -2019,11 +2022,24 @@ function renderOrders(){
     {cls:'cp',ico:'🏭',label:'Поставщиков',value:String(supplierCount),note:supplierCount?'В этой выборке':'Нет поставщиков'}
   ]);
   if(!list.length){el.innerHTML='<div class="empty"><div class="empty-ico">📦</div><div class="empty-txt">Нет заказов</div></div>';return;}
-  el.innerHTML=list.map(o=>{
-    const[cl,lb]=SM[o.status]||['bgr','—'];
-    var meta=orderMetaLines(o);
-    return`<div style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);padding:12px;margin-bottom:6px;display:grid;grid-template-columns:90px 1.2fr 110px auto auto auto;align-items:center;gap:12px;transition:border-color .15s;" onmouseenter="this.style.borderColor='var(--br2)'" onmouseleave="this.style.borderColor='var(--br)'"><div><div style="font-family:var(--fH);font-size:13px;font-weight:800;color:var(--ac);">${o.id}</div><div class="c3 fs11">${o.date}</div></div><div><div class="fw6 fs13" style="margin-bottom:4px;">${o.rest||'Без организации'}</div><div class="c3 fs11" style="margin-bottom:4px;">Поставщик: ${getOrderSupplierName(o)||o.sup||'—'}</div><div class="c3 fs11">${o.items}</div>${meta?`<div class="c3 fs11" style="margin-top:4px;">${meta}</div>`:''}</div><div class="fw7" style="font-size:13px;">₽${o.sum.toLocaleString()}</div><span class="badge ${cl}">${lb}</span><button onclick="openOrderDetails('${o.id}')" style="background:var(--bg3);border:1px solid var(--br);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;color:var(--t2);">Просмотр</button><button onclick="exportOrderExcel('${o.id}')" style="background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;">Excel</button></div>`;
-  }).join('');
+  el.innerHTML='<div style="padding:14px;color:var(--t3);font-size:12px;">Загрузка заказов…</div>';
+  var rows=list.slice(0,120);
+  var index=0;
+  var html=[];
+  (function paintOrderRows(){
+    if(token !== _ordersRenderToken) return;
+    var end=Math.min(index+8, rows.length);
+    for(; index<end; index++){
+      var o=rows[index];
+      var pair=SM[o.status]||['bgr','—'];
+      var meta=orderMetaLines(o);
+      html.push(`<div style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);padding:12px;margin-bottom:6px;display:grid;grid-template-columns:90px 1.2fr 110px auto auto auto;align-items:center;gap:12px;transition:border-color .15s;" onmouseenter="this.style.borderColor='var(--br2)'" onmouseleave="this.style.borderColor='var(--br)'"><div><div style="font-family:var(--fH);font-size:13px;font-weight:800;color:var(--ac);">${o.id}</div><div class="c3 fs11">${o.date}</div></div><div><div class="fw6 fs13" style="margin-bottom:4px;">${o.rest||'Без организации'}</div><div class="c3 fs11" style="margin-bottom:4px;">Поставщик: ${getOrderSupplierName(o)||o.sup||'—'}</div><div class="c3 fs11">${o.items}</div>${meta?`<div class="c3 fs11" style="margin-top:4px;">${meta}</div>`:''}</div><div class="fw7" style="font-size:13px;">₽${o.sum.toLocaleString()}</div><span class="badge ${pair[0]}">${pair[1]}</span><button onclick="openOrderDetails('${o.id}')" style="background:var(--bg3);border:1px solid var(--br);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;color:var(--t2);">Просмотр</button><button onclick="exportOrderExcel('${o.id}')" style="background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;">Excel</button></div>`);
+    }
+    el.innerHTML=html.join('') || '<div class="empty"><div class="empty-ico">📦</div><div class="empty-txt">Нет заказов</div></div>';
+    if(index < rows.length){
+      requestAnimationFrame(paintOrderRows);
+    }
+  })();
 }
 function exportOrders(){
   var esc=function(v){ return '"'+String(v==null?'':v).replace(/"/g,'""')+'"'; };
@@ -2243,6 +2259,7 @@ function deleteSup(i){
   logAudit(auditActor(), 'Удалил поставщика «'+name+'»','Поставщики');
 }
 function renderAnalytics(){
+  var token = ++_analyticsRenderToken;
   var orders=getAnalyticsOrders();
   var periodValue=getAnalyticsPeriodValue();
   var periodLabel=getAnalyticsPeriodLabel(periodValue);
@@ -2287,13 +2304,16 @@ function renderAnalytics(){
   var bestSupplierName=bestSupplierEntry?bestSupplierEntry[0]:'—';
   var bestSupplierRating=bestSupplierEntry?formatSupplierRatingAverage(getSupplierRatingSummary(bestSupplierName).average):'0.0';
   var topCategoryEntry=Object.entries(categoryTotals).sort(function(a,b){ return b[1]-a[1]; })[0];
-  renderMiniStatGrid('analyticsSummary',[
-    {cls:'ca',ico:'📊',label:'Ср. чек заказа',value:'₽'+avgCheck.toLocaleString(),note:orders.length?'За '+periodLabel:'Нет данных'},
-    {cls:'cb',ico:'🏭',label:'Поставщиков',value:String(supplierCount),note:supplierCount?'В периоде':'Пока нет'},
-    {cls:'cg',ico:'₽',label:'Общий объём',value:'₽'+Math.round(totalSpend).toLocaleString(),note:'Оборот за '+periodLabel},
-    {cls:'co',ico:'🏆',label:'Ведущий поставщик',value:bestSupplierName,valStyle:'font-size:13px;line-height:1.3;',note:bestSupplierEntry?'Рейтинг '+bestSupplierRating:'Пока нет'},
-    {cls:'cp',ico:'📦',label:'Главная категория',value:topCategoryEntry?topCategoryEntry[0]:'—',valStyle:'font-size:13px;line-height:1.3;',note:topCategoryEntry?'Основной объём закупки':'Нет данных'}
-  ]);
+  requestAnimationFrame(function(){
+    if(token !== _analyticsRenderToken) return;
+    renderMiniStatGrid('analyticsSummary',[
+      {cls:'ca',ico:'📊',label:'Ср. чек заказа',value:'₽'+avgCheck.toLocaleString(),note:orders.length?'За '+periodLabel:'Нет данных'},
+      {cls:'cb',ico:'🏭',label:'Поставщиков',value:String(supplierCount),note:supplierCount?'В периоде':'Пока нет'},
+      {cls:'cg',ico:'₽',label:'Общий объём',value:'₽'+Math.round(totalSpend).toLocaleString(),note:'Оборот за '+periodLabel},
+      {cls:'co',ico:'🏆',label:'Ведущий поставщик',value:bestSupplierName,valStyle:'font-size:13px;line-height:1.3;',note:bestSupplierEntry?'Рейтинг '+bestSupplierRating:'Пока нет'},
+      {cls:'cp',ico:'📦',label:'Главная категория',value:topCategoryEntry?topCategoryEntry[0]:'—',valStyle:'font-size:13px;line-height:1.3;',note:topCategoryEntry?'Основной объём закупки':'Нет данных'}
+    ]);
+  });
   if(!orders.length){
     if(aTopP) aTopP.innerHTML='<div style="color:var(--t3);padding:18px 6px;">Нет данных по доступным организациям</div>';
     if(aSupR) aSupR.innerHTML='<div style="color:var(--t3);padding:18px 6px;">Пока нет поставщиков в личной аналитике</div>';
@@ -2303,30 +2323,46 @@ function renderAnalytics(){
   }
   if(aTopP){
     var topList=Object.entries(topProducts).sort(function(a,b){ return b[1].qty-a[1].qty; }).slice(0,6);
-    aTopP.innerHTML=topList.map(function(row){
-      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--br);"><div style="font-size:13px;font-weight:700;">'+row[0]+'</div><div style="font-size:12px;color:var(--t3);">'+Math.round(row[1].qty*1000)/1000+' '+(row[1].unit||'')+'</div></div>';
-    }).join('');
+    aTopP.innerHTML='<div style="padding:14px;color:var(--t3);font-size:12px;">Загрузка аналитики…</div>';
+    requestAnimationFrame(function(){
+      if(token !== _analyticsRenderToken) return;
+      aTopP.innerHTML=topList.map(function(row){
+        return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--br);"><div style="font-size:13px;font-weight:700;">'+row[0]+'</div><div style="font-size:12px;color:var(--t3);">'+Math.round(row[1].qty*1000)/1000+' '+(row[1].unit||'')+'</div></div>';
+      }).join('');
+    });
   }
   if(aSupR){
     var supList=Object.entries(supplierTotals).sort(function(a,b){ return b[1].total-a[1].total; }).slice(0,6);
-    aSupR.innerHTML=supList.map(function(row){
-      var rating=getSupplierRatingSummary(row[0]);
-      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--br);"><div><div style="font-size:13px;font-weight:700;">'+row[0]+'</div><div style="font-size:11px;color:var(--t3);">'+row[1].orders+' заказов</div></div><div style="text-align:right;"><div style="font-size:12px;font-weight:700;">₽'+Math.round(row[1].total).toLocaleString()+'</div><div style="font-size:11px;color:var(--t3);">★ '+formatSupplierRatingAverage(rating.average)+'</div></div></div>';
-    }).join('');
+    aSupR.innerHTML='<div style="padding:14px;color:var(--t3);font-size:12px;">Загрузка аналитики…</div>';
+    requestAnimationFrame(function(){
+      if(token !== _analyticsRenderToken) return;
+      aSupR.innerHTML=supList.map(function(row){
+        var rating=getSupplierRatingSummary(row[0]);
+        return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--br);"><div><div style="font-size:13px;font-weight:700;">'+row[0]+'</div><div style="font-size:11px;color:var(--t3);">'+row[1].orders+' заказов</div></div><div style="text-align:right;"><div style="font-size:12px;font-weight:700;">₽'+Math.round(row[1].total).toLocaleString()+'</div><div style="font-size:11px;color:var(--t3);">★ '+formatSupplierRatingAverage(rating.average)+'</div></div></div>';
+      }).join('');
+    });
   }
   if(aOrgTurnover){
     var orgList=getOrganizationTurnoverRows(orders).slice(0,6);
-    aOrgTurnover.innerHTML=orgList.map(function(row){
-      return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--br);"><div style="font-size:13px;font-weight:700;">'+row[0]+'</div><div style="font-size:12px;color:var(--t2);">₽'+Math.round(row[1]).toLocaleString()+'</div></div>';
-    }).join('');
+    aOrgTurnover.innerHTML='<div style="padding:14px;color:var(--t3);font-size:12px;">Загрузка аналитики…</div>';
+    requestAnimationFrame(function(){
+      if(token !== _analyticsRenderToken) return;
+      aOrgTurnover.innerHTML=orgList.map(function(row){
+        return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--br);"><div style="font-size:13px;font-weight:700;">'+row[0]+'</div><div style="font-size:12px;color:var(--t2);">₽'+Math.round(row[1]).toLocaleString()+'</div></div>';
+      }).join('');
+    });
   }
   if(aChart){
     var monthList=Object.entries(monthTotals).sort(function(a,b){ return a[0].localeCompare(b[0],'ru'); }).slice(-6);
     var maxVal=monthList.reduce(function(max,row){ return Math.max(max,row[1]); },0) || 1;
-    aChart.innerHTML=monthList.map(function(row){
-      var width=Math.max(8, Math.round((row[1]/maxVal)*100));
-      return '<div style="display:grid;grid-template-columns:54px minmax(0,1fr) 72px;gap:10px;align-items:center;margin-bottom:8px;"><div style="font-size:11px;color:var(--t3);">'+row[0]+'</div><div style="height:10px;background:var(--bg3);border-radius:999px;overflow:hidden;"><div style="height:100%;width:'+width+'%;background:linear-gradient(90deg,var(--ac),#7bdff6);border-radius:999px;"></div></div><div style="font-size:11px;color:var(--t2);text-align:right;">₽'+Math.round(row[1]).toLocaleString()+'</div></div>';
-    }).join('');
+    aChart.innerHTML='<div style="padding:14px;color:var(--t3);font-size:12px;">Загрузка графика…</div>';
+    requestAnimationFrame(function(){
+      if(token !== _analyticsRenderToken) return;
+      aChart.innerHTML=monthList.map(function(row){
+        var width=Math.max(8, Math.round((row[1]/maxVal)*100));
+        return '<div style="display:grid;grid-template-columns:54px minmax(0,1fr) 72px;gap:10px;align-items:center;margin-bottom:8px;"><div style="font-size:11px;color:var(--t3);">'+row[0]+'</div><div style="height:10px;background:var(--bg3);border-radius:999px;overflow:hidden;"><div style="height:100%;width:'+width+'%;background:linear-gradient(90deg,var(--ac),#7bdff6);border-radius:999px;"></div></div><div style="font-size:11px;color:var(--t2);text-align:right;">₽'+Math.round(row[1]).toLocaleString()+'</div></div>';
+      }).join('');
+    });
   }
 }
 function exportAnalytics(){
