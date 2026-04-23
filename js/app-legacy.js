@@ -624,6 +624,12 @@ function setupUI(u){
   document.getElementById('sbName').textContent=u.first+' '+u.last;document.getElementById('sbRole').textContent=u.company;
   const isS=u.role==='supplier',isAcc=u.role==='accountant';
   const scopedRestaurants=getUserScopedRestaurantIds(u, dbGet());
+  try{
+    if(Array.isArray(window.__loginPerf)){
+      window.__loginPerf.push({ts:Date.now(),stage:'cabinet:organizations',extra:String(scopedRestaurants.length||0)});
+      if(window.__loginPerf.length>20) window.__loginPerf.shift();
+    }
+  }catch(e){}
   document.getElementById('cartBtn').style.display=(!isS&&!isAcc)?'flex':'none';
   document.getElementById('favBtn').style.display=(!isS&&!isAcc)?'flex':'none';
   document.getElementById('tbSearch').style.display=isS?'none':'flex';
@@ -635,6 +641,7 @@ function setupUI(u){
   else                                           {ta.textContent='+ Заказ';            ta.onclick=()=>openModal('newOrder');}
   buildNav(u);
   renderOrgInviteBadge();
+  ensureActiveOrganizationSelection(u, dbGet());
   var firstPage=((ROLES[u.role]||{}).pages||[]).find(function(pg){ return canAccessPage(u, pg); })||'dashboard';
   if(!canAccessPage(u, firstPage)) firstPage='orders';
   setTimeout(function(){
@@ -2265,8 +2272,21 @@ function normalizeDashboardAccess(user){
 function getUserRestaurantMembershipIds(user, db){
   db=db||dbGet();
   if(!user) return [];
+  var userEmail=String(user.email||'').trim().toLowerCase();
+  var userCompany=String(user.company||'').trim().toLowerCase();
+  var userName=String([user.first,user.last].filter(Boolean).join(' ')).trim().toLowerCase();
+  function memberMatches(member){
+    if(!member) return false;
+    var memberUserId=String(member.userId||member.id||member.memberId||'').trim();
+    var memberEmail=String(member.email||member.userEmail||member.user_email||'').trim().toLowerCase();
+    var memberCompany=String(member.company||member.companyName||member.orgName||member.organizationName||'').trim().toLowerCase();
+    if(memberUserId && memberUserId===String(user.id||'')) return true;
+    if(memberEmail && userEmail && memberEmail===userEmail) return true;
+    if(memberCompany && (memberCompany===userCompany || memberCompany===userName)) return true;
+    return false;
+  }
   return (db.restaurants||[]).filter(function(rest){
-    return rest.id!=='r0' && Array.isArray(rest.members) && rest.members.some(function(member){ return member.userId===user.id; });
+    return rest.id!=='r0' && Array.isArray(rest.members) && rest.members.some(memberMatches);
   }).map(function(rest){ return rest.id; });
 }
 
@@ -2379,7 +2399,27 @@ function getUserVisibleSuppliers(user){
 function isRestaurantParticipant(user, rest){
   if(!user || !rest) return false;
   if(user.role==='owner') return true;
-  return Array.isArray(rest.members) && rest.members.some(function(member){ return member.userId===user.id; });
+  var userEmail=String(user.email||'').trim().toLowerCase();
+  var userCompany=String(user.company||'').trim().toLowerCase();
+  var userName=String([user.first,user.last].filter(Boolean).join(' ')).trim().toLowerCase();
+  var restOrgId=String(rest.organizationId||rest.id||'').trim().toLowerCase();
+  var restNames=[
+    rest.name,
+    rest.brandName,
+    rest.legalName
+  ].map(function(v){ return String(v||'').trim().toLowerCase(); }).filter(Boolean);
+  if(Array.isArray(rest.members) && rest.members.some(function(member){
+    if(!member) return false;
+    var memberUserId=String(member.userId||member.id||member.memberId||'').trim();
+    var memberEmail=String(member.email||member.userEmail||member.user_email||'').trim().toLowerCase();
+    var memberCompany=String(member.company||member.companyName||member.orgName||member.organizationName||'').trim().toLowerCase();
+    return (memberUserId && memberUserId===String(user.id||'')) ||
+      (memberEmail && userEmail && memberEmail===userEmail) ||
+      (memberCompany && (memberCompany===userCompany || memberCompany===userName));
+  })) return true;
+  if(userCompany && (restOrgId===userCompany || restNames.indexOf(userCompany)>=0)) return true;
+  if(userEmail && restNames.indexOf(userEmail)>=0) return true;
+  return false;
 }
 
 function canViewRestaurantSensitiveData(user, rest){
@@ -2513,6 +2553,29 @@ function ensureDashboardRestSelection(){
   if(!activeRest || activeRest.id==='r0' || allowedIds.indexOf(activeRest.id)<0){
     var next=(db.restaurants||[]).find(function(rest){ return allowedIds.indexOf(rest.id)>=0; });
     if(next) activeRest=next;
+  }
+}
+
+function ensureActiveOrganizationSelection(user, db){
+  db=db||dbGet();
+  if(!user) return;
+  var accessible=getAccessibleOrganizations(db);
+  if(!accessible.length){
+    if(!activeRest || activeRest.id!=='r0'){
+      activeRest={id:'r0',name:'Нет доступных организаций',emoji:'🔒'};
+    }
+    return;
+  }
+  var currentId=String(activeRest&&activeRest.id||'');
+  var currentExists=accessible.some(function(rest){
+    return String(rest.id||'')===currentId;
+  });
+  if(currentExists) return;
+  var preferred=accessible.find(function(rest){
+    return String(rest.organizationId||rest.id||'')===String(getCurrentPriceOrganizationId(db)||'');
+  }) || accessible[0];
+  if(preferred){
+    activeRest=preferred;
   }
 }
 
