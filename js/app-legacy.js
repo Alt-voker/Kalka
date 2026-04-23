@@ -150,6 +150,9 @@ let sbC = false;
 // ── СОСТОЯНИЕ ЗАГРУЗКИ ПРАЙСА ────────────────────────────────
 var _currentSupName  = '';
 var _supPriceAppend  = false;
+var _supPriceOrganizationId = '';
+var _supPriceLegalEntityIds = [];
+var _supPriceLegalEntityNames = [];
 var _mcmRows = [], _mcmSupName = '', _mcmAppend = false, _mcmPriceName = '';
 var _priceLayoutMemory={};
 var _mcmSupName='';
@@ -318,6 +321,50 @@ function v(id){return(document.getElementById(id)?.value||'').trim();}
 function isEmail(e){return/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);}
 function today(){return new Date().toISOString().slice(0,10);}
 function dlFile(c,m,n){const b=new Blob([c],{type:m});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=n;a.click();}
+function _uniqText(arr){return Array.from(new Set((Array.isArray(arr)?arr:[]).map(function(v){return String(v||'').trim();}).filter(Boolean)));}
+function getCurrentPriceOrganizationId(db){
+  db=db||dbGet();
+  var rest=getCurrentOrderRestaurantMeta&&getCurrentOrderRestaurantMeta();
+  if(rest&&rest.organizationId) return String(rest.organizationId);
+  if(activeRest&&activeRest.organizationId) return String(activeRest.organizationId);
+  var scope=(CU&&typeof getUserScopedRestaurantIds==='function') ? getUserScopedRestaurantIds(CU, db) : [];
+  var matched=(db.restaurants||[]).find(function(item){
+    return item && item.id!=='r0' && scope.indexOf(String(item.id))>=0 && item.organizationId;
+  });
+  return matched&&matched.organizationId ? String(matched.organizationId) : '';
+}
+function getOrganizationLegalEntities(organizationId, db){
+  db=db||dbGet();
+  var orgId=String(organizationId||'').trim();
+  if(!orgId) return [];
+  var legal=[];
+  (db.restaurants||[]).forEach(function(rest){
+    if(!rest || String(rest.organizationId||'')!==orgId) return;
+    var items=Array.isArray(rest.assignedLegalEntities)&&rest.assignedLegalEntities.length
+      ? rest.assignedLegalEntities
+      : (Array.isArray(rest.legalEntities)&&rest.legalEntities.length ? rest.legalEntities : (rest.legalName ? [rest.legalName] : []));
+    items.forEach(function(name){
+      var clean=String(name||'').trim();
+      if(clean && legal.indexOf(clean)<0) legal.push(clean);
+    });
+  });
+  return legal;
+}
+function getAccessibleOrganizations(db){
+  db=db||dbGet();
+  var orgMap={};
+  (db.restaurants||[]).forEach(function(rest){
+    if(!rest || rest.id==='r0') return;
+    if(CU && CU.role!=='owner' && CU.role!=='admin' && !isRestaurantParticipant(CU, rest)) return;
+    var orgId=String(rest.organizationId||rest.id||'').trim();
+    if(!orgId || orgMap[orgId]) return;
+    orgMap[orgId]={
+      id:orgId,
+      label:rest.brandName||rest.legalName||rest.name||('Организация '+orgId)
+    };
+  });
+  return Object.keys(orgMap).map(function(id){ return orgMap[id]; });
+}
 function minP(p){return p.suppliers.length?Math.min(...p.suppliers.map(s=>s.price)):0;}
 function maxP(p){return p.suppliers.length?Math.max(...p.suppliers.map(s=>s.price)):0;}
 function sav(p){return p.suppliers.length>1?maxP(p)-minP(p):0;}
@@ -5096,27 +5143,51 @@ function selectSupPriceSheet(sheetName){
 function openSupPriceUpload(supName, append){
   _currentSupName = supName;
   _supPriceAppend = append;
+  var db = dbGet();
+  var currentOrgId = getCurrentPriceOrganizationId(db);
+  var orgs = getAccessibleOrganizations(db);
+  if(!orgs.length && currentOrgId){
+    var rest = (db.restaurants||[]).find(function(r){ return String(r.organizationId||'') === String(currentOrgId); }) || null;
+    orgs = [{
+      id: currentOrgId,
+      label: (rest && (rest.brandName || rest.legalName || rest.name)) || ('Организация '+currentOrgId)
+    }];
+  }
+  if(!orgs.length){
+    var fallbackRest = getCurrentOrderRestaurantMeta && getCurrentOrderRestaurantMeta();
+    if(fallbackRest && fallbackRest.organizationId){
+      orgs = [{
+        id: String(fallbackRest.organizationId),
+        label: fallbackRest.brandName || fallbackRest.legalName || fallbackRest.name || ('Организация '+fallbackRest.organizationId)
+      }];
+      currentOrgId = String(fallbackRest.organizationId);
+    }
+  }
+  _supPriceOrganizationId = currentOrgId || (orgs[0] && orgs[0].id) || '';
   var titleEl = document.getElementById('supPriceUploadTitle');
   if(titleEl) titleEl.textContent = append ? 'Доп. прайс: '+supName : 'Новый прайс: '+supName;
   var nameEl = document.getElementById('supPriceSupName');
   if(nameEl) nameEl.textContent = supName;
   var priceNameEl = document.getElementById('supPriceName');
   if(priceNameEl) priceNameEl.value = '';
-  var db = dbGet();
-  var users = (db.users||[]).filter(function(u){
-    return u.status==='active' && u.role!=='supplier';
-  });
+  var orgSelect = document.getElementById('supPriceOrgSelect');
+  var orgHint = document.getElementById('supPriceOrgHint');
   var listEl = document.getElementById('supPriceCompList');
-  if(listEl){
-    listEl.innerHTML = users.length ? users.map(function(u){
-      var rd=ROLES[u.role]||{label:u.role};
-      return '<label style="display:flex;align-items:center;gap:10px;padding:6px 4px;cursor:pointer;">'
-        +'<input type="checkbox" class="sup-price-comp-cb" value="'+u.id+'" data-company="'+(u.company||'')+'" checked '
-        +'style="width:16px;height:16px;cursor:pointer;accent-color:var(--ac);">'
-        +'<div><div style="font-size:13px;font-weight:600;">'+u.first+' '+u.last+'</div>'
-        +'<div style="font-size:11px;color:var(--t3);">'+(u.company||'—')+' — '+rd.label+'</div></div></label>';
-    }).join('') : '<div style="color:var(--t3);padding:8px;font-size:12px;">Нет пользователей</div>';
+  if(orgSelect){
+    orgSelect.innerHTML = orgs.map(function(org){
+      return '<option value="'+_esc(org.id)+'"'+(String(org.id)===String(_supPriceOrganizationId) ? ' selected' : '')+'>'+_esc(org.label||org.id)+'</option>';
+    }).join('');
+    orgSelect.onchange = function(){
+      _supPriceOrganizationId = this.value || '';
+      renderSupPriceLegalList(_supPriceOrganizationId, dbGet());
+    };
   }
+  if(orgHint){
+    orgHint.textContent = orgs.length
+      ? 'Выберите организацию, затем отметьте юр. лица, для которых действует этот прайс.'
+      : 'Не найдено доступных организаций для загрузки прайса.';
+  }
+  renderSupPriceLegalList(_supPriceOrganizationId, db);
   var fi=document.getElementById('supPriceFile'); if(fi)fi.value='';
   var err=document.getElementById('supPriceErr'); if(err)err.textContent='';
   _supPriceImportBook = null;
@@ -5134,12 +5205,58 @@ function openSupPriceUpload(supName, append){
 
 function selectAllSupPriceComps(val){
   document.querySelectorAll('.sup-price-comp-cb').forEach(function(cb){cb.checked=val;});
+  syncSupPriceLegalSelection();
+}
+
+function syncSupPriceLegalSelection(){
+  var ids = [];
+  var names = [];
+  document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
+    var legalId = String(cb.value || '').trim();
+    var legalName = String(cb.dataset.legalName || cb.textContent || '').trim();
+    if(legalId && ids.indexOf(legalId) < 0) ids.push(legalId);
+    if(legalName && names.indexOf(legalName) < 0) names.push(legalName);
+  });
+  _supPriceLegalEntityIds = ids;
+  _supPriceLegalEntityNames = names;
+}
+
+function renderSupPriceLegalList(orgId, db){
+  db=db||dbGet();
+  var listEl = document.getElementById('supPriceCompList');
+  if(!listEl) return;
+  var legalEntities = getOrganizationLegalEntities(orgId || _supPriceOrganizationId, db);
+  if(!legalEntities.length){
+    listEl.innerHTML = '<div style="color:var(--t3);padding:8px;font-size:12px;">У выбранной организации нет настроенных юр. лиц.</div>';
+    return;
+  }
+  listEl.innerHTML = legalEntities.map(function(name){
+    return '<label style="display:flex;align-items:flex-start;gap:10px;padding:6px 4px;cursor:pointer;">'
+      +'<input type="checkbox" class="sup-price-comp-cb" value="'+_esc(name)+'" data-legal-name="'+_esc(name)+'" checked '
+      +'style="width:16px;height:16px;cursor:pointer;accent-color:var(--ac);margin-top:2px;">'
+      +'<div><div style="font-size:13px;font-weight:600;">'+_esc(name)+'</div>'
+      +'<div style="font-size:11px;color:var(--t3);">Прайс будет доступен только этой организации и этим юр. лицам</div></div></label>';
+  }).join('');
+  if(listEl){
+    listEl.onchange = syncSupPriceLegalSelection;
+  }
+  syncSupPriceLegalSelection();
 }
 
 
 function canSeePrices(product){
   if(!CU)return false;
   if(CU.role==='owner'||CU.role==='admin'||CU.role==='supplier')return true;
+  if(product.allowedLegalEntityIds&&product.allowedLegalEntityIds.length>0){
+    var currentLegalIds = _supPriceLegalEntityIds.length ? _supPriceLegalEntityIds : (_orderLegalEntityNames||[]);
+    if(currentLegalIds.some(function(id){ return product.allowedLegalEntityIds.indexOf(id)>=0; })) return true;
+    return false;
+  }
+  if(product.allowedLegalEntityNames&&product.allowedLegalEntityNames.length>0){
+    var currentLegalNames = _supPriceLegalEntityNames.length ? _supPriceLegalEntityNames : (_orderLegalEntityNames||[]);
+    if(currentLegalNames.some(function(name){ return product.allowedLegalEntityNames.indexOf(name)>=0; })) return true;
+    return false;
+  }
   if(product.allowedUserIds&&product.allowedUserIds.length>0){
     if(product.allowedUserIds.indexOf(CU.id)>=0)return true;
   }
@@ -5256,7 +5373,15 @@ function smartAddToCart(){
       var prod=match.prod||match.supProd;
       var supName='',price=0;
       if(match.prod){
-        var sups=match.prod.suppliers||[];
+        var sups=(match.prod.suppliers||[]).filter(function(s){
+          return canSeePrices({
+            allowedLegalEntityIds:s.allowedLegalEntityIds||[],
+            allowedLegalEntityNames:s.allowedLegalEntityNames||[],
+            allowedUserIds:s.allowedUserIds||[],
+            allowedCompanies:s.allowedCompanies||[]
+          });
+        });
+        if(!sups.length) sups = match.prod.suppliers||[];
         var cheapest=sups.reduce(function(best,s){return(!best||s.price<best.price)?s:best;},null);
         supName=cheapest?cheapest.name:(ALL_SUPS[0]||'—');
         price=cheapest?cheapest.price:0;
@@ -6946,17 +7071,14 @@ function renderPricePreview(rows, layout) {
 // ── ФИНАЛЬНАЯ ОБРАБОТКА СТРОК С ОЧИСТКОЙ ─────────────────────
 
 function processSupPriceRows(rows, cols, supName, append, priceName, allowedUserIds) {
-  var allowedCompanies = [];
+  var allowedLegalEntityIds = [];
+  var allowedLegalEntityNames = [];
   document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
-    var co = cb.dataset.company;
-    if(co && allowedCompanies.indexOf(co)<0) allowedCompanies.push(co);
+    var legalId = String(cb.value || '').trim();
+    if(legalId && allowedLegalEntityIds.indexOf(legalId)<0) allowedLegalEntityIds.push(legalId);
+    var legalName = String(cb.dataset.legalName || cb.textContent || '').trim();
+    if(legalName && allowedLegalEntityNames.indexOf(legalName)<0) allowedLegalEntityNames.push(legalName);
   });
-  if(!allowedUserIds||!allowedUserIds.length){
-    allowedUserIds = [];
-    document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
-      allowedUserIds.push(cb.value);
-    });
-  }
 
   if(!append){
     SUP_PRODS = SUP_PRODS.filter(function(p){
@@ -7025,8 +7147,8 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
       active:    true,
       hidden:    false,
       _type:     currentType,
-      allowedUserIds:    allowedUserIds.slice(),
-      allowedCompanies:  allowedCompanies.slice()
+      allowedLegalEntityIds: allowedLegalEntityIds.slice(),
+      allowedLegalEntityNames: allowedLegalEntityNames.slice()
     };
 
     if(ex>=0){ SUP_PRODS[ex]=entry; updated++; }
@@ -7039,13 +7161,14 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
     if(prodIdx>=0){
       var spIdx = PRODUCTS[prodIdx].suppliers.findIndex(function(s){return s.name===supName;});
       if(spIdx>=0) PRODUCTS[prodIdx].suppliers[spIdx].price = price;
-      else         PRODUCTS[prodIdx].suppliers.push({name:supName,price:price});
+      else         PRODUCTS[prodIdx].suppliers.push({name:supName,price:price, allowedLegalEntityIds: allowedLegalEntityIds.slice(), allowedLegalEntityNames: allowedLegalEntityNames.slice()});
       PRODUCTS[prodIdx].unit = PRODUCTS[prodIdx].unit || unit;
     } else {
       PRODUCTS.push({
         id:Date.now()+idx+10000, name:name, cat:'dry', unit:unit, emoji:'',
-        sticker:null, fav:false, allowedCompanies:allowedCompanies.slice(),
-        suppliers:[{name:supName,price:price}],
+        sticker:null, fav:false,
+        allowedLegalEntityIds: allowedLegalEntityIds.slice(),
+        suppliers:[{name:supName,price:price, allowedLegalEntityIds: allowedLegalEntityIds.slice(), allowedLegalEntityNames: allowedLegalEntityNames.slice()}],
         pKg:pKg, pSh:pSh, pL:pL, pMl:0
       });
       if(ALL_SUPS.indexOf(supName)<0) ALL_SUPS.push(supName);
@@ -9022,17 +9145,14 @@ function priceAddRow(){
 }
 
 function processSupPriceRows(rows, cols, supName, append, priceName, allowedUserIds){
-  var allowedCompanies = [];
+  var allowedLegalEntityIds = [];
+  var allowedLegalEntityNames = [];
   document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
-    var co = cb.dataset.company;
-    if(co && allowedCompanies.indexOf(co) < 0) allowedCompanies.push(co);
+    var legalId = String(cb.value || '').trim();
+    if(legalId && allowedLegalEntityIds.indexOf(legalId) < 0) allowedLegalEntityIds.push(legalId);
+    var legalName = String(cb.dataset.legalName || cb.textContent || '').trim();
+    if(legalName && allowedLegalEntityNames.indexOf(legalName) < 0) allowedLegalEntityNames.push(legalName);
   });
-  if(!allowedUserIds || !allowedUserIds.length){
-    allowedUserIds = [];
-    document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
-      allowedUserIds.push(cb.value);
-    });
-  }
 
   if(!append){
     SUP_PRODS = SUP_PRODS.filter(function(p){
@@ -9102,8 +9222,8 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
       active: true,
       hidden: false,
       _type: currentType,
-      allowedUserIds: allowedUserIds.slice(),
-      allowedCompanies: allowedCompanies.slice(),
+      allowedLegalEntityIds: allowedLegalEntityIds.slice(),
+      allowedLegalEntityNames: allowedLegalEntityNames.slice(),
       sourceRow: idx + 1
     };
 
@@ -9116,7 +9236,7 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
     if(prodIdx >= 0){
       var spIdx = PRODUCTS[prodIdx].suppliers.findIndex(function(s){ return s.name === supName; });
       if(spIdx >= 0) PRODUCTS[prodIdx].suppliers[spIdx].price = price;
-      else PRODUCTS[prodIdx].suppliers.push({ name: supName, price: price });
+      else PRODUCTS[prodIdx].suppliers.push({ name: supName, price: price, allowedLegalEntityIds: allowedLegalEntityIds.slice(), allowedLegalEntityNames: allowedLegalEntityNames.slice() });
       PRODUCTS[prodIdx].unit = PRODUCTS[prodIdx].unit || normUnit;
     } else {
       PRODUCTS.push({
@@ -9127,8 +9247,8 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
         emoji: '',
         sticker: null,
         fav: false,
-        allowedCompanies: allowedCompanies.slice(),
-        suppliers: [{ name: supName, price: price }],
+        allowedLegalEntityIds: allowedLegalEntityIds.slice(),
+        suppliers: [{ name: supName, price: price, allowedLegalEntityIds: allowedLegalEntityIds.slice(), allowedLegalEntityNames: allowedLegalEntityIds.slice() }],
         pKg: pKg,
         pSh: pSh,
         pL: pL,
@@ -9166,17 +9286,14 @@ function processSupPriceRows(rows, cols, supName, append, priceName, allowedUser
 }
 
 function _saveSupplierImportRowsDirect(rows, supName, append, priceName, allowedUserIds){
-  var allowedCompanies = [];
+  var allowedLegalEntityIds = [];
+  var allowedLegalEntityNames = [];
   document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
-    var co = cb.dataset.company;
-    if(co && allowedCompanies.indexOf(co) < 0) allowedCompanies.push(co);
+    var legalId = String(cb.value || '').trim();
+    if(legalId && allowedLegalEntityIds.indexOf(legalId) < 0) allowedLegalEntityIds.push(legalId);
+    var legalName = String(cb.dataset.legalName || cb.textContent || '').trim();
+    if(legalName && allowedLegalEntityNames.indexOf(legalName) < 0) allowedLegalEntityNames.push(legalName);
   });
-  if(!allowedUserIds || !allowedUserIds.length){
-    allowedUserIds = [];
-    document.querySelectorAll('.sup-price-comp-cb:checked').forEach(function(cb){
-      allowedUserIds.push(cb.value);
-    });
-  }
 
   if(!append){
     SUP_PRODS = SUP_PRODS.filter(function(p){
@@ -9228,8 +9345,8 @@ function _saveSupplierImportRowsDirect(rows, supName, append, priceName, allowed
       active: true,
       hidden: false,
       _type: currentType,
-      allowedUserIds: allowedUserIds.slice(),
-      allowedCompanies: allowedCompanies.slice(),
+      allowedLegalEntityIds: allowedLegalEntityIds.slice(),
+      allowedLegalEntityNames: allowedLegalEntityNames.slice(),
       sourceRow: row && row.sourceRow ? row.sourceRow : (idx + 1)
     };
 
@@ -9242,7 +9359,7 @@ function _saveSupplierImportRowsDirect(rows, supName, append, priceName, allowed
     if(prodIdx >= 0){
       var spIdx = PRODUCTS[prodIdx].suppliers.findIndex(function(s){ return s.name === supName; });
       if(spIdx >= 0) PRODUCTS[prodIdx].suppliers[spIdx].price = price;
-      else PRODUCTS[prodIdx].suppliers.push({ name: supName, price: price });
+      else PRODUCTS[prodIdx].suppliers.push({ name: supName, price: price, allowedLegalEntityIds: allowedLegalEntityIds.slice(), allowedLegalEntityNames: allowedLegalEntityIds.slice() });
       PRODUCTS[prodIdx].unit = PRODUCTS[prodIdx].unit || normUnit;
     } else {
       PRODUCTS.push({
@@ -9253,8 +9370,8 @@ function _saveSupplierImportRowsDirect(rows, supName, append, priceName, allowed
         emoji: '',
         sticker: null,
         fav: false,
-        allowedCompanies: allowedCompanies.slice(),
-        suppliers: [{ name: supName, price: price }],
+        allowedLegalEntityIds: allowedLegalEntityIds.slice(),
+        suppliers: [{ name: supName, price: price, allowedLegalEntityIds: allowedLegalEntityIds.slice(), allowedLegalEntityNames: allowedLegalEntityNames.slice() }],
         pKg: pKg,
         pSh: pSh,
         pL: pL,

@@ -1218,6 +1218,10 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
   <label class="fL">Название прайса</label>
   <input class="fI" type="text" id="supPriceName" placeholder="Основной / Акции / Сезонный">
 
+  <label class="fL" style="margin-top:10px;">Организация</label>
+  <div id="supPriceOrgHint" style="font-size:11px;color:var(--t3);margin:-2px 0 6px;">Выберите организацию, к которой относится этот прайс.</div>
+  <select class="fS" id="supPriceOrgSelect" style="margin-bottom:12px;"></select>
+
   <label class="fL">Файл (.xlsx, .xls, .csv)</label>
   <input type="file" id="supPriceFile" accept=".xlsx,.xls,.csv,.txt"
     onchange="prepareSupPriceImportPreview()"
