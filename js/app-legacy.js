@@ -449,6 +449,9 @@ function dbLoad(callback){
             TECH_CARDS = d.techCards;
           }
           try{ localStorage.setItem('pv_cache', JSON.stringify(d)); }catch(e){}
+          _catalogDataRevision = Date.now();
+          _catalogProductsCache = { key:'', bySupplier:{} };
+          _catalogRatingCache = { key:'', bySupplier:{} };
           if(callback) callback();
           return;
         }
@@ -473,6 +476,9 @@ function dbLoad(callback){
     if(Array.isArray(local.supplierImportTemplates)) { _dbCache.supplierImportTemplates = local.supplierImportTemplates; window.supplierImportTemplates = local.supplierImportTemplates; }
     if(Array.isArray(local.orders))   ORDERS   = local.orders;
   if(Array.isArray(local.techCards)) TECH_CARDS = local.techCards;
+    _catalogDataRevision = Date.now();
+    _catalogProductsCache = { key:'', bySupplier:{} };
+    _catalogRatingCache = { key:'', bySupplier:{} };
     if(callback) callback();
   };
   xhr.ontimeout = xhr.onerror = function(){
@@ -488,6 +494,9 @@ function dbLoad(callback){
     if(Array.isArray(local.priceImportItems)) window.priceImportItems = local.priceImportItems;
     if(Array.isArray(local.supplierImportTemplates)) { _dbCache.supplierImportTemplates = local.supplierImportTemplates; window.supplierImportTemplates = local.supplierImportTemplates; }
     if(Array.isArray(local.orders))   ORDERS   = local.orders;
+    _catalogDataRevision = Date.now();
+    _catalogProductsCache = { key:'', bySupplier:{} };
+    _catalogRatingCache = { key:'', bySupplier:{} };
     if(callback) callback();
   };
   xhr.send();
@@ -549,7 +558,9 @@ function dbSet(d){
   d.orders   = ORDERS;
   d.techCards = TECH_CARDS;
   _dbCache = d;
+  _catalogDataRevision = (_catalogDataRevision || 0) + 1;
   _catalogProductsCache = { key:'', bySupplier:{} };
+  _catalogRatingCache = { key:'', bySupplier:{} };
   try{ localStorage.setItem('pv_cache', JSON.stringify(d)); }catch(e){}
   _writeToFirebase(d, null);
 }
@@ -635,17 +646,26 @@ function getSupplierRatingsStore(){
 }
 
 function getSupplierRatingSummary(supName){
+  var sig = String(_catalogDataRevision || 0);
+  if(_catalogRatingCache.key !== sig){
+    _catalogRatingCache = { key:sig, bySupplier:{} };
+  }
+  if(_catalogRatingCache.bySupplier && _catalogRatingCache.bySupplier[supName]){
+    return _catalogRatingCache.bySupplier[supName];
+  }
   var store=getSupplierRatingsStore();
   var supplierStore=store[supName] && typeof store[supName]==='object' ? store[supName] : {};
   var values=Object.values(supplierStore).map(function(v){ return Number(v)||0; }).filter(function(v){ return v>=1 && v<=5; });
   var count=values.length;
   var average=count ? values.reduce(function(sum,v){ return sum+v; },0)/count : 0;
   var mine=CU && supplierStore[CU.id] ? Number(supplierStore[CU.id])||0 : 0;
-  return {
+  var summary = {
     average:average,
     count:count,
     mine:mine
   };
+  _catalogRatingCache.bySupplier[supName] = summary;
+  return summary;
 }
 
 function formatSupplierRatingAverage(value){
@@ -1230,6 +1250,12 @@ var _catalogSupplierId = '';
 var _catalogSupplierSort = 'asc';
 var _catalogSupplierQuery = '';
 var _catalogProductsCache = { key:'', bySupplier:{} };
+var _catalogRatingCache = { key:'', bySupplier:{} };
+var _catalogDataRevision = 1;
+var _catalogRenderToken = 0;
+var _supplierRenderToken = 0;
+var _catalogCardBatchSize = 24;
+var _catalogSupplierCardToken = 0;
 
 function renderSupSel(){}
 function togSup(){ renderCatalog(); }
@@ -1242,7 +1268,7 @@ function getCatalogVisibleSuppliers(){
 
 function getSupplierCatalogProducts(supName){
   var sig=[
-    String(supName||''),
+    String(_catalogDataRevision || 0),
     String((SUP_PRODS||[]).length),
     String((PRODUCTS||[]).length),
     String(_catalogSupplierSort||'asc')
@@ -1310,7 +1336,7 @@ function getCatalogSuppliers(){
       deliverySchedule:s.deliverySchedule||s.delivery||'—',
       workSchedule:s.workSchedule||'—',
       assortmentCount:assortment.length,
-      assortmentIndex:assortment.map(function(item){ return item.name; }).join(' '),
+      assortmentIndex:query ? assortment.map(function(item){ return item.name; }).join(' ') : '',
       ratingAverage:rating.average,
       ratingCount:rating.count,
       myRating:rating.mine
@@ -1404,16 +1430,35 @@ function renderCatalogSupplierCard(){
     +'<div style="padding:10px 12px;border:1px solid var(--br);border-radius:10px;background:var(--bg2);"><div style="font-size:10px;color:var(--t3);text-transform:uppercase;">Ассортимент</div><div style="font-size:13px;font-weight:700;margin-top:4px;">'+assortment.length+' позиций</div></div>'
     +'</div>'
     +'</div>';
-  body.innerHTML=assortment.length
-    ? '<div style="display:grid;gap:6px;">'+assortment.map(function(item, idx){
-        return '<div style="display:grid;grid-template-columns:40px minmax(0,1fr) 90px 130px;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--br);border-radius:10px;background:var(--bg3);">'
-          +'<div style="font-size:12px;color:var(--t3);font-weight:700;">'+(idx+1)+'</div>'
-          +'<div style="font-size:13px;font-weight:700;">'+item.name+'</div>'
-          +'<div style="font-size:12px;color:var(--t3);">'+(item.unit||'—')+'</div>'
-          +'<div style="font-size:11px;color:var(--t3);">'+(item.category||'—')+'</div>'
-          +'</div>';
-      }).join('')+'</div>'
-    : '<div style="padding:20px;border:1px dashed var(--br2);border-radius:10px;color:var(--t3);text-align:center;">'+(_catalogSupplierQuery?'По вашему поиску ничего не найдено':'У этого поставщика пока нет ассортимента в каталоге')+'</div>';
+  var token = ++_catalogSupplierCardToken;
+  body.innerHTML='';
+  if(!assortment.length){
+    body.innerHTML='<div style="padding:20px;border:1px dashed var(--br2);border-radius:10px;color:var(--t3);text-align:center;">'+(_catalogSupplierQuery?'По вашему поиску ничего не найдено':'У этого поставщика пока нет ассортимента в каталоге')+'</div>';
+    return;
+  }
+  var listWrap=document.createElement('div');
+  listWrap.style.cssText='display:grid;gap:6px;';
+  body.appendChild(listWrap);
+  var idx=0;
+  var batch=30;
+  function appendItems(){
+    if(token !== _catalogSupplierCardToken || !listWrap) return;
+    var frag=document.createDocumentFragment();
+    var end=Math.min(idx + batch, assortment.length);
+    for(; idx<end; idx++){
+      var item=assortment[idx];
+      var row=document.createElement('div');
+      row.style.cssText='display:grid;grid-template-columns:40px minmax(0,1fr) 90px 130px;gap:10px;align-items:center;padding:10px 12px;border:1px solid var(--br);border-radius:10px;background:var(--bg3);';
+      row.innerHTML='<div style="font-size:12px;color:var(--t3);font-weight:700;">'+(idx+1)+'</div>'
+        +'<div style="font-size:13px;font-weight:700;">'+item.name+'</div>'
+        +'<div style="font-size:12px;color:var(--t3);">'+(item.unit||'—')+'</div>'
+        +'<div style="font-size:11px;color:var(--t3);">'+(item.category||'—')+'</div>';
+      frag.appendChild(row);
+    }
+    listWrap.appendChild(frag);
+    if(idx < assortment.length) requestAnimationFrame(appendItems);
+  }
+  requestAnimationFrame(appendItems);
 }
 
 function sortCatalogSupplierProducts(direction){
@@ -1433,12 +1478,15 @@ function catalogSupplierUploadPrice(){
 }
 
 function renderCatalog(){
+  var started = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
   var list=getCatalogSuppliers();
   var sub=document.getElementById('catalogSub');
   if(sub){
     sub.textContent='Открытый каталог поставщиков: '+list.length+' компаний · ассортимент обновляется автоматически после загрузки прайсов в системе';
   }
   renderCatList(list);
+  var elapsed = ((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - started;
+  if(elapsed > 120) console.warn('[perf] renderCatalog took ' + Math.round(elapsed) + 'ms');
 }
 
 function renderCatList(list){
@@ -1448,40 +1496,58 @@ function renderCatList(list){
     grid.innerHTML='<div class="empty"><div class="empty-ico">🏭</div><div class="empty-txt">Поставщики не найдены</div></div>';
     return;
   }
-  grid.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;"></div>';
-  var wrap=grid.firstChild;
-  list.forEach(function(s){
-    var card=document.createElement('div');
-    card.style.cssText='background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);overflow:hidden;cursor:pointer;';
-    card.onclick=function(){ openCatalogSupplierCard(s.name); };
-    card.innerHTML=
-      '<div style="padding:14px 16px;border-bottom:1px solid var(--br);background:var(--bg3);">'
-      +'<div style="display:flex;align-items:flex-start;gap:12px;">'
-      +'<div style="flex:1;min-width:0;">'
-      +'<div style="font-size:17px;font-weight:800;">'+s.name+'</div>'
-      +'<div style="font-size:12px;color:var(--t3);margin-top:4px;">'+(s.type||'Поставщик')+'</div>'
-      +'</div>'
-      +'<div style="font-size:11px;color:var(--t3);white-space:nowrap;">'+s.assortmentCount+' поз.</div>'
-      +'</div>'
-      +'</div>'
-      +'<div style="padding:14px 16px;display:grid;gap:8px;">'
-      +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--br);border-radius:10px;background:var(--bg3);">'
-      +'<div style="font-size:12px;color:var(--t2);"><b>Рейтинг:</b> '+formatSupplierRatingAverage(s.ratingAverage)+'</div>'
-      +'<div style="font-size:11px;color:var(--t3);">'+s.ratingCount+' оценок</div>'
-      +'</div>'
-      +'<div style="font-size:12px;color:var(--t2);"><b>Юр. лицо:</b> '+(s.legalName||s.name)+'</div>'
-      +'<div style="font-size:12px;color:var(--t2);"><b>Мин. сумма заказа:</b> '+(s.minOrderLabel||'—')+'</div>'
-      +'<div style="font-size:12px;color:var(--t2);"><b>Город:</b> '+(s.city||'—')+'</div>'
-      +'<div style="font-size:12px;color:var(--t2);"><b>График доставки:</b> '+(s.deliverySchedule||'—')+'</div>'
-      +'<div style="font-size:12px;color:var(--t2);"><b>График работы:</b> '+(s.workSchedule||'—')+'</div>'
-      +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-top:4px;" onclick="event.stopPropagation();">'
-      +'<div style="font-size:11px;color:var(--t3);">Поставьте свою оценку</div>'
-      +'<div style="display:flex;gap:4px;">'+renderSupplierRatingStars(s.name, s.myRating)+'</div>'
-      +'</div>'
-      +'<div style="margin-top:4px;font-size:11px;color:var(--t3);">Нажмите, чтобы открыть карточку поставщика и посмотреть ассортимент без цен</div>'
-      +'</div>';
-    wrap.appendChild(card);
-  });
+  var token = ++_catalogRenderToken;
+  grid.innerHTML='<div id="catGridWrap" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;"></div>'
+    +'<div id="catGridHint" style="padding:14px 6px;color:var(--t3);font-size:12px;">Подготавливаем каталог…</div>';
+  var wrap=grid.querySelector('#catGridWrap');
+  var hint=grid.querySelector('#catGridHint');
+  var index=0;
+  var total=list.length;
+  function appendBatch(){
+    if(token !== _catalogRenderToken || !wrap) return;
+    var frag=document.createDocumentFragment();
+    var end=Math.min(index + _catalogCardBatchSize, total);
+    for(; index<end; index++){
+      var s=list[index];
+      var card=document.createElement('div');
+      card.style.cssText='background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);overflow:hidden;cursor:pointer;';
+      card.onclick=(function(name){
+        return function(){ openCatalogSupplierCard(name); };
+      })(s.name);
+      card.innerHTML=
+        '<div style="padding:14px 16px;border-bottom:1px solid var(--br);background:var(--bg3);">'
+        +'<div style="display:flex;align-items:flex-start;gap:12px;">'
+        +'<div style="flex:1;min-width:0;">'
+        +'<div style="font-size:17px;font-weight:800;">'+s.name+'</div>'
+        +'<div style="font-size:12px;color:var(--t3);margin-top:4px;">'+(s.type||'Поставщик')+'</div>'
+        +'</div>'
+        +'<div style="font-size:11px;color:var(--t3);white-space:nowrap;">'+s.assortmentCount+' поз.</div>'
+        +'</div>'
+        +'</div>'
+        +'<div style="padding:14px 16px;display:grid;gap:8px;">'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--br);border-radius:10px;background:var(--bg3);">'
+        +'<div style="font-size:12px;color:var(--t2);"><b>Рейтинг:</b> '+formatSupplierRatingAverage(s.ratingAverage)+'</div>'
+        +'<div style="font-size:11px;color:var(--t3);">'+s.ratingCount+' оценок</div>'
+        +'</div>'
+        +'<div style="font-size:12px;color:var(--t2);"><b>Юр. лицо:</b> '+(s.legalName||s.name)+'</div>'
+        +'<div style="font-size:12px;color:var(--t2);"><b>Мин. сумма заказа:</b> '+(s.minOrderLabel||'—')+'</div>'
+        +'<div style="font-size:12px;color:var(--t2);"><b>Город:</b> '+(s.city||'—')+'</div>'
+        +'<div style="font-size:12px;color:var(--t2);"><b>График доставки:</b> '+(s.deliverySchedule||'—')+'</div>'
+        +'<div style="font-size:12px;color:var(--t2);"><b>График работы:</b> '+(s.workSchedule||'—')+'</div>'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-top:4px;" onclick="event.stopPropagation();">'
+        +'<div style="font-size:11px;color:var(--t3);">Поставьте свою оценку</div>'
+        +'<div style="display:flex;gap:4px;">'+renderSupplierRatingStars(s.name, s.myRating)+'</div>'
+        +'</div>'
+        +'<div style="margin-top:4px;font-size:11px;color:var(--t3);">Нажмите, чтобы открыть карточку поставщика и посмотреть ассортимент без цен</div>'
+        +'</div>';
+      frag.appendChild(card);
+    }
+    wrap.appendChild(frag);
+    if(hint) hint.textContent='Показаны '+index+' из '+total+' поставщиков';
+    if(index < total) requestAnimationFrame(appendBatch);
+    else if(hint) hint.textContent='Показаны все поставщики: '+total;
+  }
+  requestAnimationFrame(appendBatch);
 }
 function addToCartD(pid){
   // Берём минимальную цену по умолчанию
