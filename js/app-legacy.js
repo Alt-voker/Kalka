@@ -629,22 +629,24 @@ function enterApp(u){
 function setupUI(u){
   const rd=ROLES[u.role]||{};const tc=['owner','chef','buyer'].includes(u.role)?'#000':'#fff';
   const av=document.getElementById('sbAva');av.style.background=`linear-gradient(135deg,${rd.color},${rd.color}88)`;av.style.color=tc;av.textContent=(u.first[0]+u.last[0]).toUpperCase();
-  document.getElementById('sbName').textContent=u.first+' '+u.last;document.getElementById('sbRole').textContent=u.company;
+  document.getElementById('sbName').textContent=u.first+' '+u.last;document.getElementById('sbRole').textContent=(u.noOrganization?'Доступ ограничен':u.company);
+  const noOrg=!!(u.noOrganization || (window.__userSession && window.__userSession.noOrganization));
   const isS=u.role==='supplier',isAcc=u.role==='accountant';
   const scopedRestaurants=getUserScopedRestaurantIds(u, dbGet());
-  document.getElementById('cartBtn').style.display=(!isS&&!isAcc)?'flex':'none';
-  document.getElementById('favBtn').style.display=(!isS&&!isAcc)?'flex':'none';
-  document.getElementById('tbSearch').style.display=isS?'none':'flex';
-  document.getElementById('restBtn').style.display=(!isS && (['owner','admin','manager'].includes(u.role) || scopedRestaurants.length>1))?'flex':'none';
+  document.getElementById('cartBtn').style.display=(!noOrg&&!isS&&!isAcc)?'flex':'none';
+  document.getElementById('favBtn').style.display=(!noOrg&&!isS&&!isAcc)?'flex':'none';
+  document.getElementById('tbSearch').style.display=(noOrg||isS)?'none':'flex';
+  document.getElementById('restBtn').style.display=(!noOrg && !isS && (['owner','admin','manager'].includes(u.role) || scopedRestaurants.length>1))?'flex':'none';
   const ta=document.getElementById('topAct');
-  if(u.role==='supplier')                        {ta.textContent='+ Товар';            ta.onclick=()=>openModal('addProduct');}
+  if(noOrg)                                      {ta.textContent='⇦ Выход';            ta.onclick=()=>doLogout();}
+  else if(u.role==='supplier')                   {ta.textContent='+ Товар';            ta.onclick=()=>openModal('addProduct');}
   else if(['chef','manager','admin'].includes(u.role)){ta.textContent='+ Тех. карта';  ta.onclick=()=>openModal('newTC');}
   else if(u.role==='owner')                      {ta.textContent='🛡 Панель владельца';ta.onclick=()=>goPage('owner');}
   else                                           {ta.textContent='+ Заказ';            ta.onclick=()=>openModal('newOrder');}
   buildNav(u);
   renderOrgInviteBadge();
-  var firstPage=((ROLES[u.role]||{}).pages||[]).find(function(pg){ return canAccessPage(u, pg); })||'dashboard';
-  if(!canAccessPage(u, firstPage)) firstPage='orders';
+  var firstPage=noOrg ? 'dashboard' : (((ROLES[u.role]||{}).pages||[]).find(function(pg){ return canAccessPage(u, pg); })||'dashboard');
+  if(!noOrg && !canAccessPage(u, firstPage)) firstPage='orders';
   setTimeout(function(){
     requestAnimationFrame(function(){
       goPage(firstPage);
@@ -683,8 +685,9 @@ function doLogout(){
 
 function toggleSB(){sbC=!sbC;document.getElementById('SB').classList.toggle('slim',sbC);document.getElementById('sbTog').textContent=sbC?'›':'‹';}
 function buildNav(u){
-  const basePages=((ROLES[u.role]||{}).pages||[]).slice();
-  const rawPages=(u.role==='admin'&&ownerGetSettings().adminAdvanced&&basePages.indexOf('owner')<0)?['owner'].concat(basePages):basePages;
+  const noOrg=!!(u && (u.noOrganization || (window.__userSession && window.__userSession.noOrganization)));
+  const basePages=noOrg ? ['dashboard'] : ((ROLES[u.role]||{}).pages||[]).slice();
+  const rawPages=noOrg ? ['dashboard'] : ((u.role==='admin'&&ownerGetSettings().adminAdvanced&&basePages.indexOf('owner')<0)?['owner'].concat(basePages):basePages);
   const pages=rawPages.filter(function(pg){ return pg!=='dashboard' || userCanSeeDashboard(u); });
   let html='',lastSec=null;
   pages.forEach(pg=>{
@@ -818,6 +821,16 @@ function getDashboardCategoryData(orders){
 }
 function renderDash(){
   function setEl(id,v){var e=document.getElementById(id);if(e)e.innerHTML=v;}
+  if(CU && (CU.noOrganization || (window.__userSession && window.__userSession.noOrganization))){
+    setEl('dashStats','<div style="grid-column:1/-1;padding:28px;border:1px solid var(--br);border-radius:var(--r2);background:var(--bg2);"><div style="font-size:20px;font-weight:800;margin-bottom:8px;">Вы вошли в систему, но пока не добавлены ни в одну организацию</div><div style="font-size:13px;color:var(--t2);line-height:1.6;margin-bottom:14px;">Обратитесь к владельцу платформы или ожидайте приглашения. После добавления в организацию доступные разделы и данные появятся автоматически.</div><button onclick="doLogout()" style="background:var(--ac);color:#fff;border:none;border-radius:8px;padding:10px 18px;font-weight:700;cursor:pointer;">Выйти</button></div>');
+    setEl('dashPulse','');
+    setEl('dashTopSup','');
+    setEl('dashStructure','');
+    setEl('dashSavings','');
+    setEl('dashInsights','');
+    setEl('dashOrders','');
+    return;
+  }
   var dashPeriod=parseInt(document.getElementById('dashPeriod')?.value||'6',10)||6;
   var orders=getOrdersForMonths(getDashboardOrders(), dashPeriod).slice().sort(function(a,b){
     return _parseOrderDateValue(b.date)-_parseOrderDateValue(a.date);
@@ -2492,6 +2505,7 @@ function declineOrgInvite(inviteId){
 
 function userCanSeeDashboard(user){
   if(!user) return false;
+  if(user.noOrganization || (window.__userSession && window.__userSession.noOrganization)) return true;
   if(user.role==='owner') return true;
   var access=normalizeDashboardAccess(user);
   if(!access.enabled) return false;
@@ -2517,6 +2531,7 @@ function ensureDashboardRestSelection(){
 function canAccessPage(u, pg){
   if(!u) return false;
   if(pg==='dashboard') return userCanSeeDashboard(u);
+  if(u.noOrganization || (window.__userSession && window.__userSession.noOrganization)) return false;
   var pages=(ROLES[u.role]||{}).pages||[];
   if(pages.indexOf(pg)>=0) return true;
   if(u.role==='admin' && ownerGetSettings().adminAdvanced && pg==='owner') return true;

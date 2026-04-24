@@ -398,6 +398,22 @@
     return role === 'platform_owner' ? 'owner' : (role || 'manager');
   }
 
+  function buildFallbackProfile(authUser) {
+    var meta = (authUser && authUser.user_metadata) || {};
+    var email = String((authUser && authUser.email) || '').toLowerCase();
+    return {
+      id: authUser && authUser.id ? String(authUser.id) : '',
+      auth_user_id: authUser && authUser.id ? String(authUser.id) : '',
+      email: email,
+      first_name: meta.first_name || meta.firstName || meta.name || 'Пользователь',
+      last_name: meta.last_name || meta.lastName || '',
+      phone: meta.phone || '',
+      status: meta.status || 'active',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+  }
+
   function mapProfileToLegacyUser(profile, memberships, organizations, activeOrganization) {
     var firstMembership = memberships[0] || null;
     var orgName = (activeOrganization && activeOrganization.name) || (organizations[0] && organizations[0].name) || '';
@@ -530,9 +546,25 @@
       .select('id, auth_user_id, email, first_name, last_name, phone, status, created_at, updated_at')
       .eq('auth_user_id', authUser.id)
       .maybeSingle();
-    if (profileResponse.error || !profileResponse.data) return null;
-    var profile = normalizeProfileRow(profileResponse.data);
+    var rawProfile = profileResponse && profileResponse.data ? profileResponse.data : null;
+    var profile = normalizeProfileRow(rawProfile || buildFallbackProfile(authUser));
     if (!profile) return null;
+    if (!rawProfile) {
+      try {
+        await client
+          .from('user_profiles')
+          .upsert({
+            auth_user_id: authUser.id,
+            email: profile.email,
+            first_name: profile.first_name,
+            last_name: profile.last_name,
+            phone: profile.phone,
+            status: profile.status
+          }, { onConflict: 'auth_user_id' });
+      } catch (profileError) {
+        console.error('user_profiles bootstrap upsert failed:', profileError);
+      }
+    }
 
     var membershipsResponse = await client
       .from('organization_members')
@@ -604,20 +636,22 @@
       }
     }
 
-    var uiRole = normalizeUiRole((activeMembership && activeMembership.role) || 'manager');
+    var noOrganization = !activeOrganization || !memberships.length;
+    var uiRole = noOrganization ? 'unassigned' : normalizeUiRole((activeMembership && activeMembership.role) || 'manager');
     var session = {
       profile: profile,
       memberships: memberships,
       organizations: organizations,
       legalEntities: legalEntities,
+      noOrganization: noOrganization,
       activeOrganization: activeOrganization,
-      activeOrganizationId: activeOrganization ? activeOrganization.id : '',
+      activeOrganizationId: activeOrganization ? activeOrganization.id : null,
       activeLegalEntities: activeLegalEntities,
       activeLegalEntityIds: activeLegalEntities.map(function (item) { return item.id; }),
       activeLegalEntityNames: activeLegalEntities.map(function (item) { return item.name; }),
       currentMembership: activeMembership,
       role: uiRole,
-      permissions: (window.ROLES && window.ROLES[uiRole] && window.ROLES[uiRole].pages) ? window.ROLES[uiRole].pages.slice() : [],
+      permissions: noOrganization ? [] : ((window.ROLES && window.ROLES[uiRole] && window.ROLES[uiRole].pages) ? window.ROLES[uiRole].pages.slice() : []),
       currentUser: {
         id: authUser.id,
         profileId: profile.id,
@@ -629,7 +663,8 @@
         status: profile.status || 'active',
         ev: true,
         created: (profile.created_at || new Date().toISOString()).slice(0, 10),
-        organizationId: activeOrganization ? activeOrganization.id : '',
+        organizationId: activeOrganization ? activeOrganization.id : null,
+        noOrganization: noOrganization,
         memberships: memberships.map(function (item) {
           return {
             organizationId: item.organization_id,
@@ -646,6 +681,20 @@
         return mapProfileToLegacyUser(row, membership, organizations, activeOrganization);
       })
     };
+
+    if (noOrganization) {
+      session.activeOrganization = null;
+      session.activeOrganizationId = null;
+      session.activeLegalEntities = [];
+      session.activeLegalEntityIds = [];
+      session.activeLegalEntityNames = [];
+      session.suppliers = [];
+      session.currentMembership = null;
+      session.permissions = [];
+      session.currentUser.role = 'unassigned';
+      session.currentUser.noOrganization = true;
+      session.currentUser.company = 'КальКа';
+    }
 
     applyServerSession(session);
     return session;
@@ -980,7 +1029,7 @@
       var session = await window.initUserSession(authUser);
       if (!session || !session.currentUser) {
         await client.auth.signOut();
-        if (errEl) errEl.textContent = 'Пользователь не связан с организациями. Обратитесь к владельцу платформы';
+        if (errEl) errEl.textContent = 'Не удалось загрузить профиль пользователя';
         return;
       }
 
@@ -1001,7 +1050,7 @@
         return;
       }
 
-      markLoginStage('login:state-hydrated', 'server-first');
+      markLoginStage('login:state-hydrated', session.noOrganization ? 'no-organization' : 'server-first');
       if (typeof window.enterApp === 'function') window.enterApp(user);
     } catch (error) {
       if (errEl) errEl.textContent = error && error.message ? error.message : 'Ошибка входа';
