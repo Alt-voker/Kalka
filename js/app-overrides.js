@@ -1119,6 +1119,147 @@
     }
   };
 
+  window.openAssignUserToOrganizationModal = function (userId) {
+    if (!window.CU || window.CU.role !== 'owner') {
+      if (typeof window.toast === 'function') window.toast('Только владелец может назначать организации', 'err');
+      return;
+    }
+    var db = ensureArrays(window._dbCache || getDefaults());
+    var user = (db.users || []).find(function (item) { return String(item.id || '') === String(userId || ''); });
+    if (!user) {
+      if (typeof window.toast === 'function') window.toast('Пользователь не найден', 'err');
+      return;
+    }
+    var title = document.querySelector('#ov-assignUserOrg .m-title');
+    if (title) title.textContent = '🏢 Назначить организацию и роль';
+    var info = document.getElementById('auo-user-info');
+    if (info) info.innerHTML = '<b>' + [user.first, user.last].filter(Boolean).join(' ') + '</b><br><span style="color:var(--t3);font-size:12px;">' + (user.email || '—') + '</span>';
+    var userIdInput = document.getElementById('auo-user-id');
+    if (userIdInput) userIdInput.value = user.id || '';
+    var orgSelect = document.getElementById('auo-org');
+    if (orgSelect) {
+      var organizations = (window.__userSession && Array.isArray(window.__userSession.organizations)) ? window.__userSession.organizations : [];
+      orgSelect.innerHTML = '<option value="">Выберите организацию</option>' + organizations.map(function (org) {
+        return '<option value="' + org.id + '">' + (org.name || 'Организация') + '</option>';
+      }).join('');
+    }
+    var roleSelect = document.getElementById('auo-role');
+    if (roleSelect) roleSelect.value = user.role && ROLES[user.role] ? user.role : 'manager';
+    var statusSelect = document.getElementById('auo-status');
+    if (statusSelect) statusSelect.value = 'active';
+    var errEl = document.getElementById('auo-err');
+    if (errEl) errEl.textContent = '';
+    if (typeof window.openModal === 'function') {
+      window.openModal('assignUserOrg');
+    }
+  };
+
+  window.submitAssignUserToOrganization = async function () {
+    var errEl = document.getElementById('auo-err');
+    var okEl = document.getElementById('auo-ok');
+    var btn = document.getElementById('auo-submit-btn');
+    var userId = ((document.getElementById('auo-user-id') || {}).value || '').trim();
+    var orgId = ((document.getElementById('auo-org') || {}).value || '').trim();
+    var role = ((document.getElementById('auo-role') || {}).value || '').trim();
+    var status = ((document.getElementById('auo-status') || {}).value || 'active').trim() || 'active';
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+
+    if (errEl) errEl.textContent = '';
+    if (okEl) okEl.textContent = '';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Сохраняем...';
+    }
+
+    try {
+      if (!window.CU || window.CU.role !== 'owner') {
+        throw new Error('Только владелец может назначать пользователей');
+      }
+      if (!client || !app.supabase || !app.supabase.isEnabled || !app.supabase.isEnabled()) {
+        throw new Error('Supabase не настроен');
+      }
+      if (!userId) throw new Error('Пользователь не выбран');
+      if (!orgId) throw new Error('Выберите организацию');
+      if (!role) throw new Error('Выберите роль');
+
+      var db = ensureArrays(window._dbCache || getDefaults());
+      var user = (db.users || []).find(function (item) { return String(item.id || '') === String(userId); });
+      if (!user) throw new Error('Пользователь не найден');
+
+      var profilePayload = {
+        auth_user_id: user.id,
+        email: String(user.email || '').toLowerCase(),
+        first_name: user.first || 'Пользователь',
+        last_name: user.last || '',
+        phone: user.phone || '',
+        status: user.status || 'active'
+      };
+      var profileResponse = await client
+        .from('user_profiles')
+        .upsert(profilePayload, { onConflict: 'auth_user_id' })
+        .select('id, auth_user_id, email, first_name, last_name, phone, status')
+        .maybeSingle();
+      if (profileResponse.error) throw profileResponse.error;
+
+      var profileId = profileResponse.data && profileResponse.data.id ? profileResponse.data.id : user.profileId;
+      if (!profileId) throw new Error('Не удалось определить профиль пользователя');
+
+      var memberPayload = {
+        organization_id: orgId,
+        user_profile_id: profileId,
+        role: role,
+        status: status
+      };
+      var existingMemberResponse = await client
+        .from('organization_members')
+        .select('id, organization_id, user_profile_id, role, status')
+        .eq('organization_id', orgId)
+        .eq('user_profile_id', profileId)
+        .maybeSingle();
+      if (existingMemberResponse.error) throw existingMemberResponse.error;
+      if (existingMemberResponse.data && existingMemberResponse.data.id) {
+        var updateMemberResponse = await client
+          .from('organization_members')
+          .update({ role: role, status: status })
+          .eq('id', existingMemberResponse.data.id);
+        if (updateMemberResponse.error) throw updateMemberResponse.error;
+      } else {
+        var insertMemberResponse = await client
+          .from('organization_members')
+          .insert(memberPayload);
+        if (insertMemberResponse.error) throw insertMemberResponse.error;
+      }
+
+      try {
+        var authResult = await client.auth.getUser();
+        var currentAuthUser = authResult && authResult.data && authResult.data.user ? authResult.data.user : null;
+        if (currentAuthUser) {
+          await window.initUserSession(currentAuthUser);
+        }
+      } catch (refreshError) {
+        console.error('user membership refresh failed:', refreshError);
+      }
+
+      if (typeof window.closeModal === 'function') window.closeModal('assignUserOrg');
+      if (typeof window.renderAdmin === 'function') window.renderAdmin();
+      if (typeof window.renderOwner === 'function') window.renderOwner();
+      if (typeof window.toast === 'function') window.toast('Пользователь добавлен в организацию', 'ok');
+      if (window.logAudit) {
+        window.logAudit(auditActor(), 'Назначил организацию и роль пользователю ' + user.email + ' → ' + orgId + ' / ' + role, 'Пользователи');
+      }
+      return true;
+    } catch (error) {
+      console.error('assign user to organization failed:', error);
+      if (errEl) errEl.textContent = error && error.message ? error.message : 'Не удалось назначить организацию';
+      return false;
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '✅ Сохранить';
+      }
+    }
+  };
+
   window.doRegister = async function () {
     var errEl = document.getElementById('sr-err');
     var okEl = document.getElementById('sr-ok');

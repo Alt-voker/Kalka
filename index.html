@@ -1045,6 +1045,44 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
   </div>
 </div></div>
 
+<div class="ov" id="ov-assignUserOrg"><div class="modal wide">
+  <div class="m-title">🏢 Назначить организацию и роль</div>
+  <div style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:10px 13px;margin-bottom:14px;font-size:12px;color:var(--t2);line-height:1.5;">
+    Назначьте пользователя в одну или несколько организаций и выберите его рабочую роль. Связь сохранится в `organization_members`.
+  </div>
+  <input type="hidden" id="auo-user-id">
+  <div id="auo-user-info" style="padding:12px 14px;border:1px solid var(--br);border-radius:var(--r);background:var(--bg2);margin-bottom:14px;font-size:12px;line-height:1.5;color:var(--t2);"></div>
+  <label class="fL">Организация</label>
+  <select class="fS" id="auo-org" style="margin-bottom:10px;"></select>
+  <div class="g2">
+    <div>
+      <label class="fL">Роль</label>
+      <select class="fS" id="auo-role">
+        <option value="organization_owner">👑 organization_owner</option>
+        <option value="manager">👔 manager</option>
+        <option value="buyer">🛒 buyer</option>
+        <option value="chef">👨‍🍳 chef</option>
+        <option value="bar_manager">🍸 bar_manager</option>
+        <option value="accountant">📊 accountant</option>
+        <option value="warehouse">🏬 warehouse</option>
+      </select>
+    </div>
+    <div>
+      <label class="fL">Статус</label>
+      <select class="fS" id="auo-status">
+        <option value="active">Активен</option>
+        <option value="blocked">Заблокирован</option>
+      </select>
+    </div>
+  </div>
+  <div id="auo-err" style="color:var(--rd);font-size:12px;min-height:16px;margin-top:8px;"></div>
+  <div id="auo-ok" style="color:var(--gr);font-size:12px;min-height:16px;margin-top:4px;"></div>
+  <div class="m-acts">
+    <button class="m-cancel" onclick="closeModal('assignUserOrg')">Отмена</button>
+    <button class="m-ok" id="auo-submit-btn" onclick="submitAssignUserToOrganization()">✅ Сохранить</button>
+  </div>
+</div></div>
+
 <div class="ov" id="ov-selfRegister"><div class="modal wide">
   <div class="m-title">Создать аккаунт</div>
   <div style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:10px 13px;margin-bottom:14px;font-size:12px;color:var(--t2);line-height:1.5;">
