@@ -1340,6 +1340,15 @@
       return;
     }
 
+    if (window.__sessionReady && window.__userSession && window.__userSession.currentUser) {
+      if (button) {
+        button.textContent = 'Войти в систему →';
+        button.disabled = false;
+      }
+      if (typeof window.enterApp === 'function') window.enterApp(window.__userSession.currentUser);
+      return;
+    }
+
     if (button) {
       button.textContent = 'Входим...';
       button.disabled = true;
@@ -1987,7 +1996,7 @@
         if (!session || !session.currentUser) {
           session = buildNoOrganizationSession(response.data.session.user);
         }
-        if (typeof window.enterApp === 'function' && (!currentUser || currentUser.id !== session.currentUser.id)) {
+        if (typeof window.enterApp === 'function' && (!currentUser || currentUser.id !== session.currentUser.id || !document.getElementById('APP') || !document.getElementById('APP').classList.contains('on'))) {
           window.enterApp(session.currentUser);
         }
         setTimeout(function () {
