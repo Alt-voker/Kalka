@@ -530,7 +530,16 @@
       .eq('organization_id', orgId)
       .eq('status', 'active')
       .order('name', { ascending: true });
-    if (response.error) throw response.error;
+    if (response.error) {
+      console.error('loadSuppliersForOrganization failed', {
+        code: response.error.code || '',
+        message: response.error.message || '',
+        details: response.error.details || '',
+        hint: response.error.hint || '',
+        raw: response.error
+      });
+      throw response.error;
+    }
     var suppliers = (response.data || []).map(normalizeSupplierRow).filter(Boolean);
     console.log('Suppliers loaded:', suppliers.length, 'organization:', orgId);
     return suppliers;
@@ -697,6 +706,15 @@
       .select('id, auth_user_id, email, first_name, last_name, phone, status, created_at, updated_at')
       .eq('auth_user_id', authUser.id)
       .maybeSingle();
+    if (profileResponse.error) {
+      console.error('user_profiles query failed', {
+        code: profileResponse.error.code || '',
+        message: profileResponse.error.message || '',
+        details: profileResponse.error.details || '',
+        hint: profileResponse.error.hint || '',
+        raw: profileResponse.error
+      });
+    }
     var rawProfile = profileResponse && profileResponse.data ? profileResponse.data : null;
     var profile = normalizeProfileRow(rawProfile || buildFallbackProfile(authUser));
     if (!profile) return null;
@@ -722,8 +740,22 @@
       .select('id, organization_id, user_profile_id, role, status, created_at, updated_at')
       .eq('user_profile_id', profile.id)
       .order('created_at', { ascending: true });
-    if (membershipsResponse.error) return null;
+    if (membershipsResponse.error) {
+      console.error('organization_members query failed', {
+        code: membershipsResponse.error.code || '',
+        message: membershipsResponse.error.message || '',
+        details: membershipsResponse.error.details || '',
+        hint: membershipsResponse.error.hint || '',
+        raw: membershipsResponse.error
+      });
+      return null;
+    }
     var memberships = (membershipsResponse.data || []).map(normalizeMembershipRow).filter(Boolean);
+    console.info('membership query result', {
+      authUserId: authUser.id,
+      resolvedUserProfileId: profile.id,
+      membershipsCount: memberships.length
+    });
 
     var orgIds = Array.from(new Set(memberships.map(function (item) {
       return item.organization_id;
@@ -736,7 +768,16 @@
           .in('id', orgIds)
           .order('created_at', { ascending: true })
       : { error: null, data: [] };
-    if (organizationsResponse.error) return null;
+    if (organizationsResponse.error) {
+      console.error('organizations query failed', {
+        code: organizationsResponse.error.code || '',
+        message: organizationsResponse.error.message || '',
+        details: organizationsResponse.error.details || '',
+        hint: organizationsResponse.error.hint || '',
+        raw: organizationsResponse.error
+      });
+      return null;
+    }
     var organizations = (organizationsResponse.data || []).map(normalizeOrganizationRow).filter(Boolean);
 
     var profileIds = [profile.id];
@@ -744,7 +785,16 @@
       .from('user_profiles')
       .select('id, auth_user_id, email, first_name, last_name, phone, status, created_at, updated_at')
       .order('created_at', { ascending: true });
-    if (accessibleProfilesResponse.error) return null;
+    if (accessibleProfilesResponse.error) {
+      console.error('accessible user_profiles query failed', {
+        code: accessibleProfilesResponse.error.code || '',
+        message: accessibleProfilesResponse.error.message || '',
+        details: accessibleProfilesResponse.error.details || '',
+        hint: accessibleProfilesResponse.error.hint || '',
+        raw: accessibleProfilesResponse.error
+      });
+      return null;
+    }
     var accessibleProfiles = (accessibleProfilesResponse.data || []).map(normalizeProfileRow).filter(Boolean);
 
     var memberIds = memberships.map(function (item) { return item.id; }).filter(Boolean);
@@ -754,7 +804,16 @@
           .select('organization_member_id, legal_entity_id, created_at')
           .in('organization_member_id', memberIds)
       : { error: null, data: [] };
-    if (memberLegalResponse.error) return null;
+    if (memberLegalResponse.error) {
+      console.error('member_legal_entities query failed', {
+        code: memberLegalResponse.error.code || '',
+        message: memberLegalResponse.error.message || '',
+        details: memberLegalResponse.error.details || '',
+        hint: memberLegalResponse.error.hint || '',
+        raw: memberLegalResponse.error
+      });
+      return null;
+    }
 
     var legalEntityIds = Array.from(new Set((memberLegalResponse.data || []).map(function (item) {
       return item.legal_entity_id;
@@ -767,7 +826,16 @@
           .in('id', legalEntityIds)
           .order('created_at', { ascending: true })
       : { error: null, data: [] };
-    if (legalEntitiesResponse.error) return null;
+    if (legalEntitiesResponse.error) {
+      console.error('legal_entities query failed', {
+        code: legalEntitiesResponse.error.code || '',
+        message: legalEntitiesResponse.error.message || '',
+        details: legalEntitiesResponse.error.details || '',
+        hint: legalEntitiesResponse.error.hint || '',
+        raw: legalEntitiesResponse.error
+      });
+      return null;
+    }
     var legalEntities = (legalEntitiesResponse.data || []).map(normalizeLegalEntityRow).filter(Boolean);
 
     var activeOrganization = pickActiveOrganization(organizations, memberships);
@@ -789,6 +857,14 @@
 
     var noOrganization = !activeOrganization || !memberships.length;
     var uiRole = noOrganization ? 'unassigned' : normalizeUiRole((activeMembership && activeMembership.role) || 'manager');
+    console.info('initUserSession resolved', {
+      authUserId: authUser.id,
+      profileId: profile.id,
+      membershipsCount: memberships.length,
+      organizationsCount: organizations.length,
+      activeOrganizationId: activeOrganization ? activeOrganization.id : null,
+      noOrganization: noOrganization
+    });
     console.info('initUserSession resolved', {
       authUserId: authUser && authUser.id,
       profileId: profile.id,
@@ -1337,7 +1413,16 @@
         .upsert(profilePayload, { onConflict: 'auth_user_id' })
         .select('id, auth_user_id, email, first_name, last_name, phone, status')
         .maybeSingle();
-      if (profileResponse.error) throw profileResponse.error;
+      if (profileResponse.error) {
+        console.error('assign user profile upsert failed', {
+          code: profileResponse.error.code || '',
+          message: profileResponse.error.message || '',
+          details: profileResponse.error.details || '',
+          hint: profileResponse.error.hint || '',
+          raw: profileResponse.error
+        });
+        throw profileResponse.error;
+      }
 
       var profileId = profileResponse.data && profileResponse.data.id ? profileResponse.data.id : (user.profileId || userProfileId || '');
       if (!profileId) throw new Error('Не удалось определить профиль пользователя');
@@ -1355,18 +1440,45 @@
         .eq('organization_id', orgId)
         .eq('user_profile_id', profileId)
         .maybeSingle();
-      if (existingMemberResponse.error) throw existingMemberResponse.error;
+      if (existingMemberResponse.error) {
+        console.error('organization_members lookup failed', {
+          code: existingMemberResponse.error.code || '',
+          message: existingMemberResponse.error.message || '',
+          details: existingMemberResponse.error.details || '',
+          hint: existingMemberResponse.error.hint || '',
+          raw: existingMemberResponse.error
+        });
+        throw existingMemberResponse.error;
+      }
       if (existingMemberResponse.data && existingMemberResponse.data.id) {
         var updateMemberResponse = await client
           .from('organization_members')
           .update({ role: role, status: status })
           .eq('id', existingMemberResponse.data.id);
-        if (updateMemberResponse.error) throw updateMemberResponse.error;
+        if (updateMemberResponse.error) {
+          console.error('organization_members update failed', {
+            code: updateMemberResponse.error.code || '',
+            message: updateMemberResponse.error.message || '',
+            details: updateMemberResponse.error.details || '',
+            hint: updateMemberResponse.error.hint || '',
+            raw: updateMemberResponse.error
+          });
+          throw updateMemberResponse.error;
+        }
       } else {
         var insertMemberResponse = await client
           .from('organization_members')
           .insert(memberPayload);
-        if (insertMemberResponse.error) throw insertMemberResponse.error;
+        if (insertMemberResponse.error) {
+          console.error('organization_members insert failed', {
+            code: insertMemberResponse.error.code || '',
+            message: insertMemberResponse.error.message || '',
+            details: insertMemberResponse.error.details || '',
+            hint: insertMemberResponse.error.hint || '',
+            raw: insertMemberResponse.error
+          });
+          throw insertMemberResponse.error;
+        }
       }
       console.info('membership saved');
 
@@ -1377,7 +1489,13 @@
           await window.initUserSession(currentAuthUser);
         }
       } catch (refreshError) {
-        console.error('user membership refresh failed:', refreshError);
+        console.error('user membership refresh failed', {
+          code: refreshError && refreshError.code ? refreshError.code : '',
+          message: refreshError && refreshError.message ? refreshError.message : '',
+          details: refreshError && refreshError.details ? refreshError.details : '',
+          hint: refreshError && refreshError.hint ? refreshError.hint : '',
+          raw: refreshError
+        });
       }
 
       if (typeof window.closeModal === 'function') window.closeModal('assignUserOrg');
