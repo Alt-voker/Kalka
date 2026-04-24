@@ -1646,8 +1646,24 @@ function repeatVisibleOrder(orderId){
 }
 function renderSuppliers(){
   var el=document.getElementById('supGrid');if(!el)return;
+  var activeOrgId = String((window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
+  var sessionSuppliers = (window.__userSession && Array.isArray(window.__userSession.suppliers)) ? window.__userSession.suppliers : [];
   var visible=getUserVisibleSuppliers(CU);
   var supSub=document.getElementById('supSub');
+  if(!visible.length && activeOrgId && window.loadSuppliersForOrganization && !window.__loginInProgress && !window.__restoreInProgress){
+    el.innerHTML='<div class="empty"><div class="empty-ico">🏭</div><div class="empty-txt">Загрузка поставщиков...</div></div>';
+    window.loadSuppliersForOrganization(activeOrgId).then(function(items){
+      if(window.__userSession){
+        window.__userSession.suppliers = Array.isArray(items) ? items.slice() : [];
+      }
+      renderSuppliers();
+    }).catch(function(error){
+      console.error('loadSuppliersForOrganization failed for suppliers page:', error);
+      if(supSub) supSub.textContent='Нет поставщиков';
+      el.innerHTML='<div class="empty"><div class="empty-ico">🏭</div><div class="empty-txt">Нет поставщиков</div></div>';
+    });
+    return;
+  }
   if(supSub) supSub.textContent=visible.length ? visible.length+' поставщиков в вашем личном кабинете' : 'Нет поставщиков';
 
   if(!visible.length){
@@ -1666,7 +1682,7 @@ function renderSuppliers(){
   var visibleOrders=getUserVisibleOrders(CU);
 
   var cards=visible.map(function(s){
-    var i=(window.__userSession && Array.isArray(window.__userSession.suppliers)) ? window.__userSession.suppliers.findIndex(function(item){ return item.id===s.id; }) : -1;
+    var i=Array.isArray(sessionSuppliers) ? sessionSuppliers.findIndex(function(item){ return item.id===s.id; }) : -1;
     var ratingSummary=getSupplierRatingSummary(s.name);
     var canManageSupplier=canManageSupplierRecord(CU, s, db);
     var orgSummary=getSupplierVisibleOrganizationsForUser(s, CU, db).map(function(rest){ return rest.name; }).join(' · ') || 'Без привязки';

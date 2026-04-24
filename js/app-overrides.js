@@ -1189,6 +1189,7 @@
         }
         if (isServerFirstMode()) {
           try {
+            window.__restoreInProgress = true;
             var sessionResponse = await app.supabase.getClient().auth.getSession();
             if (sessionResponse && sessionResponse.data && sessionResponse.data.session && sessionResponse.data.session.user) {
               await window.initUserSession(sessionResponse.data.session.user);
@@ -1199,6 +1200,8 @@
             }
           } catch (serverError) {
             console.error('Server-first dbLoad failed:', serverError);
+          } finally {
+            window.__restoreInProgress = false;
           }
           finish();
           return;
@@ -1430,7 +1433,7 @@
       console.error('signIn failed', error);
       if (errEl) errEl.textContent = error && error.message ? error.message : 'Ошибка входа';
     } finally {
-      if (!window.__sessionReady) window.__loginInProgress = false;
+      window.__loginInProgress = false;
       if (button) {
         button.textContent = 'Войти в систему →';
         button.disabled = false;
