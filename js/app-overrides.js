@@ -116,6 +116,22 @@
     } catch (error) {}
   }
 
+  function withTimeout(promise, ms, timeoutMessage) {
+    var timeout = Number(ms || 10000);
+    return Promise.race([
+      promise,
+      new Promise(function (resolve, reject) {
+        setTimeout(function () {
+          var err = new Error(timeoutMessage || 'Timeout');
+          err.code = 'TIMEOUT';
+          err.details = '';
+          err.hint = '';
+          reject(err);
+        }, timeout);
+      })
+    ]);
+  }
+
   function readLocalState() {
     if (isServerFirstMode()) return null;
     try {
@@ -784,23 +800,7 @@
     }
     var organizations = (organizationsResponse.data || []).map(normalizeOrganizationRow).filter(Boolean);
 
-    var profileIds = [profile.id];
-    console.info('supabase request start', 'accessible user_profiles');
-    var accessibleProfilesResponse = await client
-      .from('user_profiles')
-      .select('id, auth_user_id, email, first_name, last_name, phone, status, created_at, updated_at')
-      .order('created_at', { ascending: true });
-    if (accessibleProfilesResponse.error) {
-      console.error('accessible user_profiles query failed', {
-        code: accessibleProfilesResponse.error.code || '',
-        message: accessibleProfilesResponse.error.message || '',
-        details: accessibleProfilesResponse.error.details || '',
-        hint: accessibleProfilesResponse.error.hint || '',
-        raw: accessibleProfilesResponse.error
-      });
-      return null;
-    }
-    var accessibleProfiles = (accessibleProfilesResponse.data || []).map(normalizeProfileRow).filter(Boolean);
+    var accessibleProfiles = [profile];
 
     var memberIds = memberships.map(function (item) { return item.id; }).filter(Boolean);
     console.info('supabase request start', 'member_legal_entities');
@@ -811,14 +811,13 @@
           .in('organization_member_id', memberIds)
       : { error: null, data: [] };
     if (memberLegalResponse.error) {
-      console.error('member_legal_entities query failed', {
+      console.warn('member_legal_entities query failed', {
         code: memberLegalResponse.error.code || '',
         message: memberLegalResponse.error.message || '',
         details: memberLegalResponse.error.details || '',
         hint: memberLegalResponse.error.hint || '',
         raw: memberLegalResponse.error
       });
-      return null;
     }
 
     var legalEntityIds = Array.from(new Set((memberLegalResponse.data || []).map(function (item) {
@@ -826,24 +825,35 @@
     }).filter(Boolean)));
 
     console.info('supabase request start', 'legal_entities');
-    var legalEntitiesResponse = legalEntityIds.length
-      ? await client
+    var legalEntities = [];
+    if (legalEntityIds.length) {
+      try {
+        var legalEntitiesResponse = await client
           .from('legal_entities')
           .select('id, organization_id, name, inn, kpp, ogrn, legal_address, status, created_at, updated_at')
           .in('id', legalEntityIds)
-          .order('created_at', { ascending: true })
-      : { error: null, data: [] };
-    if (legalEntitiesResponse.error) {
-      console.error('legal_entities query failed', {
-        code: legalEntitiesResponse.error.code || '',
-        message: legalEntitiesResponse.error.message || '',
-        details: legalEntitiesResponse.error.details || '',
-        hint: legalEntitiesResponse.error.hint || '',
-        raw: legalEntitiesResponse.error
-      });
-      return null;
+          .order('created_at', { ascending: true });
+        if (legalEntitiesResponse.error) {
+          console.warn('legal_entities query failed', {
+            code: legalEntitiesResponse.error.code || '',
+            message: legalEntitiesResponse.error.message || '',
+            details: legalEntitiesResponse.error.details || '',
+            hint: legalEntitiesResponse.error.hint || '',
+            raw: legalEntitiesResponse.error
+          });
+        } else {
+          legalEntities = (legalEntitiesResponse.data || []).map(normalizeLegalEntityRow).filter(Boolean);
+        }
+      } catch (legalError) {
+        console.warn('legal_entities query failed', {
+          code: legalError && legalError.code ? legalError.code : '',
+          message: legalError && legalError.message ? legalError.message : '',
+          details: legalError && legalError.details ? legalError.details : '',
+          hint: legalError && legalError.hint ? legalError.hint : '',
+          raw: legalError
+        });
+      }
     }
-    var legalEntities = (legalEntitiesResponse.data || []).map(normalizeLegalEntityRow).filter(Boolean);
 
     var activeOrganization = pickActiveOrganization(organizations, memberships);
     var activeMembership = activeOrganization
@@ -857,7 +867,7 @@
       try {
         suppliers = await loadSuppliersForOrganization(activeOrganization.id);
       } catch (supplierError) {
-        console.error('loadSuppliersForOrganization failed:', supplierError);
+        console.warn('suppliers query failed but login continues', supplierError);
         suppliers = [];
       }
     }
@@ -1259,7 +1269,21 @@
       markLoginStage('login:start', email);
       bindAuthListener();
       var client = app.supabase.getClient();
-      var response = await client.auth.signInWithPassword({ email: email, password: password });
+      var response = await withTimeout(
+        client.auth.signInWithPassword({ email: email, password: password }),
+        10000,
+        'Не удалось выполнить вход. Проверьте интернет или попробуйте позже.'
+      ).catch(function (error) {
+        console.error('supabase request failed', {
+          request: 'auth signInWithPassword',
+          code: error && error.code ? error.code : '',
+          message: error && error.message ? error.message : '',
+          details: error && error.details ? error.details : '',
+          hint: error && error.hint ? error.hint : '',
+          raw: error
+        });
+        throw error;
+      });
       if (response.error) {
         throw response.error;
       }
@@ -1271,18 +1295,21 @@
 
       clearClientRuntimeState();
       console.info('initUserSession started');
-      var sessionPromise = window.initUserSession(authUser);
-      var timeoutPromise = new Promise(function (resolve) {
-        setTimeout(function () { resolve({ __timeout: true, __loading: true }); }, 4500);
-      });
-      var session = await Promise.race([sessionPromise, timeoutPromise]);
-      if (session && session.__loading) {
-        if (errEl) errEl.textContent = 'Загружаем организацию и права...';
-        session = await sessionPromise.catch(function (error) {
-          console.error('login failed', error);
-          return buildNoOrganizationSession(authUser);
+      var session = await withTimeout(
+        window.initUserSession(authUser),
+        15000,
+        'Не удалось загрузить профиль пользователя. Обратитесь к администратору'
+      ).catch(function (error) {
+        console.error('supabase request failed', {
+          request: 'initUserSession',
+          code: error && error.code ? error.code : '',
+          message: error && error.message ? error.message : '',
+          details: error && error.details ? error.details : '',
+          hint: error && error.hint ? error.hint : '',
+          raw: error
         });
-      }
+        throw error;
+      });
       if (!session || !session.currentUser) {
         session = buildNoOrganizationSession(authUser);
       }
@@ -1307,16 +1334,6 @@
       }
       markLoginStage('login:state-hydrated', session.noOrganization ? 'no-organization' : 'server-first');
       if (typeof window.enterApp === 'function') window.enterApp(session.currentUser);
-      sessionPromise.then(function (finalSession) {
-        if (finalSession && finalSession.currentUser && typeof window.enterApp === 'function') {
-          var currentId = String((window.CU && window.CU.id) || '');
-          if (!currentId || currentId === String(finalSession.currentUser.id || '')) {
-            window.enterApp(finalSession.currentUser);
-          }
-        }
-      }).catch(function (error) {
-        console.error('login failed', error);
-      });
     } catch (error) {
       console.error('login failed', error);
       if (errEl) errEl.textContent = error && error.message ? error.message : 'Ошибка входа';
