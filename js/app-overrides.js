@@ -549,6 +549,27 @@
     return list[0] || null;
   }
 
+  function loadSuppliersWithTimeout(organizationId, timeoutMs) {
+    var timeout = Number(timeoutMs || 2500);
+    return Promise.race([
+      loadSuppliersForOrganization(organizationId),
+      new Promise(function (resolve) {
+        setTimeout(function () {
+          resolve({ __timeout: true });
+        }, timeout);
+      })
+    ]).then(function (result) {
+      if (result && result.__timeout) {
+        console.warn('loadSuppliersForOrganization timeout for organization:', organizationId);
+        return [];
+      }
+      return Array.isArray(result) ? result : [];
+    }).catch(function (error) {
+      console.error('loadSuppliersForOrganization failed:', error);
+      return [];
+    });
+  }
+
   function applyServerSession(session) {
     window.__userSession = session || null;
     if (!session || !session.currentUser) {
@@ -616,7 +637,7 @@
     });
 
     try {
-      session.suppliers = await loadSuppliersForOrganization(targetOrg.id);
+      session.suppliers = await loadSuppliersWithTimeout(targetOrg.id, 2500);
     } catch (supplierError) {
       console.error('loadSuppliersForOrganization failed after organization switch:', supplierError);
       session.suppliers = [];
@@ -768,6 +789,14 @@
 
     var noOrganization = !activeOrganization || !memberships.length;
     var uiRole = noOrganization ? 'unassigned' : normalizeUiRole((activeMembership && activeMembership.role) || 'manager');
+    console.info('initUserSession resolved', {
+      authUserId: authUser && authUser.id,
+      profileId: profile.id,
+      membershipsCount: memberships.length,
+      organizationsCount: organizations.length,
+      activeOrganizationId: activeOrganization ? activeOrganization.id : null,
+      noOrganization: noOrganization
+    });
     var session = {
       profile: profile,
       memberships: memberships,
@@ -1161,11 +1190,15 @@
       console.info('initUserSession started');
       var sessionPromise = window.initUserSession(authUser);
       var timeoutPromise = new Promise(function (resolve) {
-        setTimeout(function () { resolve({ __timeout: true }); }, 4500);
+        setTimeout(function () { resolve({ __timeout: true, __loading: true }); }, 4500);
       });
       var session = await Promise.race([sessionPromise, timeoutPromise]);
-      if (session && session.__timeout) {
-        session = buildNoOrganizationSession(authUser);
+      if (session && session.__loading) {
+        if (errEl) errEl.textContent = 'Загружаем организацию и права...';
+        session = await sessionPromise.catch(function (error) {
+          console.error('login failed', error);
+          return buildNoOrganizationSession(authUser);
+        });
       }
       if (!session || !session.currentUser) {
         session = buildNoOrganizationSession(authUser);
@@ -1642,10 +1675,13 @@
       try { currentUser = CU; } catch (error) { currentUser = window.CU || null; }
       var sessionPromise = window.initUserSession(response.data.session.user);
       var session = await Promise.race([sessionPromise, new Promise(function (resolve) {
-        setTimeout(function () { resolve({ __timeout: true }); }, 4500);
+        setTimeout(function () { resolve({ __timeout: true, __loading: true }); }, 4500);
       })]);
-      if (session && session.__timeout) {
-        session = buildNoOrganizationSession(response.data.session.user);
+      if (session && session.__loading) {
+        session = await sessionPromise.catch(function (error) {
+          console.error('restoreSession failed:', error);
+          return buildNoOrganizationSession(response.data.session.user);
+        });
       }
       if (!session || !session.currentUser) {
         session = buildNoOrganizationSession(response.data.session.user);
