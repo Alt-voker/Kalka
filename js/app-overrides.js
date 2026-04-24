@@ -22,6 +22,9 @@
   var authBound = false;
   var restoreInFlight = false;
   if (typeof window.__loginInProgress === 'undefined') window.__loginInProgress = false;
+  if (typeof window.__restoreInProgress === 'undefined') window.__restoreInProgress = false;
+  if (typeof window.__sessionReady === 'undefined') window.__sessionReady = false;
+  var bootstrapPromises = {};
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -257,10 +260,32 @@
   }
 
   function saveBusinessDataSnapshot(db) {
-    if (!isServerFirstMode() || !app.commerce || !app.commerce.save) return;
+    if (window.__loginInProgress || window.__restoreInProgress || !isServerFirstMode() || !app.commerce || !app.commerce.save) return;
     app.commerce.save(db).catch(function (error) {
       console.error('Supabase business data save failed:', error);
     });
+  }
+
+  function setSessionReady(session) {
+    try {
+      window.__sessionReady = !!(session && session.currentUser && !session.currentUser.noOrganization || session);
+    } catch (error) {}
+    return session;
+  }
+
+  function getBootstrapKey(authUser) {
+    return authUser && authUser.id ? String(authUser.id) : '__anonymous__';
+  }
+
+  function getOrCreateBootstrapPromise(authUser, loader) {
+    var key = getBootstrapKey(authUser);
+    if (bootstrapPromises[key]) return bootstrapPromises[key];
+    bootstrapPromises[key] = Promise.resolve()
+      .then(loader)
+      .finally(function () {
+        delete bootstrapPromises[key];
+      });
+    return bootstrapPromises[key];
   }
 
   function queueDeferredPostLoginHydration(session, authUser) {
@@ -979,14 +1004,21 @@
     if (!authUser) {
       clearClientRuntimeState();
       window.__userSession = null;
+      window.__sessionReady = false;
       return null;
     }
 
     try {
-      var session = await loadServerSession(authUser);
+      var session = await getOrCreateBootstrapPromise(authUser, function () {
+        if (window.__sessionReady && window.__userSession && window.__userSession.currentUser && String(window.__userSession.currentUser.id || '') === String(authUser.id || '')) {
+          return window.__userSession;
+        }
+        return loadServerSession(authUser);
+      });
       if (!session) {
         clearClientRuntimeState();
         window.__userSession = null;
+        window.__sessionReady = false;
         return null;
       }
 
@@ -1007,12 +1039,14 @@
       } else {
         window.CU = session.currentUser;
       }
+      window.__sessionReady = true;
 
       queueDeferredPostLoginHydration(session, authUser);
 
       return session;
     } catch (error) {
       console.error('initUserSession failed:', error);
+      window.__sessionReady = false;
       return null;
     }
   };
@@ -1166,6 +1200,10 @@
   };
 
   window.dbSet = function (db) {
+    if (window.__loginInProgress || window.__restoreInProgress) {
+      console.warn('dbSet skipped during auth bootstrap');
+      return ensureArrays(window._dbCache || getDefaults());
+    }
     var currentState = ensureArrays(window._dbCache || readLocalState() || (legacy.dbGet ? legacy.dbGet() : null) || getDefaults());
     var normalized = syncRuntime(db);
     if (!hasMeaningfulState(normalized) && hasMeaningfulState(currentState)) {
@@ -1193,6 +1231,10 @@
     (async function () {
       try {
         if (window.__loginInProgress) {
+          finish();
+          return;
+        }
+        if (window.__restoreInProgress || window.__sessionReady) {
           finish();
           return;
         }
@@ -1305,6 +1347,7 @@
 
     try {
       window.__loginInProgress = true;
+      window.__sessionReady = false;
       console.info('login started');
       markLoginStage('login:start', email);
       bindAuthListener();
@@ -1313,26 +1356,72 @@
         throw new Error('Сервис авторизации временно недоступен. Обратитесь к администратору');
       }
       console.info('signIn started');
-      var response = await withTimeout(
-        client.auth.signInWithPassword({ email: email, password: password }),
-        10000,
-        'Не удалось выполнить вход. Проверьте интернет или попробуйте позже.'
-      ).catch(function (error) {
+      var response;
+      try {
+        response = await withTimeout(
+          client.auth.signInWithPassword({ email: email, password: password }),
+          10000,
+          'Не удалось выполнить вход. Проверьте интернет или попробуйте позже.'
+        );
+      } catch (signInError) {
         console.error('supabase request failed', {
           request: 'auth signInWithPassword',
-          code: error && error.code ? error.code : '',
-          message: error && error.message ? error.message : '',
-          details: error && error.details ? error.details : '',
-          hint: error && error.hint ? error.hint : '',
-          raw: error
+          code: signInError && signInError.code ? signInError.code : '',
+          message: signInError && signInError.message ? signInError.message : '',
+          details: signInError && signInError.details ? signInError.details : '',
+          hint: signInError && signInError.hint ? signInError.hint : '',
+          raw: signInError
         });
-        throw error;
-      });
+        if (signInError && signInError.code === 'TIMEOUT') {
+          try {
+            console.info('supabase request start', 'auth getSession after signIn timeout');
+            var timeoutSession = await client.auth.getSession();
+            if (timeoutSession && timeoutSession.data && timeoutSession.data.session && timeoutSession.data.session.user) {
+              response = { data: { session: timeoutSession.data.session, user: timeoutSession.data.session.user }, error: null };
+            } else {
+              throw signInError;
+            }
+          } catch (timeoutSessionError) {
+            console.error('signIn timeout recovery failed', {
+              code: timeoutSessionError && timeoutSessionError.code ? timeoutSessionError.code : '',
+              message: timeoutSessionError && timeoutSessionError.message ? timeoutSessionError.message : '',
+              details: timeoutSessionError && timeoutSessionError.details ? timeoutSessionError.details : '',
+              hint: timeoutSessionError && timeoutSessionError.hint ? timeoutSessionError.hint : '',
+              raw: timeoutSessionError
+            });
+            throw signInError;
+          }
+        } else {
+          throw signInError;
+        }
+      }
       if (response.error) {
         throw response.error;
       }
 
       var authUser = (response.data && response.data.user) || (response.data && response.data.session && response.data.session.user) || null;
+      if (!authUser && client && client.auth && client.auth.getSession) {
+        try {
+          console.info('supabase request start', 'auth getSession after signIn');
+          var postSignInSession = await client.auth.getSession();
+          authUser = postSignInSession && postSignInSession.data && postSignInSession.data.session && postSignInSession.data.session.user
+            ? postSignInSession.data.session.user
+            : null;
+        } catch (getSessionError) {
+          console.error('signIn post-session fetch failed', getSessionError);
+        }
+      }
+      if (!authUser) {
+        console.warn('signIn completed without immediate auth user, trying existing session');
+        try {
+          var fallbackSessionResponse = await client.auth.getSession();
+          authUser = fallbackSessionResponse && fallbackSessionResponse.data && fallbackSessionResponse.data.session && fallbackSessionResponse.data.session.user
+            ? fallbackSessionResponse.data.session.user
+            : null;
+        } catch (fallbackSessionError) {
+          console.error('signIn fallback session fetch failed', fallbackSessionError);
+        }
+      }
       if (!authUser) throw new Error('Не удалось определить пользователя');
       console.info('auth success', authUser.id);
       markLoginStage('login:auth-ok', authUser.email || '');
@@ -1378,11 +1467,12 @@
       }
       markLoginStage('login:state-hydrated', session.noOrganization ? 'no-organization' : 'server-first');
       if (typeof window.enterApp === 'function') window.enterApp(session.currentUser);
+      window.__sessionReady = true;
     } catch (error) {
       console.error('signIn failed', error);
       if (errEl) errEl.textContent = error && error.message ? error.message : 'Ошибка входа';
     } finally {
-      window.__loginInProgress = false;
+      if (!window.__sessionReady) window.__loginInProgress = false;
       if (button) {
         button.textContent = 'Войти в систему →';
         button.disabled = false;
@@ -1709,6 +1799,8 @@
   window.doLogout = async function () {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     loggingOut = true;
+    window.__sessionReady = false;
+    window.__restoreInProgress = false;
     clearLastUser();
     clearClientRuntimeState();
     clearClientStorage();
@@ -1861,42 +1953,54 @@
     restoreSession: async function () {
       var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
       if (!client) return false;
-      if (loggingOut || window.__loginInProgress) return false;
+      if (loggingOut || window.__loginInProgress || window.__sessionReady) return false;
+      if (window.__restoreInProgress) return false;
 
+      window.__restoreInProgress = true;
       restoreInFlight = true;
       bindAuthListener();
-      var response = await client.auth.getSession();
-      if (response.error || !response.data || !response.data.session || !response.data.session.user) {
-        restoreInFlight = false;
-        return false;
-      }
-
-      clearClientRuntimeState();
-      var currentUser = null;
-      try { currentUser = CU; } catch (error) { currentUser = window.CU || null; }
-      var sessionPromise = window.initUserSession(response.data.session.user);
-      var session = await Promise.race([sessionPromise, new Promise(function (resolve) {
-        setTimeout(function () { resolve({ __timeout: true, __loading: true }); }, 4500);
-      })]);
-      if (session && session.__loading) {
-        session = await sessionPromise.catch(function (error) {
-          console.error('restoreSession failed:', error);
-          return buildNoOrganizationSession(response.data.session.user);
-        });
-      }
-      if (!session || !session.currentUser) {
-        session = buildNoOrganizationSession(response.data.session.user);
-      }
-      if (typeof window.enterApp === 'function' && (!currentUser || currentUser.id !== session.currentUser.id)) {
-        window.enterApp(session.currentUser);
-      }
-      setTimeout(function () {
-        if (window.__userSession && window.__userSession.currentUser && typeof window.enterApp === 'function') {
-          window.CU = Object.assign({}, window.CU || {}, window.__userSession.currentUser);
+      try {
+        var response = await client.auth.getSession();
+        if (response.error || !response.data || !response.data.session || !response.data.session.user) {
+          return false;
         }
-      }, 0);
-      restoreInFlight = false;
-      return true;
+        if (window.__loginInProgress || window.__sessionReady) {
+          return false;
+        }
+
+        clearClientRuntimeState();
+        var currentUser = null;
+        try { currentUser = CU; } catch (error) { currentUser = window.CU || null; }
+        var sessionPromise = window.initUserSession(response.data.session.user);
+        var session = await Promise.race([sessionPromise, new Promise(function (resolve) {
+          setTimeout(function () { resolve({ __timeout: true, __loading: true }); }, 4500);
+        })]);
+        if (window.__loginInProgress || window.__sessionReady) {
+          return true;
+        }
+        if (session && session.__loading) {
+          session = await sessionPromise.catch(function (error) {
+            console.error('restoreSession failed:', error);
+            return buildNoOrganizationSession(response.data.session.user);
+          });
+        }
+        if (!session || !session.currentUser) {
+          session = buildNoOrganizationSession(response.data.session.user);
+        }
+        if (typeof window.enterApp === 'function' && (!currentUser || currentUser.id !== session.currentUser.id)) {
+          window.enterApp(session.currentUser);
+        }
+        setTimeout(function () {
+          if (window.__userSession && window.__userSession.currentUser && typeof window.enterApp === 'function') {
+            window.CU = Object.assign({}, window.CU || {}, window.__userSession.currentUser);
+          }
+        }, 0);
+        window.__sessionReady = true;
+        return true;
+      } finally {
+        restoreInFlight = false;
+        window.__restoreInProgress = false;
+      }
     }
   };
 
@@ -2217,9 +2321,11 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     function tryRestore() {
+      if (window.__loginInProgress || window.__sessionReady || window.__restoreInProgress) return;
       if (app.auth && app.auth.restoreSession) {
         app.auth.restoreSession().catch(function (error) {
           restoreInFlight = false;
+          window.__restoreInProgress = false;
           console.error('Session restore failed:', error);
         });
       }

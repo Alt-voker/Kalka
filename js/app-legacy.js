@@ -9448,7 +9448,7 @@ document.addEventListener('DOMContentLoaded',function(){
   setBar(40,'Подключение к базе данных...');
   setTimeout(function(){
     var ld=document.getElementById('pvLoad');
-    if(ld){
+    if(ld && !(window.__sessionReady || window.__loginInProgress || window.__restoreInProgress)){
       console.error('Boot loader fallback triggered');
       finalizeBoot();
     }
