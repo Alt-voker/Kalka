@@ -1633,13 +1633,14 @@ function repeatVisibleOrder(orderId){
 }
 function renderSuppliers(){
   var el=document.getElementById('supGrid');if(!el)return;
-  // Личные скрытые поставщики (хранятся в localStorage для каждого пользователя)
-  var hiddenKey='pv_hidden_'+(CU?CU.id:'guest');
-  var hiddenLocal={};
-  try{var h=localStorage.getItem(hiddenKey);if(h)hiddenLocal=JSON.parse(h);}catch(e){}
-
   var visible=getUserVisibleSuppliers(CU);
-  document.getElementById('supSub').textContent=visible.length+' поставщиков в вашем личном кабинете';
+  var supSub=document.getElementById('supSub');
+  if(supSub) supSub.textContent=visible.length ? visible.length+' поставщиков в вашем личном кабинете' : 'Нет поставщиков';
+
+  if(!visible.length){
+    el.innerHTML='<div class="empty"><div class="empty-ico">🏭</div><div class="empty-txt">Нет поставщиков</div></div>';
+    return;
+  }
 
   var sm={active:'bg',contract:'by',new:'bb'};
   var sl={active:'Активен',contract:'Контракт',new:'Новый'};
@@ -1652,20 +1653,14 @@ function renderSuppliers(){
   var visibleOrders=getUserVisibleOrders(CU);
 
   var cards=visible.map(function(s){
-    var i=SUPS_DATA.indexOf(s);
+    var i=(window.__userSession && Array.isArray(window.__userSession.suppliers)) ? window.__userSession.suppliers.findIndex(function(item){ return item.id===s.id; }) : -1;
     var ratingSummary=getSupplierRatingSummary(s.name);
-    var isPersonalHidden=hiddenLocal[s.name]===true;
-    var cardStyle=isPersonalHidden?'opacity:0.5;':'';
-    var personalBadge=isPersonalHidden?'<span class="badge bgr" style="margin-left:4px;font-size:10px;">Скрыт вами</span>':'';
     var canManageSupplier=canManageSupplierRecord(CU, s, db);
     var orgSummary=getSupplierVisibleOrganizationsForUser(s, CU, db).map(function(rest){ return rest.name; }).join(' · ') || 'Без привязки';
     var turnover=getSupplierTurnoverSummary(s.name, visibleOrders);
     var turnoverRows=turnover.organizations.slice(0,3).map(function(row){
       return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--t2);padding:4px 0;border-bottom:1px solid var(--br);"><span>'+row[0]+'</span><b>₽'+Math.round(row[1]).toLocaleString()+'</b></div>';
     }).join('') || '<div style="font-size:11px;color:var(--t3);">Пока нет заказов по этому поставщику.</div>';
-
-    var personalBtn='<button onclick="togglePersonalSup(\''+s.name+'\')" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">'
-      +(isPersonalHidden?'✅ Работать с ним':'🚫 Не работать')+'</button>';
 
     // Кнопки загрузки прайса — для всех пользователей
     var priceBtns=canManagePrices?'<div style="display:flex;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid var(--br);">'
@@ -1685,11 +1680,10 @@ function renderSuppliers(){
 
     var favoriteBtn='<button onclick="toggleFavoriteSupplier(\''+s.name+'\')" style="flex:1;background:'+(favoriteSuppliers.indexOf(s.name)>=0?'var(--aD)':'var(--bg3)')+';border:1px solid '+(favoriteSuppliers.indexOf(s.name)>=0?'var(--ac)':'var(--br)')+';border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:'+(favoriteSuppliers.indexOf(s.name)>=0?'var(--ac)':'var(--t2)')+';">'+(favoriteSuppliers.indexOf(s.name)>=0?'★ В избранном':'☆ В избранное')+'</button>';
 
-    return '<div class="sup-card" style="'+cardStyle+'">'
+      return '<div class="sup-card">'
       +'<div class="sup-hd">'
       +'<div><div class="sup-name">'+s.name+'</div><div class="sup-type">'+s.type+'</div></div>'
       +'<span class="badge '+sm[s.status||'active']+'" style="margin-left:auto;">'+sl[s.status||'active']+'</span>'
-      +personalBadge
       +'</div>'
       +'<div style="font-size:11px;color:var(--t3);margin-bottom:10px;">Юр. лицо: '+(s.legalName||s.name)+'</div>'
       +'<div style="font-size:11px;color:var(--t3);margin-bottom:10px;">Организации: '+orgSummary+'</div>'
@@ -1715,7 +1709,6 @@ function renderSuppliers(){
       +'</div>'
       +(s.tags&&s.tags.length?'<div class="sup-tags">'+s.tags.map(function(t){return '<span class="sup-tag">'+t+'</span>';}).join('')+'</div>':'')
       +'<div style="display:flex;gap:6px;margin-top:12px;border-top:1px solid var(--br);padding-top:10px;">'
-      +personalBtn
       +favoriteBtn
       +manageBtn
       +adminBtns
@@ -2367,31 +2360,13 @@ function canManageSupplierRecord(user, supplier, db){
 
 function getUserVisibleSuppliers(user){
   var db=dbGet();
-  var base=(SUPS_DATA||[]).filter(function(s){ return s && !s.hidden; });
+  var base=(window.__userSession && Array.isArray(window.__userSession.suppliers) ? window.__userSession.suppliers : (SUPS_DATA||[])).filter(function(s){ return s && !s.hidden; });
   if(!user) return [];
   if(user.role==='owner') return base;
   if(user.role==='admin' && normalizeDashboardAccess(user).scope==='all_orgs') return base;
-
-  var visibleNames={};
-  var allowedIds=getUserScopedRestaurantIds(user, db);
-  base.forEach(function(supplier){
-    var orgIds=normalizeSupplierOrganizationIds(supplier, db);
-    if(orgIds.some(function(id){ return allowedIds.indexOf(String(id))>=0; })){
-      visibleNames[supplier.name]=true;
-    }
+  return base.filter(function(supplier){
+    return getSupplierVisibleOrganizationsForUser(supplier, user, db).length>0;
   });
-  getUserVisibleOrders(user).forEach(function(order){
-    var name=getOrderSupplierName(order);
-    if(name) visibleNames[name]=true;
-  });
-  (SUP_PRODS||[]).forEach(function(prod){
-    if(!prod) return;
-    if(canSeePrices({allowedCompanies:prod.allowedCompanies,allowedUserIds:prod.allowedUserIds})){
-      var supName=prod._supplier||prod.supplier||'';
-      if(supName) visibleNames[supName]=true;
-    }
-  });
-  return base.filter(function(s){ return !!visibleNames[s.name]; });
 }
 
 function isRestaurantParticipant(user, rest){

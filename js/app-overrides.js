@@ -419,6 +419,66 @@
     };
   }
 
+  function normalizeSupplierRow(row) {
+    if (!row) return null;
+    return {
+      id: row.id || '',
+      organization_id: row.organization_id || '',
+      name: row.name || '',
+      emoji: row.emoji || '🏭',
+      kind: row.kind || 'Поставщик',
+      rating: Number(row.rating || 0) || 0,
+      orders_count: parseInt(row.orders_count || 0, 10) || 0,
+      delivery: row.delivery || '1-2 дня',
+      min_order_text: row.min_order_text || '₽1 000',
+      status: row.status || 'active',
+      tags: Array.isArray(row.tags) ? row.tags.slice() : (row.tags || []),
+      contact: row.contact || '',
+      phone: row.phone || '',
+      hidden: !!row.hidden,
+      legacy_key: row.legacy_key || '',
+      created_at: row.created_at || '',
+      updated_at: row.updated_at || ''
+    };
+  }
+
+  function mapSupplierRowToLegacy(row) {
+    return {
+      id: row.id,
+      organizationId: row.organization_id || '',
+      emoji: row.emoji || '🏭',
+      name: row.name || '',
+      type: row.kind || 'Поставщик',
+      rating: Number(row.rating || 0) || 0,
+      orders: parseInt(row.orders_count || 0, 10) || 0,
+      delivery: row.delivery || '1-2 дня',
+      min: row.min_order_text || '₽1 000',
+      status: row.status || 'active',
+      tags: Array.isArray(row.tags) ? row.tags.slice() : [],
+      contact: row.contact || '',
+      phone: row.phone || '',
+      hidden: !!row.hidden,
+      legacy_key: row.legacy_key || '',
+      legalName: row.contact || row.name || ''
+    };
+  }
+
+  async function loadSuppliersForOrganization(organizationId) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    var orgId = String(organizationId || '').trim();
+    if (!client || !orgId) return [];
+    var response = await client
+      .from('suppliers')
+      .select('*')
+      .eq('organization_id', orgId)
+      .eq('status', 'active')
+      .order('name', { ascending: true });
+    if (response.error) throw response.error;
+    var suppliers = (response.data || []).map(normalizeSupplierRow).filter(Boolean);
+    console.log('Suppliers loaded:', suppliers.length, 'organization:', orgId);
+    return suppliers;
+  }
+
   function pickActiveOrganization(organizations, memberships) {
     var orgIds = {};
     (memberships || []).forEach(function (item) {
@@ -528,6 +588,15 @@
     var activeLegalEntities = activeOrganization
       ? legalEntities.filter(function (item) { return String(item.organization_id) === String(activeOrganization.id); })
       : [];
+    var suppliers = [];
+    if (activeOrganization) {
+      try {
+        suppliers = await loadSuppliersForOrganization(activeOrganization.id);
+      } catch (supplierError) {
+        console.error('loadSuppliersForOrganization failed:', supplierError);
+        suppliers = [];
+      }
+    }
 
     var session = {
       profile: profile,
@@ -562,6 +631,7 @@
           };
         })
       },
+      suppliers: suppliers,
       dbUsers: accessibleProfiles.map(function (row) {
         var membership = memberships.filter(function (item) {
           return String(item.user_profile_id) === String(row.id);
@@ -591,6 +661,8 @@
 
       var baseDb = ensureArrays(window._dbCache || getDefaults());
       baseDb.users = session.dbUsers || [];
+      baseDb.supsData = (session.suppliers || []).map(mapSupplierRowToLegacy);
+      window.SUPS_DATA = baseDb.supsData.slice();
       baseDb.__serverSession = {
         profileId: session.profile.id,
         activeOrganizationId: session.activeOrganizationId,
