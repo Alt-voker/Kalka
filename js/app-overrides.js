@@ -414,6 +414,43 @@
     };
   }
 
+  function buildNoOrganizationSession(authUser, profile) {
+    var safeProfile = profile || buildFallbackProfile(authUser);
+    var email = String((safeProfile && safeProfile.email) || (authUser && authUser.email) || '').toLowerCase();
+    return {
+      profile: safeProfile,
+      memberships: [],
+      organizations: [],
+      legalEntities: [],
+      noOrganization: true,
+      activeOrganization: null,
+      activeOrganizationId: null,
+      activeLegalEntities: [],
+      activeLegalEntityIds: [],
+      activeLegalEntityNames: [],
+      currentMembership: null,
+      role: 'unassigned',
+      permissions: [],
+      currentUser: {
+        id: authUser && authUser.id ? authUser.id : '',
+        profileId: safeProfile.id || '',
+        first: safeProfile.first_name || 'Пользователь',
+        last: safeProfile.last_name || '',
+        company: 'КальКа',
+        email: email,
+        role: 'unassigned',
+        status: safeProfile.status || 'active',
+        ev: true,
+        created: (safeProfile.created_at || new Date().toISOString()).slice(0, 10),
+        organizationId: null,
+        noOrganization: true,
+        memberships: []
+      },
+      suppliers: [],
+      dbUsers: []
+    };
+  }
+
   function mapProfileToLegacyUser(profile, memberships, organizations, activeOrganization) {
     var firstMembership = memberships[0] || null;
     var orgName = (activeOrganization && activeOrganization.name) || (organizations[0] && organizations[0].name) || '';
@@ -1013,6 +1050,7 @@
     }
 
     try {
+      console.info('login started');
       markLoginStage('login:start', email);
       bindAuthListener();
       var client = app.supabase.getClient();
@@ -1023,36 +1061,55 @@
 
       var authUser = (response.data && response.data.user) || (response.data && response.data.session && response.data.session.user) || null;
       if (!authUser) throw new Error('Не удалось определить пользователя');
+      console.info('auth success', authUser.id);
       markLoginStage('login:auth-ok', authUser.email || '');
 
       clearClientRuntimeState();
-      var session = await window.initUserSession(authUser);
-      if (!session || !session.currentUser) {
-        await client.auth.signOut();
-        if (errEl) errEl.textContent = 'Не удалось загрузить профиль пользователя';
-        return;
+      console.info('initUserSession started');
+      var sessionPromise = window.initUserSession(authUser);
+      var timeoutPromise = new Promise(function (resolve) {
+        setTimeout(function () { resolve({ __timeout: true }); }, 4500);
+      });
+      var session = await Promise.race([sessionPromise, timeoutPromise]);
+      if (session && session.__timeout) {
+        session = buildNoOrganizationSession(authUser);
       }
-
-      var user = session.currentUser;
-      if (user.status === 'blocked') {
+      if (!session || !session.currentUser) {
+        session = buildNoOrganizationSession(authUser);
+      }
+      if (!session.currentUser.noOrganization && session.currentUser.status === 'blocked') {
         await client.auth.signOut();
         if (errEl) errEl.textContent = 'Аккаунт заблокирован';
         return;
       }
-      if (user.status === 'pending') {
+      if (!session.currentUser.noOrganization && session.currentUser.status === 'pending') {
         await client.auth.signOut();
         if (errEl) errEl.textContent = 'Заявка ещё не одобрена владельцем или администратором';
         return;
       }
-      if (user.status === 'rejected') {
+      if (!session.currentUser.noOrganization && session.currentUser.status === 'rejected') {
         await client.auth.signOut();
         if (errEl) errEl.textContent = 'Заявка отклонена. Обратитесь к владельцу платформы';
         return;
       }
 
+      if (session.noOrganization) {
+        console.info('no organization mode');
+      }
       markLoginStage('login:state-hydrated', session.noOrganization ? 'no-organization' : 'server-first');
-      if (typeof window.enterApp === 'function') window.enterApp(user);
+      if (typeof window.enterApp === 'function') window.enterApp(session.currentUser);
+      sessionPromise.then(function (finalSession) {
+        if (finalSession && finalSession.currentUser && typeof window.enterApp === 'function') {
+          var currentId = String((window.CU && window.CU.id) || '');
+          if (!currentId || currentId === String(finalSession.currentUser.id || '')) {
+            window.enterApp(finalSession.currentUser);
+          }
+        }
+      }).catch(function (error) {
+        console.error('login failed', error);
+      });
     } catch (error) {
+      console.error('login failed', error);
       if (errEl) errEl.textContent = error && error.message ? error.message : 'Ошибка входа';
     } finally {
       if (button) {
@@ -1333,16 +1390,19 @@
       clearClientRuntimeState();
       var currentUser = null;
       try { currentUser = CU; } catch (error) { currentUser = window.CU || null; }
-      var session = await window.initUserSession(response.data.session.user);
-      if (!session || !session.currentUser) return false;
+      var sessionPromise = window.initUserSession(response.data.session.user);
+      var session = await Promise.race([sessionPromise, new Promise(function (resolve) {
+        setTimeout(function () { resolve({ __timeout: true }); }, 4500);
+      })]);
+      if (session && session.__timeout) {
+        session = buildNoOrganizationSession(response.data.session.user);
+      }
+      if (!session || !session.currentUser) {
+        session = buildNoOrganizationSession(response.data.session.user);
+      }
       if (typeof window.enterApp === 'function' && (!currentUser || currentUser.id !== session.currentUser.id)) {
         window.enterApp(session.currentUser);
       }
-      setTimeout(function () {
-        window.initUserSession(response.data.session.user).catch(function (error) {
-          console.error('Deferred server session init after restore failed:', error);
-        });
-      }, 0);
       setTimeout(function () {
         if (window.__userSession && window.__userSession.currentUser && typeof window.enterApp === 'function') {
           window.CU = Object.assign({}, window.CU || {}, window.__userSession.currentUser);
