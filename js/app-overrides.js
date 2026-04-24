@@ -574,6 +574,98 @@
     return session.currentUser;
   }
 
+  async function refreshActiveOrganizationSession(session, organizationId) {
+    var orgId = String(organizationId || '').trim();
+    var organizations = session && Array.isArray(session.organizations) ? session.organizations : [];
+    var targetOrg = organizations.find(function (org) {
+      return org && String(org.id || '').trim() === orgId;
+    }) || null;
+    if (!targetOrg) {
+      throw new Error('Организация недоступна для текущего пользователя');
+    }
+
+    session.activeOrganization = targetOrg;
+    session.activeOrganizationId = targetOrg.id;
+    session.noOrganization = false;
+    session.activeLegalEntities = Array.isArray(session.legalEntities)
+      ? session.legalEntities.filter(function (item) {
+          return item && String(item.organization_id || '').trim() === String(targetOrg.id || '').trim();
+        })
+      : [];
+    session.activeLegalEntityIds = session.activeLegalEntities.map(function (item) { return item.id; });
+    session.activeLegalEntityNames = session.activeLegalEntities.map(function (item) { return item.name; });
+
+    var membership = (session.memberships || []).find(function (item) {
+      return String(item.organization_id || '').trim() === String(targetOrg.id || '').trim();
+    }) || null;
+    session.currentMembership = membership;
+    session.role = membership ? normalizeUiRole(membership.role || 'manager') : 'unassigned';
+    session.permissions = session.role && window.ROLES && window.ROLES[session.role] && window.ROLES[session.role].pages
+      ? window.ROLES[session.role].pages.slice()
+      : [];
+    session.currentUser.role = session.role;
+    session.currentUser.noOrganization = false;
+    session.currentUser.organizationId = targetOrg.id;
+    session.currentUser.company = targetOrg.name || session.currentUser.company || 'КальКа';
+    session.currentUser.memberships = (session.memberships || []).map(function (item) {
+      return {
+        organizationId: item.organization_id,
+        role: normalizeUiRole(item.role),
+        status: item.status
+      };
+    });
+
+    try {
+      session.suppliers = await loadSuppliersForOrganization(targetOrg.id);
+    } catch (supplierError) {
+      console.error('loadSuppliersForOrganization failed after organization switch:', supplierError);
+      session.suppliers = [];
+    }
+
+    var baseDb = ensureArrays(window._dbCache || getDefaults());
+    baseDb.users = session.dbUsers || [];
+    baseDb.supsData = (session.suppliers || []).map(mapSupplierRowToLegacy);
+    baseDb.__serverSession = {
+      profileId: session.profile.id,
+      activeOrganizationId: session.activeOrganizationId,
+      role: session.role,
+      membershipCount: (session.memberships || []).length
+    };
+    window.SUPS_DATA = baseDb.supsData.slice();
+    syncRuntime(baseDb);
+    applyServerSession(session);
+
+    if (typeof window.renderDash === 'function') window.renderDash();
+    if (typeof window.renderRestaurants === 'function') window.renderRestaurants();
+    if (typeof window.renderSuppliers === 'function') window.renderSuppliers();
+    if (typeof window.renderAdmin === 'function') window.renderAdmin();
+    if (typeof window.renderOrders === 'function') window.renderOrders();
+    if (typeof window.renderBudget === 'function') window.renderBudget();
+    if (typeof window.toast === 'function') {
+      window.toast('Активная организация: ' + (targetOrg.name || 'Организация'), 'ok');
+    }
+    return session;
+  }
+
+  window.setActiveOrganization = async function (organizationId) {
+    try {
+      var session = window.__userSession || null;
+      if (!session || !session.currentUser) {
+        throw new Error('Сначала войдите в систему');
+      }
+      if (!session.organizations || !session.organizations.length) {
+        throw new Error('У вас пока нет доступных организаций');
+      }
+      return await refreshActiveOrganizationSession(session, organizationId);
+    } catch (error) {
+      console.error('setActiveOrganization failed:', error);
+      if (typeof window.toast === 'function') {
+        window.toast(error && error.message ? error.message : 'Не удалось переключить организацию', 'err');
+      }
+      return null;
+    }
+  };
+
   async function loadServerSession(authUser) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client || !authUser) return null;
