@@ -104,6 +104,7 @@ create table if not exists public.supplier_price_list_legal_entities (
 create table if not exists public.supplier_price_items (
   id uuid primary key default gen_random_uuid(),
   price_list_id uuid not null references public.supplier_price_lists(id) on delete cascade,
+  organization_id uuid not null references public.organizations(id) on delete cascade,
   original_name text not null,
   product_name text not null default '',
   price numeric(14,2) not null default 0,
@@ -136,6 +137,7 @@ create index if not exists idx_supplier_price_lists_supplier_id on public.suppli
 create index if not exists idx_supplier_price_list_legals_price_list_id on public.supplier_price_list_legal_entities(price_list_id);
 create index if not exists idx_supplier_price_list_legals_legal_entity_id on public.supplier_price_list_legal_entities(legal_entity_id);
 create index if not exists idx_supplier_price_items_price_list_id on public.supplier_price_items(price_list_id);
+create index if not exists idx_supplier_price_items_org_id on public.supplier_price_items(organization_id);
 create index if not exists idx_audit_logs_org_id on public.audit_logs(organization_id);
 create index if not exists idx_audit_logs_user_profile_id on public.audit_logs(user_profile_id);
 
