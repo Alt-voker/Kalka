@@ -235,7 +235,46 @@ declare
   supplier_name_value text;
   product_name_value text;
   price_list_name_value text;
+  restaurants_count integer;
+  suppliers_count integer;
+  products_count integer;
+  sup_prods_count integer;
+  users_count integer;
+  owner_count integer;
 begin
+  if snapshot is null or snapshot = '{}'::jsonb then
+    raise exception 'Snapshot is empty';
+  end if;
+
+  select
+    coalesce(jsonb_array_length(coalesce(snapshot->'restaurants', '[]'::jsonb)), 0),
+    coalesce(jsonb_array_length(coalesce(snapshot->'suppliers', '[]'::jsonb)), 0),
+    coalesce(jsonb_array_length(coalesce(snapshot->'products', '[]'::jsonb)), 0),
+    coalesce(jsonb_array_length(coalesce(snapshot->'supProds', '[]'::jsonb)), 0),
+    coalesce(jsonb_array_length(coalesce(snapshot->'users', '[]'::jsonb)), 0),
+    coalesce(count(*), 0)
+  into
+    restaurants_count,
+    suppliers_count,
+    products_count,
+    sup_prods_count,
+    users_count,
+    owner_count
+  from (
+    select 1
+    from jsonb_array_elements(coalesce(snapshot->'users', '[]'::jsonb)) as u(value)
+    where coalesce(u.value->>'role', '') = 'owner'
+       or coalesce(u.value->>'bootstrapOnly', 'false')::boolean = true
+       or coalesce(u.value->>'email', '') ilike '%owner%'
+  ) owners;
+
+  if restaurants_count = 0 or suppliers_count = 0 then
+    raise exception 'Snapshot rejected: missing restaurants or suppliers';
+  end if;
+  if users_count = 0 or owner_count = 0 then
+    raise exception 'Snapshot rejected: missing users or owner';
+  end if;
+
   delete from public.product_supplier_prices;
   delete from public.supplier_price_items;
   delete from public.supplier_price_list_legal_entities;

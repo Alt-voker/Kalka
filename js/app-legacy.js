@@ -278,6 +278,11 @@ function syncRolePagesFromDb(db){
 
 function dbSet(d){
   // Включаем прайсы и каталог в сохраняемый объект
+  var current=_dbCache||_getLocal();
+  if(_isSuspiciousStateCandidate(d,current)){
+    _logStateGuard('dbSet',d,current,'suspicious snapshot blocked');
+    return current||_getDefaults();
+  }
   d.supProds = SUP_PRODS;
   d.supsData = SUPS_DATA;
   d.products = PRODUCTS;
@@ -326,6 +331,47 @@ function isEmail(e){return/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);}
 function today(){return new Date().toISOString().slice(0,10);}
 function dlFile(c,m,n){const b=new Blob([c],{type:m});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=n;a.click();}
 function _uniqText(arr){return Array.from(new Set((Array.isArray(arr)?arr:[]).map(function(v){return String(v||'').trim();}).filter(Boolean)));}
+function _stateCounts(db){
+  db=db||{};
+  return {
+    users:(db.users||[]).length,
+    restaurants:(db.restaurants||[]).length,
+    suppliers:(db.supsData||db.suppliers||[]).length,
+    products:(db.products||[]).length,
+    orders:(db.orders||[]).length,
+    techCards:(db.techCards||[]).length
+  };
+}
+function _hasOwnerUser(db){
+  return (db.users||[]).some(function(u){
+    return u && (u.role==='owner' || u.bootstrapOnly || /owner/i.test(String(u.email||'')));
+  });
+}
+function _isSuspiciousStateCandidate(next, current){
+  next=next||{};
+  current=current||{};
+  var nextCounts=_stateCounts(next);
+  var currentCounts=_stateCounts(current);
+  if(!nextCounts.users || !nextCounts.restaurants) return true;
+  if(!_hasOwnerUser(next)) return true;
+  if(currentCounts.users>0 && nextCounts.users===0) return true;
+  if(currentCounts.restaurants>0 && nextCounts.restaurants===0) return true;
+  if(currentCounts.suppliers>0 && nextCounts.suppliers===0) return true;
+  if(currentCounts.users>=5 && nextCounts.users < Math.ceil(currentCounts.users*0.5)) return true;
+  if(currentCounts.restaurants>=3 && nextCounts.restaurants < Math.ceil(currentCounts.restaurants*0.5)) return true;
+  if(currentCounts.suppliers>=3 && nextCounts.suppliers < Math.ceil(currentCounts.suppliers*0.5)) return true;
+  return false;
+}
+function _logStateGuard(label,next,current,reason){
+  try{
+    var before=_stateCounts(current||{});
+    var after=_stateCounts(next||{});
+    console.warn('[STATE-GUARD]', label, reason, 'before=', before, 'after=', after);
+    if(window.console && console.info){
+      console.info('[STATE-GUARD]', label, {reason:reason,before:before,after:after});
+    }
+  }catch(e){}
+}
 function getCurrentPriceOrganizationId(db){
   db=db||dbGet();
   var rest=getCurrentOrderRestaurantMeta&&getCurrentOrderRestaurantMeta();
@@ -2908,7 +2954,7 @@ function exportSystemLog(){
   toast('📥 Системный журнал экспортирован','ok');
 }
 function exportBackup(){const db=dbGet();dlFile(JSON.stringify(db,null,2),'application/json','provision_backup_'+today()+'.json');logSystemEvent('backup','Создана резервная копия','Экспортирован JSON-снимок текущей базы','info','backup');toast('📥 Резервная копия создана','ok');}
-function importBackup(){const fi=document.createElement('input');fi.type='file';fi.accept='.json';fi.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{try{const d=JSON.parse(ev.target.result);dbSet(d);logSystemEvent('backup','Восстановление из резервной копии','Импортирован внешний JSON-файл и перезаписана локальная база','warn','backup');toast('✅ Данные восстановлены из резервной копии!','ok');renderAdmin();renderRestaurants();renderOwner();}catch{logSystemEvent('backup','Ошибка импорта резервной копии','Файл не прошёл проверку JSON','error','backup');toast('❗ Ошибка формата файла','err');}};r.readAsText(f);};fi.click();}
+function importBackup(){const fi=document.createElement('input');fi.type='file';fi.accept='.json';fi.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{try{const d=JSON.parse(ev.target.result);const current=_dbCache||_getLocal();if(_isSuspiciousStateCandidate(d,current)){_logStateGuard('importBackup',d,current,'backup snapshot blocked');toast('❗ Резервная копия не прошла проверку и не была применена','err');return;}dbSet(d);logSystemEvent('backup','Восстановление из резервной копии','Импортирован внешний JSON-файл и перезаписана локальная база','warn','backup');toast('✅ Данные восстановлены из резервной копии!','ok');renderAdmin();renderRestaurants();renderOwner();}catch{logSystemEvent('backup','Ошибка импорта резервной копии','Файл не прошёл проверку JSON','error','backup');toast('❗ Ошибка формата файла','err');}};r.readAsText(f);};fi.click();}
 function fillPlatSettings(){
   var ps=ownerGetSettings();
   [['ps-name',ps.name],['ps-tag',ps.tagline],['ps-email',ps.supportEmail],['ps-cur',ps.currency],['ps-tz',ps.timezone],['ps-domain',ps.domain]].forEach(function(row){

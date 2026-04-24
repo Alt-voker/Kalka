@@ -362,12 +362,36 @@
     };
   }
 
+  function snapshotCounts(snapshot) {
+    return {
+      restaurants: safeArray(snapshot.restaurants).length,
+      suppliers: safeArray(snapshot.suppliers).length,
+      products: safeArray(snapshot.products).length,
+      supProds: safeArray(snapshot.supProds).length,
+      orders: safeArray(snapshot.orders).length,
+      techCards: safeArray(snapshot.techCards).length
+    };
+  }
+
+  function isSuspiciousCommerceSnapshot(snapshot, baseDb) {
+    var nextCounts = snapshotCounts(snapshot);
+    var currentCounts = snapshotCounts(snapshotFromState(baseDb || {}));
+    if (!nextCounts.restaurants || !nextCounts.suppliers) return true;
+    if (currentCounts.restaurants > 0 && nextCounts.restaurants === 0) return true;
+    if (currentCounts.suppliers > 0 && nextCounts.suppliers === 0) return true;
+    if (currentCounts.products >= 5 && nextCounts.products < Math.ceil(currentCounts.products * 0.5)) return true;
+    if (currentCounts.supProds >= 5 && nextCounts.supProds < Math.ceil(currentCounts.supProds * 0.5)) return true;
+    if (currentCounts.orders >= 5 && nextCounts.orders < Math.ceil(currentCounts.orders * 0.5)) return true;
+    return false;
+  }
+
   async function save(db) {
     if (!(await detectAvailability())) return false;
     var supabase = client();
-    var snapshot = snapshotFromState(db || {});
-    if (!hasCommerceData(snapshot)) {
-      console.warn('Commerce save skipped: snapshot is empty');
+    var sourceDb = db || {};
+    var snapshot = snapshotFromState(sourceDb);
+    if (!hasCommerceData(snapshot) || isSuspiciousCommerceSnapshot(snapshot, sourceDb)) {
+      console.warn('Commerce save skipped: suspicious or empty snapshot', snapshotCounts(snapshot));
       return false;
     }
     var response = await supabase.rpc('replace_commerce_snapshot', {

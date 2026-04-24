@@ -65,6 +65,47 @@
     );
   }
 
+  function stateCounts(db) {
+    var normalized = ensureArrays(db);
+    return {
+      users: normalized.users.length,
+      restaurants: normalized.restaurants.length,
+      suppliers: normalized.supProds.length + normalized.supsData.length,
+      products: normalized.products.length,
+      orders: normalized.orders.length,
+      techCards: normalized.techCards.length
+    };
+  }
+
+  function hasOwnerLikeUser(db) {
+    return ensureArrays(db).users.some(function (user) {
+      return user && (user.role === 'owner' || user.bootstrapOnly || /owner/i.test(String(user.email || '')));
+    });
+  }
+
+  function isSuspiciousPersistedState(next, current) {
+    var nextCounts = stateCounts(next);
+    var currentCounts = stateCounts(current);
+    if (!nextCounts.users || !nextCounts.restaurants) return true;
+    if (!hasOwnerLikeUser(next)) return true;
+    if (currentCounts.users > 0 && nextCounts.users === 0) return true;
+    if (currentCounts.restaurants > 0 && nextCounts.restaurants === 0) return true;
+    if (currentCounts.suppliers > 0 && nextCounts.suppliers === 0) return true;
+    if (currentCounts.users >= 5 && nextCounts.users < Math.ceil(currentCounts.users * 0.5)) return true;
+    if (currentCounts.restaurants >= 3 && nextCounts.restaurants < Math.ceil(currentCounts.restaurants * 0.5)) return true;
+    if (currentCounts.suppliers >= 3 && nextCounts.suppliers < Math.ceil(currentCounts.suppliers * 0.5)) return true;
+    return false;
+  }
+
+  function logStateGuard(label, next, current, reason) {
+    try {
+      console.warn('[STATE-GUARD]', label, reason, {
+        before: stateCounts(current),
+        after: stateCounts(next)
+      });
+    } catch (error) {}
+  }
+
   function syncRuntime(db) {
     var normalized = ensureArrays(db);
     normalized.__clientStateVersion = CLIENT_STATE_VERSION;
@@ -193,12 +234,18 @@
   async function saveStateToSupabase(db) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return false;
+    var current = ensureArrays(window._dbCache || readLocalState() || getDefaults());
+    var normalized = ensureArrays(db || {});
+    if (isSuspiciousPersistedState(normalized, current)) {
+      logStateGuard('saveStateToSupabase', normalized, current, 'suspicious snapshot blocked');
+      return false;
+    }
 
     var response = await client
       .from('app_state')
       .upsert({
         scope: 'default',
-        payload: db,
+        payload: normalized,
         updated_at: new Date().toISOString()
       }, { onConflict: 'scope' });
 
