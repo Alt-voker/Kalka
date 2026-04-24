@@ -319,6 +319,9 @@ function dlFile(c,m,n){const b=new Blob([c],{type:m});const u=URL.createObjectUR
 function _uniqText(arr){return Array.from(new Set((Array.isArray(arr)?arr:[]).map(function(v){return String(v||'').trim();}).filter(Boolean)));}
 function getCurrentPriceOrganizationId(db){
   db=db||dbGet();
+  if(window.__userSession && window.__userSession.activeOrganizationId){
+    return String(window.__userSession.activeOrganizationId);
+  }
   var rest=getCurrentOrderRestaurantMeta&&getCurrentOrderRestaurantMeta();
   if(rest&&rest.organizationId) return String(rest.organizationId);
   if(activeRest&&activeRest.organizationId) return String(activeRest.organizationId);
@@ -332,6 +335,12 @@ function getOrganizationLegalEntities(organizationId, db){
   db=db||dbGet();
   var orgId=String(organizationId||'').trim();
   if(!orgId) return [];
+  if(window.__userSession && Array.isArray(window.__userSession.legalEntities)){
+    var sessionLegal=window.__userSession.legalEntities.filter(function(item){
+      return item && String(item.organization_id||'').trim()===orgId;
+    }).map(function(item){ return String(item.name||'').trim(); }).filter(Boolean);
+    if(sessionLegal.length) return Array.from(new Set(sessionLegal));
+  }
   var legal=[];
   (db.restaurants||[]).forEach(function(rest){
     if(!rest) return;
@@ -350,6 +359,14 @@ function getOrganizationLegalEntities(organizationId, db){
 }
 function getAccessibleOrganizations(db){
   db=db||dbGet();
+  if(window.__userSession && Array.isArray(window.__userSession.organizations) && window.__userSession.organizations.length){
+    return window.__userSession.organizations.map(function(org){
+      return {
+        id:String(org.id||'').trim(),
+        label:org.name||('Организация '+String(org.id||'').trim())
+      };
+    }).filter(function(item){ return !!item.id; });
+  }
   var orgMap={};
   (db.restaurants||[]).forEach(function(rest){
     if(!rest || rest.id==='r0') return;
@@ -2256,6 +2273,11 @@ function normalizeDashboardAccess(user){
 function getUserRestaurantMembershipIds(user, db){
   db=db||dbGet();
   if(!user) return [];
+  if(window.__userSession && window.__userSession.currentUser && String(window.__userSession.currentUser.id||'')===String(user.id||'')){
+    return (window.__userSession.memberships||[]).map(function(item){
+      return String(item.organization_id||'').trim();
+    }).filter(Boolean);
+  }
   return (db.restaurants||[]).filter(function(rest){
     return rest.id!=='r0' && Array.isArray(rest.members) && rest.members.some(function(member){ return member.userId===user.id; });
   }).map(function(rest){ return rest.id; });
@@ -2275,6 +2297,11 @@ function getUserDashboardRestaurantIds(user, db){
 function getUserScopedRestaurantIds(user, db){
   db=db||dbGet();
   if(!user) return [];
+  if(window.__userSession && window.__userSession.currentUser && String(window.__userSession.currentUser.id||'')===String(user.id||'')){
+    return (window.__userSession.memberships||[]).map(function(item){
+      return String(item.organization_id||'').trim();
+    }).filter(Boolean);
+  }
   if(user.role==='owner') return (db.restaurants||[]).filter(function(rest){ return rest.id!=='r0'; }).map(function(rest){ return rest.id; });
   if(user.role==='admin'){
     var access=normalizeDashboardAccess(user);
@@ -2370,6 +2397,11 @@ function getUserVisibleSuppliers(user){
 function isRestaurantParticipant(user, rest){
   if(!user || !rest) return false;
   if(user.role==='owner') return true;
+  if(window.__userSession && window.__userSession.currentUser && String(window.__userSession.currentUser.id||'')===String(user.id||'')){
+    return (window.__userSession.memberships||[]).some(function(item){
+      return String(item.organization_id||'').trim()===String(rest.organizationId||rest.id||'').trim();
+    });
+  }
   return Array.isArray(rest.members) && rest.members.some(function(member){ return member.userId===user.id; });
 }
 
@@ -2543,6 +2575,12 @@ function ownerGetApiState(){
 
 function ownerDistinctCompanies(db){
   var map={};
+  if(window.__userSession && Array.isArray(window.__userSession.organizations)){
+    window.__userSession.organizations.forEach(function(org){
+      var name=(org&&org.name||'').trim();
+      if(name) map[name.toLowerCase()]=name;
+    });
+  }
   (db.users||[]).forEach(function(u){
     var name=(u&&u.company||'').trim();
     if(name) map[name.toLowerCase()]=name;

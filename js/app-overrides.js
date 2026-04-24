@@ -31,6 +31,10 @@
     return { users: [], restaurants: [], audit: [] };
   }
 
+  function isServerFirstMode() {
+    return !!(app.supabase && app.supabase.isEnabled && app.supabase.isEnabled());
+  }
+
   function ensureArrays(db) {
     var base = db && typeof db === 'object' ? clone(db) : getDefaults();
     if (!Array.isArray(base.users)) base.users = [];
@@ -91,10 +95,12 @@
       ALL_SUPS = allSups;
       if (typeof selSups !== 'undefined' && (!selSups || !selSups.length)) selSups = allSups.slice();
     } catch (error) {}
-    try {
-      localStorage.setItem('pv_cache', JSON.stringify(normalized));
-      localStorage.setItem(LOCAL_DB_KEY, JSON.stringify(normalized));
-    } catch (error) {}
+    if (!isServerFirstMode()) {
+      try {
+        localStorage.setItem('pv_cache', JSON.stringify(normalized));
+        localStorage.setItem(LOCAL_DB_KEY, JSON.stringify(normalized));
+      } catch (error) {}
+    }
     return normalized;
   }
 
@@ -111,6 +117,7 @@
   }
 
   function readLocalState() {
+    if (isServerFirstMode()) return null;
     try {
       var raw = localStorage.getItem(LOCAL_DB_KEY) || localStorage.getItem('pv_cache');
       if (!raw) return null;
@@ -123,6 +130,7 @@
 
   function clearClientRuntimeState() {
     try {
+      window.__userSession = null;
       window._dbCache = null;
       window.CU = null;
       window.activeRest = { id: 'r0', name: 'Все рестораны', emoji: '🌐' };
@@ -176,6 +184,7 @@
   }
 
   async function loadStateFromSupabase() {
+    if (!isServerFirstMode()) return null;
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return null;
 
@@ -191,6 +200,7 @@
   }
 
   async function saveStateToSupabase(db) {
+    if (!isServerFirstMode()) return false;
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return false;
 
@@ -230,7 +240,7 @@
   }
 
   function saveBusinessDataSnapshot(db) {
-    if (!app.commerce || !app.commerce.save) return;
+    if (!isServerFirstMode() || !app.commerce || !app.commerce.save) return;
     app.commerce.save(db).catch(function (error) {
       console.error('Supabase business data save failed:', error);
     });
@@ -328,6 +338,280 @@
     });
   }
 
+  function normalizeProfileRow(row) {
+    if (!row) return null;
+    return {
+      id: row.id || '',
+      auth_user_id: row.auth_user_id || '',
+      email: row.email || '',
+      first_name: row.first_name || '',
+      last_name: row.last_name || '',
+      phone: row.phone || '',
+      status: row.status || 'active',
+      created_at: row.created_at || '',
+      updated_at: row.updated_at || ''
+    };
+  }
+
+  function normalizeOrganizationRow(row) {
+    if (!row) return null;
+    return {
+      id: row.id || '',
+      name: row.name || '',
+      type: row.type || 'organization',
+      status: row.status || 'active',
+      created_at: row.created_at || '',
+      updated_at: row.updated_at || ''
+    };
+  }
+
+  function normalizeMembershipRow(row) {
+    if (!row) return null;
+    return {
+      id: row.id || '',
+      organization_id: row.organization_id || '',
+      user_profile_id: row.user_profile_id || '',
+      role: row.role || 'manager',
+      status: row.status || 'active',
+      created_at: row.created_at || '',
+      updated_at: row.updated_at || ''
+    };
+  }
+
+  function normalizeLegalEntityRow(row) {
+    if (!row) return null;
+    return {
+      id: row.id || '',
+      organization_id: row.organization_id || '',
+      name: row.name || '',
+      inn: row.inn || '',
+      kpp: row.kpp || '',
+      ogrn: row.ogrn || '',
+      legal_address: row.legal_address || '',
+      status: row.status || 'active',
+      created_at: row.created_at || '',
+      updated_at: row.updated_at || ''
+    };
+  }
+
+  function mapProfileToLegacyUser(profile, memberships, organizations, activeOrganization) {
+    var firstMembership = memberships[0] || null;
+    var orgName = (activeOrganization && activeOrganization.name) || (organizations[0] && organizations[0].name) || '';
+    return {
+      id: profile.auth_user_id || profile.id,
+      profileId: profile.id,
+      first: profile.first_name || profile.first || 'Пользователь',
+      last: profile.last_name || profile.last || '',
+      company: orgName || profile.company || 'КальКа',
+      email: String(profile.email || '').toLowerCase(),
+      role: (firstMembership && firstMembership.role) || profile.role || 'manager',
+      status: profile.status || 'active',
+      ev: true,
+      created: (profile.created_at || profile.created || new Date().toISOString()).slice(0, 10),
+      organizationId: (firstMembership && firstMembership.organization_id) || '',
+      memberships: memberships.map(function (item) {
+        return {
+          organizationId: item.organization_id,
+          role: item.role,
+          status: item.status
+        };
+      })
+    };
+  }
+
+  function pickActiveOrganization(organizations, memberships) {
+    var orgIds = {};
+    (memberships || []).forEach(function (item) {
+      if (item && item.organization_id) orgIds[String(item.organization_id)] = true;
+    });
+    var list = (organizations || []).filter(function (org) {
+      return !!org && !!org.id && (!!orgIds[String(org.id)] || !Object.keys(orgIds).length);
+    });
+    return list[0] || null;
+  }
+
+  function applyServerSession(session) {
+    window.__userSession = session || null;
+    if (!session || !session.currentUser) {
+      return null;
+    }
+
+    var activeOrganization = session.activeOrganization || null;
+    if (activeOrganization) {
+      window.activeRest = {
+        id: activeOrganization.id,
+        organizationId: activeOrganization.id,
+        name: activeOrganization.name || 'Организация',
+        brandName: activeOrganization.name || 'Организация',
+        legalName: activeOrganization.name || 'Организация',
+        type: activeOrganization.type || 'organization',
+        status: activeOrganization.status || 'active',
+        emoji: '🏢'
+      };
+    } else {
+      window.activeRest = { id: 'r0', name: 'Нет доступных организаций', emoji: '🔒' };
+    }
+
+    return session.currentUser;
+  }
+
+  async function loadServerSession(authUser) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client || !authUser) return null;
+
+    var profileResponse = await client
+      .from('user_profiles')
+      .select('id, auth_user_id, email, first_name, last_name, phone, status, created_at, updated_at')
+      .eq('auth_user_id', authUser.id)
+      .maybeSingle();
+    if (profileResponse.error || !profileResponse.data) return null;
+    var profile = normalizeProfileRow(profileResponse.data);
+    if (!profile) return null;
+
+    var membershipsResponse = await client
+      .from('organization_members')
+      .select('id, organization_id, user_profile_id, role, status, created_at, updated_at')
+      .eq('user_profile_id', profile.id)
+      .order('created_at', { ascending: true });
+    if (membershipsResponse.error) return null;
+    var memberships = (membershipsResponse.data || []).map(normalizeMembershipRow).filter(Boolean);
+
+    var orgIds = Array.from(new Set(memberships.map(function (item) {
+      return item.organization_id;
+    }).filter(Boolean)));
+
+    var organizationsResponse = orgIds.length
+      ? await client
+          .from('organizations')
+          .select('id, name, type, status, created_at, updated_at')
+          .in('id', orgIds)
+          .order('created_at', { ascending: true })
+      : { error: null, data: [] };
+    if (organizationsResponse.error) return null;
+    var organizations = (organizationsResponse.data || []).map(normalizeOrganizationRow).filter(Boolean);
+
+    var profileIds = [profile.id];
+    var accessibleProfilesResponse = await client
+      .from('user_profiles')
+      .select('id, auth_user_id, email, first_name, last_name, phone, status, created_at, updated_at')
+      .order('created_at', { ascending: true });
+    if (accessibleProfilesResponse.error) return null;
+    var accessibleProfiles = (accessibleProfilesResponse.data || []).map(normalizeProfileRow).filter(Boolean);
+
+    var memberIds = memberships.map(function (item) { return item.id; }).filter(Boolean);
+    var memberLegalResponse = memberIds.length
+      ? await client
+          .from('member_legal_entities')
+          .select('organization_member_id, legal_entity_id, created_at')
+          .in('organization_member_id', memberIds)
+      : { error: null, data: [] };
+    if (memberLegalResponse.error) return null;
+
+    var legalEntityIds = Array.from(new Set((memberLegalResponse.data || []).map(function (item) {
+      return item.legal_entity_id;
+    }).filter(Boolean)));
+
+    var legalEntitiesResponse = legalEntityIds.length
+      ? await client
+          .from('legal_entities')
+          .select('id, organization_id, name, inn, kpp, ogrn, legal_address, status, created_at, updated_at')
+          .in('id', legalEntityIds)
+          .order('created_at', { ascending: true })
+      : { error: null, data: [] };
+    if (legalEntitiesResponse.error) return null;
+    var legalEntities = (legalEntitiesResponse.data || []).map(normalizeLegalEntityRow).filter(Boolean);
+
+    var activeOrganization = pickActiveOrganization(organizations, memberships);
+    var activeMembership = activeOrganization
+      ? memberships.find(function (item) { return String(item.organization_id) === String(activeOrganization.id); }) || memberships[0] || null
+      : memberships[0] || null;
+    var activeLegalEntities = activeOrganization
+      ? legalEntities.filter(function (item) { return String(item.organization_id) === String(activeOrganization.id); })
+      : [];
+
+    var session = {
+      profile: profile,
+      memberships: memberships,
+      organizations: organizations,
+      legalEntities: legalEntities,
+      activeOrganization: activeOrganization,
+      activeOrganizationId: activeOrganization ? activeOrganization.id : '',
+      activeLegalEntities: activeLegalEntities,
+      activeLegalEntityIds: activeLegalEntities.map(function (item) { return item.id; }),
+      activeLegalEntityNames: activeLegalEntities.map(function (item) { return item.name; }),
+      currentMembership: activeMembership,
+      role: (activeMembership && activeMembership.role) || 'manager',
+      permissions: (window.ROLES && window.ROLES[(activeMembership && activeMembership.role) || 'manager'] && window.ROLES[(activeMembership && activeMembership.role) || 'manager'].pages) ? window.ROLES[(activeMembership && activeMembership.role) || 'manager'].pages.slice() : [],
+      currentUser: {
+        id: authUser.id,
+        profileId: profile.id,
+        first: profile.first_name || 'Пользователь',
+        last: profile.last_name || '',
+        company: (activeOrganization && activeOrganization.name) || profile.company || 'КальКа',
+        email: String(profile.email || authUser.email || '').toLowerCase(),
+        role: (activeMembership && activeMembership.role) || 'manager',
+        status: profile.status || 'active',
+        ev: true,
+        created: (profile.created_at || new Date().toISOString()).slice(0, 10),
+        organizationId: activeOrganization ? activeOrganization.id : '',
+        memberships: memberships.map(function (item) {
+          return {
+            organizationId: item.organization_id,
+            role: item.role,
+            status: item.status
+          };
+        })
+      },
+      dbUsers: accessibleProfiles.map(function (row) {
+        var membership = memberships.filter(function (item) {
+          return String(item.user_profile_id) === String(row.id);
+        });
+        return mapProfileToLegacyUser(row, membership, organizations, activeOrganization);
+      })
+    };
+
+    applyServerSession(session);
+    return session;
+  }
+
+  window.initUserSession = async function (authUser) {
+    if (!authUser) {
+      clearClientRuntimeState();
+      window.__userSession = null;
+      return null;
+    }
+
+    try {
+      var session = await loadServerSession(authUser);
+      if (!session) {
+        clearClientRuntimeState();
+        window.__userSession = null;
+        return null;
+      }
+
+      var baseDb = ensureArrays(window._dbCache || getDefaults());
+      baseDb.users = session.dbUsers || [];
+      baseDb.__serverSession = {
+        profileId: session.profile.id,
+        activeOrganizationId: session.activeOrganizationId,
+        role: session.role,
+        membershipCount: session.memberships.length
+      };
+      syncRuntime(baseDb);
+
+      if (typeof window.CU !== 'undefined' && window.CU) {
+        window.CU = Object.assign({}, window.CU, session.currentUser);
+      } else {
+        window.CU = session.currentUser;
+      }
+
+      return session;
+    } catch (error) {
+      console.error('initUserSession failed:', error);
+      return null;
+    }
+  };
+
   function bindAuthListener() {
     if (authBound) return;
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
@@ -362,6 +646,9 @@
   }
 
   window.dbGet = function () {
+    if (isServerFirstMode()) {
+      return ensureArrays(window._dbCache || getDefaults());
+    }
     return ensureArrays(window._dbCache || readLocalState() || (legacy.dbGet ? legacy.dbGet() : null) || getDefaults());
   };
 
@@ -404,18 +691,24 @@
 
     (async function () {
       try {
-        var loaded = null;
+        if (isServerFirstMode()) {
+          try {
+            var baseDb = ensureArrays(window._dbCache || getDefaults());
+            var merged = await loadBusinessDataFromSupabase(baseDb);
+            syncRuntime(merged);
 
-        try {
-          loaded = await loadStateFromSupabase();
-        } catch (error) {
-          console.error('loadStateFromSupabase failed during dbLoad:', error);
-          loaded = null;
-        }
-
-        if (loaded) {
-          var mergedLoaded = await loadBusinessDataFromSupabase(loaded);
-          syncRuntime(mergedLoaded);
+            var sessionResponse = await app.supabase.getClient().auth.getSession();
+            if (sessionResponse && sessionResponse.data && sessionResponse.data.session && sessionResponse.data.session.user) {
+              await window.initUserSession(sessionResponse.data.session.user);
+            } else {
+              window.__userSession = null;
+              window.CU = null;
+              window.activeRest = { id: 'r0', name: 'Нет доступных организаций', emoji: '🔒' };
+            }
+          } catch (serverError) {
+            console.error('Server-first dbLoad failed:', serverError);
+            syncRuntime(getDefaults());
+          }
           finish();
           return;
         }
@@ -515,11 +808,14 @@
       if (typeof window.enterApp === 'function') window.enterApp(user);
 
       setTimeout(function () {
-        hydrateStateFromSupabase().then(function (loaded) {
-          if (!loaded) return;
-          try { markLoginStage('login:state-hydrated', 'ok'); } catch (error) {}
+        window.initUserSession(authUser).then(function (session) {
+          if (!session) {
+            if (errEl) errEl.textContent = 'Нет доступных организаций';
+            return;
+          }
+          try { markLoginStage('login:state-hydrated', 'server-first'); } catch (error) {}
         }).catch(function (error) {
-          console.error('Deferred state hydrate after login failed:', error);
+          console.error('Deferred server session init after login failed:', error);
         });
       }, 0);
 
@@ -796,6 +1092,9 @@
   };
 
   app.auth = {
+    initUserSession: async function (authUser) {
+      return window.initUserSession ? window.initUserSession(authUser) : null;
+    },
     restoreSession: async function () {
       var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
       if (!client) return false;
@@ -816,8 +1115,8 @@
         window.enterApp(user);
       }
       setTimeout(function () {
-        hydrateStateFromSupabase().catch(function (error) {
-          console.error('Deferred state hydrate after restore failed:', error);
+        window.initUserSession(response.data.session.user).catch(function (error) {
+          console.error('Deferred server session init after restore failed:', error);
         });
       }, 0);
       setTimeout(function () {
