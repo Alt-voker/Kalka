@@ -188,22 +188,13 @@ function dbLoad(callback){
         if(d && Array.isArray(d.users)){
           d = _migrateOwner(d);
           _dbCache = d;
-          // Загрузить прайсы и каталог из Firebase если есть
-          if(Array.isArray(d.supProds) && d.supProds.length > 0){
-            SUP_PRODS = d.supProds;
-          }
-          if(Array.isArray(d.supsData) && d.supsData.length > 0){
-            SUPS_DATA = d.supsData;
-          }
-          if(Array.isArray(d.products) && d.products.length > 0){
-            PRODUCTS = d.products;
-          }
-          if(Array.isArray(d.orders) && d.orders.length > 0){
-            ORDERS = d.orders;
-          }
-          if(Array.isArray(d.techCards) && d.techCards.length > 0){
-            TECH_CARDS = d.techCards;
-          }
+          // Firebase truth must always replace stale client runtime state,
+          // even when a collection is intentionally empty.
+          SUP_PRODS = Array.isArray(d.supProds) ? d.supProds : [];
+          SUPS_DATA = Array.isArray(d.supsData) ? d.supsData : [];
+          PRODUCTS  = Array.isArray(d.products) ? d.products : [];
+          ORDERS    = Array.isArray(d.orders) ? d.orders : [];
+          TECH_CARDS = Array.isArray(d.techCards) ? d.techCards : [];
           try{ localStorage.setItem('pv_cache', JSON.stringify(d)); }catch(e){}
           if(callback) callback();
           return;

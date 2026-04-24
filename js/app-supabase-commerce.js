@@ -317,29 +317,19 @@
       techCards: safeArray(results[11].data).map(mapTechCard)
     };
 
-    if (!hasCommerceData(incoming) && hasCommerceData(baseDb)) {
-      console.warn('Commerce tables returned empty snapshot, preserving base state');
-      setTimeout(function () {
-        save(baseDb).catch(function (error) {
-          console.error('Commerce background restore failed:', error);
-        });
-      }, 0);
-      return Object.assign({}, baseDb || {});
-    }
-
     return Object.assign({}, baseDb || {}, {
-      restaurants: firstNonEmptyArray(incoming.restaurants, baseDb && baseDb.restaurants),
-      supsData: firstNonEmptyArray(incoming.supsData, baseDb && baseDb.supsData),
-      products: firstNonEmptyArray(incoming.products, baseDb && baseDb.products),
-      supProds: firstNonEmptyArray(incoming.supProds, baseDb && baseDb.supProds),
-      supplierPriceLists: firstNonEmptyArray(incoming.supplierPriceLists, baseDb && baseDb.supplierPriceLists),
-      supplierPriceListLegals: firstNonEmptyArray(incoming.supplierPriceListLegals, baseDb && baseDb.supplierPriceListLegals),
-      supplierPriceItems: firstNonEmptyArray(incoming.supplierPriceItems, baseDb && baseDb.supplierPriceItems),
-      supplierImportTemplates: firstNonEmptyArray(incoming.supplierImportTemplates, baseDb && baseDb.supplierImportTemplates),
-      priceImportBatches: firstNonEmptyArray(incoming.priceImportBatches, baseDb && baseDb.priceImportBatches),
-      priceImportItems: firstNonEmptyArray(incoming.priceImportItems, baseDb && baseDb.priceImportItems),
-      orders: firstNonEmptyArray(incoming.orders, baseDb && baseDb.orders),
-      techCards: firstNonEmptyArray(incoming.techCards, baseDb && baseDb.techCards)
+      restaurants: Array.isArray(incoming.restaurants) ? incoming.restaurants : (baseDb && baseDb.restaurants) || [],
+      supsData: Array.isArray(incoming.supsData) ? incoming.supsData : (baseDb && baseDb.supsData) || [],
+      products: Array.isArray(incoming.products) ? incoming.products : (baseDb && baseDb.products) || [],
+      supProds: Array.isArray(incoming.supProds) ? incoming.supProds : (baseDb && baseDb.supProds) || [],
+      supplierPriceLists: Array.isArray(incoming.supplierPriceLists) ? incoming.supplierPriceLists : (baseDb && baseDb.supplierPriceLists) || [],
+      supplierPriceListLegals: Array.isArray(incoming.supplierPriceListLegals) ? incoming.supplierPriceListLegals : (baseDb && baseDb.supplierPriceListLegals) || [],
+      supplierPriceItems: Array.isArray(incoming.supplierPriceItems) ? incoming.supplierPriceItems : (baseDb && baseDb.supplierPriceItems) || [],
+      supplierImportTemplates: Array.isArray(incoming.supplierImportTemplates) ? incoming.supplierImportTemplates : (baseDb && baseDb.supplierImportTemplates) || [],
+      priceImportBatches: Array.isArray(incoming.priceImportBatches) ? incoming.priceImportBatches : (baseDb && baseDb.priceImportBatches) || [],
+      priceImportItems: Array.isArray(incoming.priceImportItems) ? incoming.priceImportItems : (baseDb && baseDb.priceImportItems) || [],
+      orders: Array.isArray(incoming.orders) ? incoming.orders : (baseDb && baseDb.orders) || [],
+      techCards: Array.isArray(incoming.techCards) ? incoming.techCards : (baseDb && baseDb.techCards) || []
     });
   }
 
