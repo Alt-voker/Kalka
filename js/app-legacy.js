@@ -5123,6 +5123,29 @@ function renderSupPriceLegalList(orgId, db){
   if(!listEl) return;
   var legalEntities = getOrganizationLegalEntities(orgId || _supPriceOrganizationId, db);
   if(!legalEntities.length){
+    var lazyOrgId = String(orgId || _supPriceOrganizationId || '').trim();
+    if(window.loadLegalEntitiesForOrganization && lazyOrgId && !window.__loginInProgress && !window.__restoreInProgress){
+      listEl.innerHTML = '<div style="color:var(--t3);padding:8px;font-size:12px;">Загрузка юр. лиц...</div>';
+      window.loadLegalEntitiesForOrganization(lazyOrgId).then(function(items){
+        if(!Array.isArray(items) || !items.length) {
+          listEl.innerHTML = '<div style="color:var(--t3);padding:8px;font-size:12px;">У выбранной организации нет настроенных юр. лиц.</div>';
+          return;
+        }
+        if(window.__userSession){
+          window.__userSession.legalEntities = items.slice();
+          window.__userSession.activeLegalEntities = items.filter(function(item){
+            return String(item.organization_id || '') === String(lazyOrgId || '');
+          });
+          window.__userSession.activeLegalEntityIds = window.__userSession.activeLegalEntities.map(function(item){ return item.id; });
+          window.__userSession.activeLegalEntityNames = window.__userSession.activeLegalEntities.map(function(item){ return item.name; });
+        }
+        renderSupPriceLegalList(lazyOrgId, dbGet());
+      }).catch(function(error){
+        console.warn('lazy legal_entities load failed for price upload', error);
+        listEl.innerHTML = '<div style="color:var(--t3);padding:8px;font-size:12px;">У выбранной организации нет настроенных юр. лиц.</div>';
+      });
+      return;
+    }
     listEl.innerHTML = '<div style="color:var(--t3);padding:8px;font-size:12px;">У выбранной организации нет настроенных юр. лиц.</div>';
     return;
   }
@@ -5514,6 +5537,28 @@ function renderTenderLegalList(restId){
     return;
   }
   if(!legalEntities.length){
+    if(window.loadLegalEntitiesForOrganization && rest.id && !window.__loginInProgress && !window.__restoreInProgress){
+      listEl.innerHTML='<div style="color:var(--t3);font-size:12px;">Загрузка юр. лиц...</div>';
+      window.loadLegalEntitiesForOrganization(rest.id).then(function(items){
+        if(!Array.isArray(items) || !items.length) {
+          listEl.innerHTML='<div style="color:var(--rd);font-size:12px;">У этой организации не настроены юр. лица.</div>';
+          return;
+        }
+        if(window.__userSession){
+          window.__userSession.legalEntities = items.slice();
+          window.__userSession.activeLegalEntities = items.filter(function(item){
+            return String(item.organization_id || '') === String(rest.id || '');
+          });
+          window.__userSession.activeLegalEntityIds = window.__userSession.activeLegalEntities.map(function(item){ return item.id; });
+          window.__userSession.activeLegalEntityNames = window.__userSession.activeLegalEntities.map(function(item){ return item.name; });
+        }
+        renderTenderLegalList(restId);
+      }).catch(function(error){
+        console.warn('lazy legal_entities load failed for tender', error);
+        listEl.innerHTML='<div style="color:var(--rd);font-size:12px;">У этой организации не настроены юр. лица.</div>';
+      });
+      return;
+    }
     listEl.innerHTML='<div style="color:var(--rd);font-size:12px;">У этой организации не настроены юр. лица.</div>';
     return;
   }
@@ -7701,6 +7746,28 @@ function renderOrderLegalList(restId){
     return;
   }
   if(!legalEntities.length){
+    if(window.loadLegalEntitiesForOrganization && rest.id && !window.__loginInProgress && !window.__restoreInProgress){
+      listEl.innerHTML='<div style="color:var(--t3);font-size:12px;">Загрузка юр. лиц...</div>';
+      window.loadLegalEntitiesForOrganization(rest.id).then(function(items){
+        if(!Array.isArray(items) || !items.length) {
+          listEl.innerHTML='<div style="color:var(--rd);font-size:12px;">У этого заведения не настроены юр. лица для заказа.</div>';
+          return;
+        }
+        if(window.__userSession){
+          window.__userSession.legalEntities = items.slice();
+          window.__userSession.activeLegalEntities = items.filter(function(item){
+            return String(item.organization_id || '') === String(rest.id || '');
+          });
+          window.__userSession.activeLegalEntityIds = window.__userSession.activeLegalEntities.map(function(item){ return item.id; });
+          window.__userSession.activeLegalEntityNames = window.__userSession.activeLegalEntities.map(function(item){ return item.name; });
+        }
+        renderOrderLegalList(restId);
+      }).catch(function(error){
+        console.warn('lazy legal_entities load failed for order', error);
+        listEl.innerHTML='<div style="color:var(--rd);font-size:12px;">У этого заведения не настроены юр. лица для заказа.</div>';
+      });
+      return;
+    }
     listEl.innerHTML='<div style="color:var(--rd);font-size:12px;">У этого заведения не настроены юр. лица для заказа.</div>';
     return;
   }

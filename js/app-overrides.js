@@ -288,90 +288,41 @@
     return bootstrapPromises[key];
   }
 
-  function queueDeferredPostLoginHydration(session, authUser) {
-    if (!session || !session.currentUser || !session.activeOrganizationId) return;
-
-    setTimeout(function runDeferredHydration() {
-      if (window.__loginInProgress || loggingOut) {
-        setTimeout(runDeferredHydration, 250);
-        return;
+  async function loadLegalEntitiesForOrganization(organizationId) {
+    if (window.__loginInProgress || window.__restoreInProgress) return [];
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    var orgId = String(organizationId || '').trim();
+    if (!client || !orgId) return [];
+    try {
+      console.info('supabase request start', 'legal_entities');
+      var response = await client
+        .from('legal_entities')
+        .select('id, organization_id, name, inn, kpp, ogrn, legal_address, status, created_at, updated_at')
+        .eq('organization_id', orgId)
+        .order('created_at', { ascending: true });
+      if (response.error) {
+        console.warn('legal_entities query failed', {
+          code: response.error.code || '',
+          message: response.error.message || '',
+          details: response.error.details || '',
+          hint: response.error.hint || '',
+          raw: response.error
+        });
+        return [];
       }
-
-      (async function () {
-        var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
-        if (!client) return;
-
-        try {
-          var orgIds = (session.memberships || []).map(function (item) {
-            return item && item.organization_id ? String(item.organization_id) : '';
-          }).filter(Boolean);
-
-          var legalEntities = [];
-          if (orgIds.length) {
-            console.info('supabase request start', 'legal_entities');
-            var legalEntitiesResponse = await client
-              .from('legal_entities')
-              .select('id, organization_id, name, inn, kpp, ogrn, legal_address, status, created_at, updated_at')
-              .in('organization_id', orgIds)
-              .order('created_at', { ascending: true });
-            if (legalEntitiesResponse.error) {
-              console.warn('legal_entities query failed', {
-                code: legalEntitiesResponse.error.code || '',
-                message: legalEntitiesResponse.error.message || '',
-                details: legalEntitiesResponse.error.details || '',
-                hint: legalEntitiesResponse.error.hint || '',
-                raw: legalEntitiesResponse.error
-              });
-            } else {
-              legalEntities = (legalEntitiesResponse.data || []).map(normalizeLegalEntityRow).filter(Boolean);
-            }
-          }
-
-          var suppliers = [];
-          try {
-            suppliers = await loadSuppliersForOrganization(session.activeOrganizationId);
-          } catch (supplierError) {
-            console.warn('suppliers query failed but post-login hydration continues', supplierError);
-            suppliers = [];
-          }
-
-          if (!window.__userSession || !window.__userSession.currentUser || String(window.__userSession.currentUser.id || '') !== String(authUser.id || '')) {
-            return;
-          }
-
-          window.__userSession.legalEntities = legalEntities;
-          window.__userSession.activeLegalEntities = legalEntities.filter(function (item) {
-            return String(item.organization_id || '') === String(session.activeOrganizationId || '');
-          });
-          window.__userSession.activeLegalEntityIds = window.__userSession.activeLegalEntities.map(function (item) { return item.id; });
-          window.__userSession.activeLegalEntityNames = window.__userSession.activeLegalEntities.map(function (item) { return item.name; });
-          window.__userSession.suppliers = suppliers.slice();
-
-          var runtimeDb = ensureArrays(window._dbCache || getDefaults());
-          runtimeDb.supsData = suppliers.map(mapSupplierRowToLegacy);
-          runtimeDb.__serverSession = {
-            profileId: session.profile.id,
-            activeOrganizationId: session.activeOrganizationId,
-            role: session.role,
-            membershipCount: (session.memberships || []).length
-          };
-          window.SUPS_DATA = runtimeDb.supsData.slice();
-          syncRuntime(runtimeDb);
-
-          if (typeof window.renderSuppliers === 'function') window.renderSuppliers();
-          if (typeof window.renderRestaurants === 'function') window.renderRestaurants();
-        } catch (error) {
-          console.warn('post-login hydration failed but login continues', {
-            code: error && error.code ? error.code : '',
-            message: error && error.message ? error.message : '',
-            details: error && error.details ? error.details : '',
-            hint: error && error.hint ? error.hint : '',
-            raw: error
-          });
-        }
-      })();
-    }, 0);
+      return (response.data || []).map(normalizeLegalEntityRow).filter(Boolean);
+    } catch (error) {
+      console.warn('legal_entities query failed', {
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
+      });
+      return [];
+    }
   }
+  window.loadLegalEntitiesForOrganization = loadLegalEntitiesForOrganization;
 
   function upsertUserInDb(user) {
     var db = ensureArrays(window._dbCache || readLocalState() || getDefaults());
@@ -1040,8 +991,6 @@
         window.CU = session.currentUser;
       }
       window.__sessionReady = true;
-
-      queueDeferredPostLoginHydration(session, authUser);
 
       return session;
     } catch (error) {
