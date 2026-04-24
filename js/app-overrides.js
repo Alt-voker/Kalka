@@ -701,6 +701,7 @@
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client || !authUser) return null;
 
+    console.info('supabase request start', 'user_profiles');
     var profileResponse = await client
       .from('user_profiles')
       .select('id, auth_user_id, email, first_name, last_name, phone, status, created_at, updated_at')
@@ -720,6 +721,7 @@
     if (!profile) return null;
     if (!rawProfile) {
       try {
+        console.info('supabase request start', 'user_profiles bootstrap upsert');
         await client
           .from('user_profiles')
           .upsert({
@@ -735,6 +737,7 @@
       }
     }
 
+    console.info('supabase request start', 'organization_members');
     var membershipsResponse = await client
       .from('organization_members')
       .select('id, organization_id, user_profile_id, role, status, created_at, updated_at')
@@ -761,6 +764,7 @@
       return item.organization_id;
     }).filter(Boolean)));
 
+    console.info('supabase request start', 'organizations');
     var organizationsResponse = orgIds.length
       ? await client
           .from('organizations')
@@ -781,6 +785,7 @@
     var organizations = (organizationsResponse.data || []).map(normalizeOrganizationRow).filter(Boolean);
 
     var profileIds = [profile.id];
+    console.info('supabase request start', 'accessible user_profiles');
     var accessibleProfilesResponse = await client
       .from('user_profiles')
       .select('id, auth_user_id, email, first_name, last_name, phone, status, created_at, updated_at')
@@ -798,6 +803,7 @@
     var accessibleProfiles = (accessibleProfilesResponse.data || []).map(normalizeProfileRow).filter(Boolean);
 
     var memberIds = memberships.map(function (item) { return item.id; }).filter(Boolean);
+    console.info('supabase request start', 'member_legal_entities');
     var memberLegalResponse = memberIds.length
       ? await client
           .from('member_legal_entities')
@@ -819,6 +825,7 @@
       return item.legal_entity_id;
     }).filter(Boolean)));
 
+    console.info('supabase request start', 'legal_entities');
     var legalEntitiesResponse = legalEntityIds.length
       ? await client
           .from('legal_entities')
@@ -1408,6 +1415,7 @@
         phone: user.phone || '',
         status: user.status || 'active'
       };
+      console.info('supabase request start', 'assign user_profiles upsert');
       var profileResponse = await client
         .from('user_profiles')
         .upsert(profilePayload, { onConflict: 'auth_user_id' })
@@ -1434,6 +1442,7 @@
         role: role,
         status: status
       };
+      console.info('supabase request start', 'organization_members lookup');
       var existingMemberResponse = await client
         .from('organization_members')
         .select('id, organization_id, user_profile_id, role, status')
@@ -1451,6 +1460,7 @@
         throw existingMemberResponse.error;
       }
       if (existingMemberResponse.data && existingMemberResponse.data.id) {
+        console.info('supabase request start', 'organization_members update');
         var updateMemberResponse = await client
           .from('organization_members')
           .update({ role: role, status: status })
@@ -1466,6 +1476,7 @@
           throw updateMemberResponse.error;
         }
       } else {
+        console.info('supabase request start', 'organization_members insert');
         var insertMemberResponse = await client
           .from('organization_members')
           .insert(memberPayload);
@@ -1483,6 +1494,7 @@
       console.info('membership saved');
 
       try {
+        console.info('supabase request start', 'auth getUser refresh');
         var authResult = await client.auth.getUser();
         var currentAuthUser = authResult && authResult.data && authResult.data.user ? authResult.data.user : null;
         if (currentAuthUser) {
@@ -1577,7 +1589,16 @@
         }
       });
 
-      if (response.error) throw response.error;
+      if (response.error) {
+        console.error('loadSuppliersForOrganization failed', {
+          code: response.error.code || '',
+          message: response.error.message || '',
+          details: response.error.details || '',
+          hint: response.error.hint || '',
+          raw: response.error
+        });
+        throw response.error;
+      }
 
       var db = ensureArrays(window._dbCache || readLocalState() || getDefaults());
       var pendingUser = {
