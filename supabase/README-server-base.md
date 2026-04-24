@@ -29,6 +29,9 @@ Legacy sources like `pv_cache`, `kalka_app_state_v1`, Firebase fallback and old 
 3. Update `server_base_seed.sql` so `owner_user_id` matches that id.
 4. Re-run the seed.
 
+Important: do not run `server_base_seed.sql` with the placeholder
+`owner_user_id` if you want a real owner account. Replace it first.
+
 ## How access works
 
 - `platform_owner` sees everything.
@@ -42,4 +45,3 @@ Legacy sources like `pv_cache`, `kalka_app_state_v1`, Firebase fallback and old 
 2. Confirm the app still loads because data comes from Supabase, not `pv_cache`.
 3. Switch to another device/browser and confirm the same organizations, users and suppliers are visible.
 4. Clear localStorage/sessionStorage and reload. Business data should remain because it lives on the server.
-

@@ -198,6 +198,7 @@ language sql
 stable
 security definer
 set search_path = public
+set row_security = off
 as $$
   select up.id
   from public.user_profiles up
@@ -211,6 +212,7 @@ language sql
 stable
 security definer
 set search_path = public
+set row_security = off
 as $$
   select exists (
     select 1
@@ -228,6 +230,7 @@ language sql
 stable
 security definer
 set search_path = public
+set row_security = off
 as $$
   select coalesce(array_agg(distinct om.organization_id), '{}'::uuid[])
   from public.organization_members om
@@ -242,6 +245,7 @@ language sql
 stable
 security definer
 set search_path = public
+set row_security = off
 as $$
   select coalesce(array_agg(distinct mle.legal_entity_id), '{}'::uuid[])
   from public.organization_members om
@@ -257,6 +261,7 @@ language sql
 stable
 security definer
 set search_path = public
+set row_security = off
 as $$
   select om.role
   from public.organization_members om
@@ -283,6 +288,7 @@ language sql
 stable
 security definer
 set search_path = public
+set row_security = off
 as $$
   select public.current_user_is_platform_owner()
     or exists (
@@ -301,6 +307,7 @@ language sql
 stable
 security definer
 set search_path = public
+set row_security = off
 as $$
   select public.current_user_is_platform_owner()
     or exists (
@@ -320,6 +327,7 @@ language sql
 stable
 security definer
 set search_path = public
+set row_security = off
 as $$
   select public.current_user_is_platform_owner()
     or exists (
@@ -597,4 +605,3 @@ with check (
   public.current_user_is_platform_owner()
   or public.current_user_can_access_organization(organization_id)
 );
-
