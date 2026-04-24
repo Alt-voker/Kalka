@@ -394,6 +394,10 @@
     };
   }
 
+  function normalizeUiRole(role) {
+    return role === 'platform_owner' ? 'owner' : (role || 'manager');
+  }
+
   function mapProfileToLegacyUser(profile, memberships, organizations, activeOrganization) {
     var firstMembership = memberships[0] || null;
     var orgName = (activeOrganization && activeOrganization.name) || (organizations[0] && organizations[0].name) || '';
@@ -404,7 +408,7 @@
       last: profile.last_name || profile.last || '',
       company: orgName || profile.company || 'КальКа',
       email: String(profile.email || '').toLowerCase(),
-      role: (firstMembership && firstMembership.role) || profile.role || 'manager',
+      role: normalizeUiRole((firstMembership && firstMembership.role) || profile.role || 'manager'),
       status: profile.status || 'active',
       ev: true,
       created: (profile.created_at || profile.created || new Date().toISOString()).slice(0, 10),
@@ -412,7 +416,7 @@
       memberships: memberships.map(function (item) {
         return {
           organizationId: item.organization_id,
-          role: item.role,
+          role: normalizeUiRole(item.role),
           status: item.status
         };
       })
@@ -598,6 +602,7 @@
       }
     }
 
+    var uiRole = normalizeUiRole((activeMembership && activeMembership.role) || 'manager');
     var session = {
       profile: profile,
       memberships: memberships,
@@ -609,8 +614,8 @@
       activeLegalEntityIds: activeLegalEntities.map(function (item) { return item.id; }),
       activeLegalEntityNames: activeLegalEntities.map(function (item) { return item.name; }),
       currentMembership: activeMembership,
-      role: (activeMembership && activeMembership.role) || 'manager',
-      permissions: (window.ROLES && window.ROLES[(activeMembership && activeMembership.role) || 'manager'] && window.ROLES[(activeMembership && activeMembership.role) || 'manager'].pages) ? window.ROLES[(activeMembership && activeMembership.role) || 'manager'].pages.slice() : [],
+      role: uiRole,
+      permissions: (window.ROLES && window.ROLES[uiRole] && window.ROLES[uiRole].pages) ? window.ROLES[uiRole].pages.slice() : [],
       currentUser: {
         id: authUser.id,
         profileId: profile.id,
@@ -618,7 +623,7 @@
         last: profile.last_name || '',
         company: (activeOrganization && activeOrganization.name) || profile.company || 'КальКа',
         email: String(profile.email || authUser.email || '').toLowerCase(),
-        role: (activeMembership && activeMembership.role) || 'manager',
+        role: uiRole,
         status: profile.status || 'active',
         ev: true,
         created: (profile.created_at || new Date().toISOString()).slice(0, 10),
@@ -626,7 +631,7 @@
         memberships: memberships.map(function (item) {
           return {
             organizationId: item.organization_id,
-            role: item.role,
+            role: normalizeUiRole(item.role),
             status: item.status
           };
         })
