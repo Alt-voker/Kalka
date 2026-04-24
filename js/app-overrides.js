@@ -483,6 +483,8 @@
     return suppliers;
   }
 
+  window.loadSuppliersForOrganization = loadSuppliersForOrganization;
+
   function pickActiveOrganization(organizations, memberships) {
     var orgIds = {};
     (memberships || []).forEach(function (item) {
@@ -687,6 +689,114 @@
       console.error('initUserSession failed:', error);
       return null;
     }
+  };
+
+  window.submitSup = async function () {
+    var errEl = document.getElementById('supSub') || document.getElementById('supGrid');
+    var btn = document.getElementById('as-submit-btn');
+    var editId = (document.getElementById('as-edit-id') || { value: '' }).value;
+    var activeOrgId = String((window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Сохраняем...';
+    }
+
+    function finish() {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = editId !== '' ? 'Сохранить' : 'Добавить';
+      }
+    }
+
+    try {
+      if (!client || !app.supabase || !app.supabase.isEnabled || !app.supabase.isEnabled()) {
+        throw new Error('Supabase не настроен');
+      }
+      if (!activeOrgId) {
+        throw new Error('Нет активной организации. Выберите организацию и попробуйте снова.');
+      }
+
+      var name = ((document.getElementById('as-n') || {}).value || '').trim();
+      if (!name) throw new Error('Укажите название поставщика');
+
+      var supplierId = editId !== '' && window.__userSession && Array.isArray(window.__userSession.suppliers)
+        ? (window.__userSession.suppliers[Number(editId)] && window.__userSession.suppliers[Number(editId)].id) || ''
+        : '';
+      var existing = supplierId && window.__userSession && Array.isArray(window.__userSession.suppliers)
+        ? window.__userSession.suppliers.find(function (item) { return String(item.id) === String(supplierId); })
+        : null;
+
+      var payload = {
+        organization_id: activeOrgId,
+        legacy_key: existing && existing.legacy_key ? existing.legacy_key : ('sup_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)),
+        name: name,
+        emoji: ((document.getElementById('as-em2') || {}).value || '🏭').trim() || '🏭',
+        kind: ((document.getElementById('as-c') || {}).value || 'Поставщик').trim() || 'Поставщик',
+        rating: existing && typeof existing.rating === 'number' ? existing.rating : 0,
+        orders_count: existing && typeof existing.orders === 'number' ? existing.orders : 0,
+        delivery: ((document.getElementById('as-dl') || {}).value || '1-2 дня').trim() || '1-2 дня',
+        min_order_text: (((document.getElementById('as-mn') || {}).value || '').trim() ? '₽' + ((document.getElementById('as-mn') || {}).value || '').trim() : '₽1 000'),
+        status: 'active',
+        tags: Array.isArray(existing && existing.tags) ? existing.tags.slice() : [],
+        contact: ((document.getElementById('as-ct') || {}).value || '').trim(),
+        phone: ((document.getElementById('as-ph') || {}).value || '').trim(),
+        hidden: false
+      };
+
+      var upsertResult;
+      if (supplierId) {
+        upsertResult = await client
+          .from('suppliers')
+          .update(payload)
+          .eq('id', supplierId)
+          .eq('organization_id', activeOrgId)
+          .select('*')
+          .maybeSingle();
+      } else {
+        upsertResult = await client
+          .from('suppliers')
+          .insert(payload)
+          .select('*')
+          .maybeSingle();
+      }
+
+      if (upsertResult.error) throw upsertResult.error;
+
+      var refreshedSuppliers = await loadSuppliersForOrganization(activeOrgId);
+      if (window.__userSession) {
+        window.__userSession.suppliers = refreshedSuppliers.slice();
+      }
+      try {
+        var runtimeDb = ensureArrays(window._dbCache || getDefaults());
+        runtimeDb.supsData = refreshedSuppliers.map(mapSupplierRowToLegacy);
+        syncRuntime(runtimeDb);
+        window.SUPS_DATA = runtimeDb.supsData.slice();
+      } catch (runtimeError) {
+        console.error('Failed to refresh supplier runtime after save:', runtimeError);
+      }
+
+      if (typeof window.closeSupplierModal === 'function') window.closeSupplierModal();
+      if (typeof window.renderSuppliers === 'function') window.renderSuppliers();
+      if (typeof window.renderCatalog === 'function') window.renderCatalog();
+      if (typeof window.renderOwner === 'function' && window.CU && window.CU.role === 'owner') window.renderOwner();
+      if (typeof window.toast === 'function') {
+        window.toast('✅ Поставщик сохранён', 'ok');
+      }
+      if (window.logAudit) {
+        window.logAudit(auditActor(), (supplierId ? 'Обновил' : 'Добавил') + ' поставщика «' + name + '»', 'Поставщики');
+      }
+    } catch (error) {
+      console.error('Supplier save failed:', error);
+      if (typeof window.toast === 'function') {
+        window.toast('Не удалось сохранить поставщика', 'err');
+      }
+      return false;
+    } finally {
+      finish();
+    }
+    return true;
   };
 
   function bindAuthListener() {
