@@ -1229,6 +1229,8 @@
     if (info) info.innerHTML = '<b>' + [user.first, user.last].filter(Boolean).join(' ') + '</b><br><span style="color:var(--t3);font-size:12px;">' + (user.email || '—') + '</span>';
     var userIdInput = document.getElementById('auo-user-id');
     if (userIdInput) userIdInput.value = user.id || '';
+    var userProfileIdInput = document.getElementById('auo-user-profile-id');
+    if (userProfileIdInput) userProfileIdInput.value = user.profileId || '';
     var orgSelect = document.getElementById('auo-org');
     if (orgSelect) {
       var organizations = (window.__userSession && Array.isArray(window.__userSession.organizations)) ? window.__userSession.organizations : [];
@@ -1252,6 +1254,7 @@
     var okEl = document.getElementById('auo-ok');
     var btn = document.getElementById('auo-submit-btn');
     var userId = ((document.getElementById('auo-user-id') || {}).value || '').trim();
+    var userProfileId = ((document.getElementById('auo-user-profile-id') || {}).value || '').trim();
     var orgId = ((document.getElementById('auo-org') || {}).value || '').trim();
     var role = ((document.getElementById('auo-role') || {}).value || '').trim();
     var status = ((document.getElementById('auo-status') || {}).value || 'active').trim() || 'active';
@@ -1265,6 +1268,7 @@
     }
 
     try {
+      console.info('assign user started');
       if (!window.CU || window.CU.role !== 'owner') {
         throw new Error('Только владелец может назначать пользователей');
       }
@@ -1274,13 +1278,21 @@
       if (!userId) throw new Error('Пользователь не выбран');
       if (!orgId) throw new Error('Выберите организацию');
       if (!role) throw new Error('Выберите роль');
+      console.info('selected organization_id', orgId);
+      console.info('selected role', role);
+      console.info('auth_user_id', userId);
 
       var db = ensureArrays(window._dbCache || getDefaults());
-      var user = (db.users || []).find(function (item) { return String(item.id || '') === String(userId); });
+      var user = (db.users || []).find(function (item) {
+        return String(item.id || '') === String(userId) || String(item.profileId || '') === String(userProfileId);
+      });
       if (!user) throw new Error('Пользователь не найден');
+      if (!user.profileId && !userProfileId) {
+        console.error('profile missing for selected user:', user);
+      }
 
       var profilePayload = {
-        auth_user_id: user.id,
+        auth_user_id: String(user.id || userId || '').trim(),
         email: String(user.email || '').toLowerCase(),
         first_name: user.first || 'Пользователь',
         last_name: user.last || '',
@@ -1294,8 +1306,9 @@
         .maybeSingle();
       if (profileResponse.error) throw profileResponse.error;
 
-      var profileId = profileResponse.data && profileResponse.data.id ? profileResponse.data.id : user.profileId;
+      var profileId = profileResponse.data && profileResponse.data.id ? profileResponse.data.id : (user.profileId || userProfileId || '');
       if (!profileId) throw new Error('Не удалось определить профиль пользователя');
+      console.info('resolved user_profile_id', profileId);
 
       var memberPayload = {
         organization_id: orgId,
@@ -1322,6 +1335,7 @@
           .insert(memberPayload);
         if (insertMemberResponse.error) throw insertMemberResponse.error;
       }
+      console.info('membership saved');
 
       try {
         var authResult = await client.auth.getUser();
@@ -1343,6 +1357,7 @@
       return true;
     } catch (error) {
       console.error('assign user to organization failed:', error);
+      console.error('membership not saved');
       if (errEl) errEl.textContent = error && error.message ? error.message : 'Не удалось назначить организацию';
       return false;
     } finally {
