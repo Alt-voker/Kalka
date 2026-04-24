@@ -641,6 +641,7 @@
     if (typeof window.renderAdmin === 'function') window.renderAdmin();
     if (typeof window.renderOrders === 'function') window.renderOrders();
     if (typeof window.renderBudget === 'function') window.renderBudget();
+    if (typeof window.goPage === 'function') window.goPage('dashboard');
     if (typeof window.toast === 'function') {
       window.toast('Активная организация: ' + (targetOrg.name || 'Организация'), 'ok');
     }
@@ -1611,6 +1612,7 @@
     restoreSession: async function () {
       var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
       if (!client) return false;
+      if (loggingOut) return false;
 
       restoreInFlight = true;
       bindAuthListener();
