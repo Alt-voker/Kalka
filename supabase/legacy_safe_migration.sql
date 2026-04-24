@@ -1,5 +1,6 @@
 create extension if not exists "pgcrypto";
 
+-- STEP 1: core organizations table
 create table if not exists public.organizations (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -9,9 +10,18 @@ create table if not exists public.organizations (
   updated_at timestamptz not null default now()
 );
 
+-- STEP 2: add organization_id to legacy tables first so later indexes/policies can use it safely
+alter table public.restaurants add column if not exists organization_id uuid;
+alter table public.suppliers add column if not exists organization_id uuid;
+alter table public.products add column if not exists organization_id uuid;
+alter table public.product_supplier_prices add column if not exists organization_id uuid;
+alter table public.orders add column if not exists organization_id uuid;
+alter table public.tech_cards add column if not exists organization_id uuid;
+
+-- STEP 3: new normalized tables (created without foreign keys; FKs are attached later)
 create table if not exists public.legal_entities (
   id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
+  organization_id uuid,
   name text not null,
   inn text not null default '',
   kpp text not null default '',
@@ -36,8 +46,8 @@ create table if not exists public.user_profiles (
 
 create table if not exists public.organization_members (
   id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  user_profile_id uuid not null references public.user_profiles(id) on delete cascade,
+  organization_id uuid,
+  user_profile_id uuid,
   role text not null,
   status text not null default 'active',
   created_at timestamptz not null default now(),
@@ -59,15 +69,15 @@ create table if not exists public.organization_members (
 
 create table if not exists public.member_legal_entities (
   id uuid primary key default gen_random_uuid(),
-  organization_member_id uuid not null references public.organization_members(id) on delete cascade,
-  legal_entity_id uuid not null references public.legal_entities(id) on delete cascade,
+  organization_member_id uuid,
+  legal_entity_id uuid,
   created_at timestamptz not null default now(),
   constraint member_legal_entities_unique unique (organization_member_id, legal_entity_id)
 );
 
 create table if not exists public.suppliers (
   id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
+  organization_id uuid,
   name text not null,
   inn text not null default '',
   phone text not null default '',
@@ -82,9 +92,9 @@ create table if not exists public.suppliers (
 
 create table if not exists public.supplier_price_lists (
   id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references public.organizations(id) on delete cascade,
-  supplier_id uuid not null references public.suppliers(id) on delete cascade,
-  uploaded_by_user_profile_id uuid references public.user_profiles(id) on delete set null,
+  organization_id uuid,
+  supplier_id uuid,
+  uploaded_by_user_profile_id uuid,
   name text not null,
   file_path text not null default '',
   status text not null default 'active',
@@ -95,16 +105,16 @@ create table if not exists public.supplier_price_lists (
 
 create table if not exists public.supplier_price_list_legal_entities (
   id uuid primary key default gen_random_uuid(),
-  price_list_id uuid not null references public.supplier_price_lists(id) on delete cascade,
-  legal_entity_id uuid not null references public.legal_entities(id) on delete cascade,
+  price_list_id uuid,
+  legal_entity_id uuid,
   created_at timestamptz not null default now(),
   constraint supplier_price_list_legal_entities_unique unique (price_list_id, legal_entity_id)
 );
 
 create table if not exists public.supplier_price_items (
   id uuid primary key default gen_random_uuid(),
-  price_list_id uuid not null references public.supplier_price_lists(id) on delete cascade,
-  organization_id uuid references public.organizations(id) on delete cascade,
+  price_list_id uuid,
+  organization_id uuid,
   original_name text not null,
   product_name text not null default '',
   price numeric(14,2) not null default 0,
@@ -116,8 +126,8 @@ create table if not exists public.supplier_price_items (
 
 create table if not exists public.audit_logs (
   id uuid primary key default gen_random_uuid(),
-  organization_id uuid references public.organizations(id) on delete cascade,
-  user_profile_id uuid references public.user_profiles(id) on delete set null,
+  organization_id uuid,
+  user_profile_id uuid,
   action text not null,
   entity_type text not null,
   entity_id text not null default '',
@@ -125,6 +135,7 @@ create table if not exists public.audit_logs (
   created_at timestamptz not null default now()
 );
 
+-- STEP 4: indexes after all target columns exist
 create index if not exists idx_legal_entities_org_id on public.legal_entities(organization_id);
 create index if not exists idx_user_profiles_auth_user_id on public.user_profiles(auth_user_id);
 create index if not exists idx_org_members_org_id on public.organization_members(organization_id);
@@ -140,20 +151,13 @@ create index if not exists idx_supplier_price_items_price_list_id on public.supp
 create index if not exists idx_supplier_price_items_org_id on public.supplier_price_items(organization_id);
 create index if not exists idx_audit_logs_org_id on public.audit_logs(organization_id);
 create index if not exists idx_audit_logs_user_profile_id on public.audit_logs(user_profile_id);
-
-alter table public.restaurants add column if not exists organization_id uuid;
-alter table public.suppliers add column if not exists organization_id uuid;
-alter table public.products add column if not exists organization_id uuid;
-alter table public.product_supplier_prices add column if not exists organization_id uuid;
-alter table public.orders add column if not exists organization_id uuid;
-alter table public.tech_cards add column if not exists organization_id uuid;
-
 create index if not exists idx_restaurants_org_id on public.restaurants(organization_id);
 create index if not exists idx_products_org_id on public.products(organization_id);
 create index if not exists idx_product_supplier_prices_org_id on public.product_supplier_prices(organization_id);
 create index if not exists idx_orders_org_id on public.orders(organization_id);
 create index if not exists idx_tech_cards_org_id on public.tech_cards(organization_id);
 
+-- STEP 5: foreign keys, added after nullable legacy columns exist
 alter table public.restaurants
   add constraint restaurants_organization_id_fkey
   foreign key (organization_id) references public.organizations(id) on delete set null;
@@ -178,6 +182,63 @@ alter table public.tech_cards
   add constraint tech_cards_organization_id_fkey
   foreign key (organization_id) references public.organizations(id) on delete set null;
 
+alter table public.legal_entities
+  add constraint legal_entities_organization_id_fkey
+  foreign key (organization_id) references public.organizations(id) on delete cascade;
+
+alter table public.organization_members
+  add constraint organization_members_organization_id_fkey
+  foreign key (organization_id) references public.organizations(id) on delete cascade;
+
+alter table public.organization_members
+  add constraint organization_members_user_profile_id_fkey
+  foreign key (user_profile_id) references public.user_profiles(id) on delete cascade;
+
+alter table public.member_legal_entities
+  add constraint member_legal_entities_organization_member_id_fkey
+  foreign key (organization_member_id) references public.organization_members(id) on delete cascade;
+
+alter table public.member_legal_entities
+  add constraint member_legal_entities_legal_entity_id_fkey
+  foreign key (legal_entity_id) references public.legal_entities(id) on delete cascade;
+
+alter table public.supplier_price_lists
+  add constraint supplier_price_lists_organization_id_fkey
+  foreign key (organization_id) references public.organizations(id) on delete cascade;
+
+alter table public.supplier_price_lists
+  add constraint supplier_price_lists_supplier_id_fkey
+  foreign key (supplier_id) references public.suppliers(id) on delete cascade;
+
+alter table public.supplier_price_lists
+  add constraint supplier_price_lists_uploaded_by_user_profile_id_fkey
+  foreign key (uploaded_by_user_profile_id) references public.user_profiles(id) on delete set null;
+
+alter table public.supplier_price_list_legal_entities
+  add constraint supplier_price_list_legals_price_list_id_fkey
+  foreign key (price_list_id) references public.supplier_price_lists(id) on delete cascade;
+
+alter table public.supplier_price_list_legal_entities
+  add constraint supplier_price_list_legals_legal_entity_id_fkey
+  foreign key (legal_entity_id) references public.legal_entities(id) on delete cascade;
+
+alter table public.supplier_price_items
+  add constraint supplier_price_items_price_list_id_fkey
+  foreign key (price_list_id) references public.supplier_price_lists(id) on delete cascade;
+
+alter table public.supplier_price_items
+  add constraint supplier_price_items_organization_id_fkey
+  foreign key (organization_id) references public.organizations(id) on delete cascade;
+
+alter table public.audit_logs
+  add constraint audit_logs_organization_id_fkey
+  foreign key (organization_id) references public.organizations(id) on delete cascade;
+
+alter table public.audit_logs
+  add constraint audit_logs_user_profile_id_fkey
+  foreign key (user_profile_id) references public.user_profiles(id) on delete set null;
+
+-- updated_at triggers
 create or replace function public.tg_set_updated_at()
 returns trigger
 language plpgsql
@@ -186,6 +247,50 @@ begin
   new.updated_at := now();
   return new;
 end;
+$$;
+
+drop trigger if exists set_updated_at_organizations on public.organizations;
+create trigger set_updated_at_organizations
+before update on public.organizations
+for each row execute procedure public.tg_set_updated_at();
+
+drop trigger if exists set_updated_at_legal_entities on public.legal_entities;
+create trigger set_updated_at_legal_entities
+before update on public.legal_entities
+for each row execute procedure public.tg_set_updated_at();
+
+drop trigger if exists set_updated_at_user_profiles on public.user_profiles;
+create trigger set_updated_at_user_profiles
+before update on public.user_profiles
+for each row execute procedure public.tg_set_updated_at();
+
+drop trigger if exists set_updated_at_org_members on public.organization_members;
+create trigger set_updated_at_org_members
+before update on public.organization_members
+for each row execute procedure public.tg_set_updated_at();
+
+drop trigger if exists set_updated_at_suppliers on public.suppliers;
+create trigger set_updated_at_suppliers
+before update on public.suppliers
+for each row execute procedure public.tg_set_updated_at();
+
+drop trigger if exists set_updated_at_price_lists on public.supplier_price_lists;
+create trigger set_updated_at_price_lists
+before update on public.supplier_price_lists
+for each row execute procedure public.tg_set_updated_at();
+
+drop trigger if exists set_updated_at_price_items on public.supplier_price_items;
+create trigger set_updated_at_price_items
+before update on public.supplier_price_items
+for each row execute procedure public.tg_set_updated_at();
+
+-- helper functions with RLS disabled for safe membership checks
+create or replace function public.current_user_auth_id()
+returns uuid
+language sql
+stable
+as $$
+  select auth.uid()
 $$;
 
 create or replace function public.current_user_profile_id()
@@ -337,6 +442,7 @@ as $$
     )
 $$;
 
+-- STEP 6: RLS after columns/FKs exist
 alter table public.organizations enable row level security;
 alter table public.legal_entities enable row level security;
 alter table public.user_profiles enable row level security;
