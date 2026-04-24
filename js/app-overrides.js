@@ -786,9 +786,18 @@
       }
 
       var authUser = (response.data && response.data.user) || (response.data && response.data.session && response.data.session.user) || null;
-      var user = authUser ? fastResolveAppUser(authUser) : null;
-      if (!user) throw new Error('Не удалось определить пользователя');
-      markLoginStage('login:auth-ok', user.email || '');
+      if (!authUser) throw new Error('Не удалось определить пользователя');
+      markLoginStage('login:auth-ok', authUser.email || '');
+
+      clearClientRuntimeState();
+      var session = await window.initUserSession(authUser);
+      if (!session || !session.currentUser) {
+        await client.auth.signOut();
+        if (errEl) errEl.textContent = 'Пользователь не связан с организациями. Обратитесь к владельцу платформы';
+        return;
+      }
+
+      var user = session.currentUser;
       if (user.status === 'blocked') {
         await client.auth.signOut();
         if (errEl) errEl.textContent = 'Аккаунт заблокирован';
@@ -804,31 +813,9 @@
         if (errEl) errEl.textContent = 'Заявка отклонена. Обратитесь к владельцу платформы';
         return;
       }
-      clearClientRuntimeState();
+
+      markLoginStage('login:state-hydrated', 'server-first');
       if (typeof window.enterApp === 'function') window.enterApp(user);
-
-      setTimeout(function () {
-        window.initUserSession(authUser).then(function (session) {
-          if (!session) {
-            if (errEl) errEl.textContent = 'Нет доступных организаций';
-            return;
-          }
-          try { markLoginStage('login:state-hydrated', 'server-first'); } catch (error) {}
-        }).catch(function (error) {
-          console.error('Deferred server session init after login failed:', error);
-        });
-      }, 0);
-
-      setTimeout(function () {
-        resolveAppUser(authUser).then(function (resolvedUser) {
-          if (!resolvedUser) return;
-          if (typeof window.CU !== 'undefined' && window.CU && window.CU.id === resolvedUser.id) {
-            window.CU = Object.assign({}, window.CU, resolvedUser);
-          }
-        }).catch(function (error) {
-          console.error('Deferred user resolve after login failed:', error);
-        });
-      }, 0);
     } catch (error) {
       if (errEl) errEl.textContent = error && error.message ? error.message : 'Ошибка входа';
     } finally {
@@ -1107,12 +1094,13 @@
         return false;
       }
 
-      var user = fastResolveAppUser(response.data.session.user);
       clearClientRuntimeState();
       var currentUser = null;
       try { currentUser = CU; } catch (error) { currentUser = window.CU || null; }
-      if (typeof window.enterApp === 'function' && (!currentUser || currentUser.id !== user.id)) {
-        window.enterApp(user);
+      var session = await window.initUserSession(response.data.session.user);
+      if (!session || !session.currentUser) return false;
+      if (typeof window.enterApp === 'function' && (!currentUser || currentUser.id !== session.currentUser.id)) {
+        window.enterApp(session.currentUser);
       }
       setTimeout(function () {
         window.initUserSession(response.data.session.user).catch(function (error) {
@@ -1120,9 +1108,9 @@
         });
       }, 0);
       setTimeout(function () {
-        resolveAppUser(response.data.session.user).catch(function (error) {
-          console.error('Deferred user resolve after restore failed:', error);
-        });
+        if (window.__userSession && window.__userSession.currentUser && typeof window.enterApp === 'function') {
+          window.CU = Object.assign({}, window.CU || {}, window.__userSession.currentUser);
+        }
       }, 0);
       restoreInFlight = false;
       return true;
