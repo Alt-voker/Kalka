@@ -3532,251 +3532,53 @@ function _parseOrderDateValue(val){
 function renderRestaurants(){
   var el=document.getElementById('restGrid');
   if(!el)return;
-  var db=dbGet();
-  var restaurants=db.restaurants||[];
-  // Убираем "Все рестораны" (r0) из управления
-  var manageable=restaurants.filter(function(r){return r.id!=='r0';});
-  document.getElementById('restPageSub').textContent=manageable.length+' заведений';
+  var session = window.__userSession || {};
+  var orgs = Array.isArray(session.organizations) ? session.organizations.slice() : [];
+  var activeOrgId = String(session.activeOrganizationId || '').trim();
+  var db = dbGet();
+  var orgRows = orgs.length ? orgs : (db.restaurants||[]).filter(function(r){ return r.id!=='r0'; }).map(function(r){
+    return {
+      id: String(r.organizationId || r.id || '').trim(),
+      name: r.brandName || r.legalName || r.name || 'Организация',
+      type: r.type || 'organization',
+      status: r.status || 'active'
+    };
+  }).filter(function(item){ return !!item.id; });
+  document.getElementById('restPageSub').textContent = orgRows.length + ' организаций';
 
-  if(!manageable.length){
+  if(!orgRows.length){
     el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--t3);">'
-      +'<div style="font-size:48px;margin-bottom:12px;">🍽️</div>'
-      +'<div style="font-size:16px;font-weight:700;margin-bottom:8px;">Нет заведений</div>'
-      +'<div style="font-size:13px;margin-bottom:20px;">Добавьте первый ресторан или бар</div>'
-      +'<button onclick="openModal(\'addRest\')" style="background:var(--ac);color:#fff;border:none;border-radius:var(--r);padding:10px 20px;font-weight:700;cursor:pointer;">+ Добавить заведение</button>'
+      +'<div style="font-size:48px;margin-bottom:12px;">🏢</div>'
+      +'<div style="font-size:16px;font-weight:700;margin-bottom:8px;">У вас пока нет доступных организаций</div>'
+      +'<div style="font-size:13px;margin-bottom:20px;">Обратитесь к владельцу платформы или дождитесь добавления в организацию</div>'
       +'</div>';
     return;
   }
 
-  el.innerHTML=manageable.map(function(r){
-    var canViewSensitive=canViewRestaurantSensitiveData(CU, r);
-    var canManageMembers=canManageRestaurantMembers(CU, r);
-    var canInviteMembers=canInviteRestaurantMembers(CU, r);
-    var legalEntities=Array.isArray(r.legalEntities)?r.legalEntities.filter(Boolean):[];
-    var assignedLegalEntities=Array.isArray(r.assignedLegalEntities)&&r.assignedLegalEntities.length
-      ? r.assignedLegalEntities.filter(Boolean)
-      : legalEntities.slice();
-    var legalSummary=legalEntities.length?legalEntities.join(' · '):(r.legalName||'Не заполнено');
-    var assignedSummary=assignedLegalEntities.length?assignedLegalEntities.join(' · '):'Не выбраны';
-    var responsibles=r.responsibles||{};
-    var orderTemplates=Array.isArray(r.orderTemplates)?r.orderTemplates:[];
-    var purchaseRules=r.purchaseRules||{};
-    var zones=Array.isArray(r.zones)?r.zones.filter(Boolean):[];
-    var historyRange=getRestaurantHistoryRange(r.id);
-    var history=getRestaurantHistory(r, historyRange);
-    var responsibleItems=[
-      responsibles.director?'Директор: '+responsibles.director:'',
-      responsibles.buyer?'Закупщик: '+responsibles.buyer:'',
-      responsibles.accountant?'Бухгалтер: '+responsibles.accountant:'',
-      responsibles.manager?'Управляющий: '+responsibles.manager:''
-    ].filter(Boolean);
-    var members=r.members||[];
-    var users=db.users||[];
-    var pendingInvites=(db.orgInvites||[]).filter(function(invite){
-      return invite && invite.restId===r.id && invite.status==='pending';
+  el.innerHTML=orgRows.map(function(org){
+    var isActive = String(org.id) === activeOrgId;
+    var orgLegalEntities = (Array.isArray(session.legalEntities) ? session.legalEntities : []).filter(function(item){
+      return String(item.organization_id||'') === String(org.id||'');
     });
-    // Получить полные данные пользователей
-    var memberDetails=members.map(function(m){
-      var u=users.find(function(u){return u.id===m.userId;});
-      return u?Object.assign({},u,{restRole:m.role}):null;
-    }).filter(Boolean);
-
-    var memberCards=memberDetails.map(function(u){
-      var rd=ROLES[u.role]||{emoji:'👤',label:u.role,color:'#888'};
-      var tc=['owner','chef','buyer'].includes(u.role)?'#000':'#fff';
-      var roleControl=canManageMembers
-        ? '<select onchange="changeRestMemberRole(\''+r.id+'\',\''+u.id+'\',this.value)" '
-          +'style="background:var(--bg3);border:1px solid var(--br);border-radius:5px;padding:4px 6px;font-size:11px;color:var(--tx);outline:none;">'
-          +Object.keys(ROLES).map(function(rk){
-            return '<option value="'+rk+'"'+(u.restRole===rk?' selected':'')+'>'+ROLES[rk].emoji+' '+ROLES[rk].label+'</option>';
-          }).join('')
-          +'</select>'
-        : '<div style="font-size:11px;color:var(--t3);white-space:nowrap;">'+(ROLES[u.restRole]?ROLES[u.restRole].emoji+' '+ROLES[u.restRole].label:u.restRole)+'</div>';
-      var removeControl=canManageMembers
-        ? '<button onclick="removeRestMember(\''+r.id+'\',\''+u.id+'\')" '
-          +'style="background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:5px;padding:4px 8px;font-size:11px;cursor:pointer;" '
-          +'title="Удалить из заведения">✕</button>'
-        : '';
-      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--br);">'
-        +'<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,'+rd.color+','+rd.color+'88);'
-        +'color:'+tc+';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0;">'
-        +((u.first||'?')[0]+(u.last||'?')[0]).toUpperCase()+'</div>'
-        +'<div style="flex:1;min-width:0;">'
-        +'<div style="font-weight:600;font-size:13px;">'+u.first+' '+u.last+'</div>'
-        +'<div style="font-size:11px;color:var(--t3);">'+rd.emoji+' '+rd.label+'  ·  '+u.email+'</div>'
-        +'</div>'
-        +roleControl
-        +removeControl
-        +'</div>';
-    }).join('');
-
-    // Пользователи НЕ в этом ресторане
-    var memberIds=members.map(function(m){return m.userId;});
-    var available=users.filter(function(u){
-      return u.status==='active' && memberIds.indexOf(u.id)<0 && u.role!=='owner';
-    });
-    var pendingInviteIds=pendingInvites.map(function(invite){ return invite.userId; });
-    available=available.filter(function(u){ return pendingInviteIds.indexOf(u.id)<0; });
-    var availableOpts=available.map(function(u){
-      return '<option value="'+u.id+'">'+u.first+' '+u.last+' ('+u.email+')</option>';
-    }).join('');
-    var pendingInviteCards=pendingInvites.length?pendingInvites.map(function(invite){
-      var invitedUser=users.find(function(u){ return u.id===invite.userId; });
-      var inviteRole=ROLES[invite.role] ? ROLES[invite.role].emoji+' '+ROLES[invite.role].label : invite.role;
-      return '<div style="padding:8px 10px;border:1px solid var(--br);border-radius:8px;background:var(--bg3);font-size:12px;color:var(--t2);">'
-        +'<b>'+(invitedUser ? invitedUser.first+' '+invitedUser.last : 'Пользователь')+'</b>'
-        +' · '+(invitedUser ? invitedUser.email : '—')
-        +' · '+inviteRole
-        +'<div style="font-size:11px;color:var(--t3);margin-top:4px;">Пригласил: '+(invite.invitedByName||'—')+' · '+(invite.created||today())+'</div>'
-        +'</div>';
-    }).join(''):'';
-    var linkedSuppliers=(SUPS_DATA||[]).filter(function(supplier){
-      return normalizeSupplierOrganizationIds(supplier, db).indexOf(String(r.id))>=0 && !supplier.hidden;
-    });
-    var supplierCards=linkedSuppliers.length?linkedSuppliers.map(function(supplier){
-      var supplierIndex=SUPS_DATA.indexOf(supplier);
-      var canManageSupplier=canManageSupplierRecord(CU, supplier, db);
-      return '<div style="padding:10px 12px;border:1px solid var(--br);border-radius:var(--r);background:var(--bg3);">'
-        +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">'
-        +'<div style="flex:1;min-width:0;">'
-        +'<div style="font-size:13px;font-weight:700;">'+supplier.name+'</div>'
-        +'<div style="font-size:11px;color:var(--t3);margin-top:4px;">'+(supplier.legalName||supplier.name)+' · '+(supplier.city||'Без города')+'</div>'
-        +'<div style="font-size:11px;color:var(--t3);margin-top:4px;">Мин. заказ: '+(supplier.min||'—')+' · Доставка: '+(supplier.deliverySchedule||supplier.delivery||'—')+'</div>'
-        +'</div>'
-        +(canManageSupplier?'<button onclick="openSupplierModal('+supplierIndex+',\''+r.id+'\')" style="background:var(--bg4);border:1px solid var(--br2);border-radius:6px;padding:5px 9px;font-size:11px;cursor:pointer;color:var(--t2);">Изменить</button>':'')
-        +'</div>'
-        +'</div>';
-    }).join(''):'<div style="color:var(--t3);font-size:12px;">Пока нет поставщиков, привязанных к этой организации.</div>';
-
-	    var typeColors={Ресторан:'var(--ac)',Кафе:'var(--or)',Бар:'var(--pu)',Суши:'var(--bl)'};
-	    var typeColor=typeColors[r.type]||'var(--t3)';
-      var historyLabel=historyRange===0?'всё время':historyRange+' дн.';
-	    var rulesBits=[];
-    if(purchaseRules.minOrderAmount) rulesBits.push('Мин. заказ: ₽'+Number(purchaseRules.minOrderAmount).toLocaleString());
-    if(purchaseRules.deadline) rulesBits.push('Дедлайн: '+purchaseRules.deadline);
-    if(Array.isArray(purchaseRules.orderDays)&&purchaseRules.orderDays.length) rulesBits.push('Дни: '+purchaseRules.orderDays.join(', '));
-    if(Array.isArray(purchaseRules.stopSuppliers)&&purchaseRules.stopSuppliers.length) rulesBits.push('Стоп: '+purchaseRules.stopSuppliers.join(' · '));
-    if(Array.isArray(purchaseRules.prioritySuppliers)&&purchaseRules.prioritySuppliers.length) rulesBits.push('Приоритет: '+purchaseRules.prioritySuppliers.join(' · '));
-    var templateCards=orderTemplates.length?orderTemplates.map(function(tpl){
-      var itemCount=Array.isArray(tpl.items)?tpl.items.length:0;
-      var supCount=Array.isArray(tpl.supplierNames)?tpl.supplierNames.length:0;
-      return '<div style="padding:10px 12px;border:1px solid var(--br);border-radius:var(--r);background:var(--bg3);">'
-        +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">'
-        +'<div style="flex:1;min-width:0;">'
-        +'<div style="font-size:13px;font-weight:700;">'+tpl.name+'</div>'
-        +(tpl.description?'<div style="font-size:11px;color:var(--t3);margin-top:3px;">'+tpl.description+'</div>':'')
-        +'<div style="font-size:11px;color:var(--t3);margin-top:6px;">'+itemCount+' позиций'
-        +(supCount?' · '+supCount+' поставщиков':'')+'</div>'
-        +'</div>'
-        +'<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">'
-        +'<button onclick="useRestTemplate(\''+r.id+'\',\''+tpl.id+'\')" style="background:var(--ac);color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;">Применить</button>'
-        +'<button onclick="openRestTemplateModal(\''+r.id+'\',\''+tpl.id+'\')" style="background:var(--bg4);border:1px solid var(--br2);border-radius:6px;padding:5px 9px;font-size:11px;cursor:pointer;color:var(--t2);">✏️</button>'
-        +'<button onclick="deleteRestTemplate(\''+r.id+'\',\''+tpl.id+'\')" style="background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:6px;padding:5px 9px;font-size:11px;cursor:pointer;">✕</button>'
-        +'</div>'
-        +'</div>'
-        +'</div>';
-    }).join(''):'<div style="color:var(--t3);font-size:12px;">Пока нет шаблонов заказов для этой точки.</div>';
-
-      var actionButtons=canViewSensitive
-        ? '<button onclick="openEditRest(\''+r.id+'\')" style="background:var(--bg4);border:1px solid var(--br2);border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer;color:var(--t2);">✏️ Изменить</button>'
-          +'<button onclick="deleteRest(\''+r.id+'\')" style="background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer;">🗑 Удалить</button>'
-        : '';
-      var sensitiveSummary=canViewSensitive
-        ? '<div style="padding:6px 16px;font-size:11px;color:var(--t3);">👥 Команда: '+memberDetails.length+' чел.'+(pendingInvites.length?' · приглашений: '+pendingInvites.length:'')+'</div>'
-          +'<div style="padding:0 16px 8px;font-size:11px;color:var(--t3);">🏷 Бренд: '+(r.brandName||r.name||'Не заполнен')+'</div>'
-          +'<div style="padding:0 16px 10px;font-size:11px;color:var(--t3);">🔀 Для заказов: '+assignedSummary+'</div>'
-          +(responsibleItems.length?'<div style="padding:0 16px 10px;font-size:11px;color:var(--t3);">👤 Ответственные: '+responsibleItems.join(' · ')+'</div>':'')
-          +((r.deliveryZone||r.receivingSchedule)?'<div style="padding:0 16px 10px;font-size:11px;color:var(--t3);">🚚 Доставка: '+(r.deliveryZone||'Не указана')+' · ⏰ Приёмка: '+(r.receivingSchedule||'Не указан график')+'</div>':'')
-          +(zones.length?'<div style="padding:0 16px 10px;font-size:11px;color:var(--t3);">🏷 Зоны: '+zones.join(' · ')+'</div>':'')
-          +(rulesBits.length?'<div style="padding:0 16px 10px;font-size:11px;color:var(--t3);">📏 Правила закупки: '+rulesBits.join(' · ')+'</div>':'')
-        : '<div style="padding:0 16px 12px;font-size:11px;color:var(--t3);">🔒 Подробная информация доступна только участникам этого заведения</div>';
-      var memberManageBlock='';
-      if(canViewSensitive){
-        var memberAddState=(canInviteMembers && available.length)
-          ? '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">'
-            +'<select id="add-u-'+r.id+'" style="flex:1;min-width:160px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;font-size:12px;color:var(--tx);outline:none;">'
-            +'<option value="">Выберите пользователя...</option>'+availableOpts+'</select>'
-            +'<select id="add-r-'+r.id+'" style="background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px;font-size:12px;color:var(--tx);outline:none;">'
-            +Object.keys(ROLES).filter(function(rk){return rk!=='owner';}).map(function(rk){
-              return '<option value="'+rk+'">'+ROLES[rk].emoji+' '+ROLES[rk].label+'</option>';
-            }).join('')+'</select>'
-            +'<button onclick="addRestMember(\''+r.id+'\')" '
-            +'style="background:var(--ac);color:#fff;border:none;border-radius:var(--r);padding:8px 14px;font-weight:700;font-size:12px;cursor:pointer;">'+(canManageMembers?'+ Добавить':'✉️ Пригласить')+'</button>'
-            +'</div>'
-          : '<div style="color:var(--t3);font-size:12px;">'+(canInviteMembers?'Все доступные пользователи уже добавлены или приглашены':'Изменять состав команды могут только владелец и администратор, участники могут приглашать новых коллег')+'</div>';
-        memberManageBlock='<div style="padding:14px 16px;">'
-          +(memberCards||'<div style="color:var(--t3);font-size:13px;padding:8px 0;">Нет участников</div>')
-          +'</div>'
-          +'<div style="padding:0 16px 14px;border-top:1px solid var(--br);margin-top:4px;padding-top:12px;">'
-          +'<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);margin-bottom:8px;">'+(canManageMembers?'Добавить участника':(canInviteMembers?'Пригласить в организацию':'Команда'))+'</div>'
-          +memberAddState
-          +(pendingInviteCards?'<div style="display:grid;gap:8px;margin-top:10px;">'+pendingInviteCards+'</div>':'')
-          +'</div>'
-          +'<div style="padding:0 16px 16px;border-top:1px solid var(--br);">'
-          +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:12px;margin-bottom:10px;">'
-          +'<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);">Поставщики организации</div>'
-          +'<button onclick="openSupplierModal(undefined,\''+r.id+'\')" style="background:var(--bg4);border:1px solid var(--br2);border-radius:6px;padding:6px 10px;font-size:11px;cursor:pointer;color:var(--t2);">+ Поставщик</button>'
-          +'</div>'
-          +'<div style="display:grid;gap:8px;">'+supplierCards+'</div>'
-          +'</div>'
-          +'<div style="padding:0 16px 16px;border-top:1px solid var(--br);">'
-          +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:12px;margin-bottom:10px;">'
-          +'<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);">Шаблоны заказов</div>'
-          +'<div style="display:flex;gap:6px;flex-wrap:wrap;">'
-          +'<button onclick="openRestRulesModal(\''+r.id+'\')" style="background:var(--bg4);border:1px solid var(--br2);border-radius:6px;padding:6px 10px;font-size:11px;cursor:pointer;color:var(--t2);">⚙️ Правила</button>'
-          +'<button onclick="openRestTemplateModal(\''+r.id+'\')" style="background:var(--bg4);border:1px solid var(--br2);border-radius:6px;padding:6px 10px;font-size:11px;cursor:pointer;color:var(--t2);">+ Шаблон</button>'
-          +'</div>'
-          +'</div>'
-          +'<div style="display:grid;gap:8px;">'+templateCards+'</div>'
-          +'</div>'
-          +'<div style="padding:0 16px 16px;border-top:1px solid var(--br);">'
-          +'<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding-top:12px;margin-bottom:10px;">'
-          +'<div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--t3);">История точки · '+historyLabel+'</div>'
-          +'<div style="display:flex;gap:6px;flex-wrap:wrap;">'
-          +[7,30,90,0].map(function(days){
-            var label=days===0?'Все':String(days);
-            var active=historyRange===days;
-            return '<button onclick="setRestaurantHistoryRange(\''+r.id+'\','+days+')" style="background:'+(active?'var(--ac)':'var(--bg4)')+';color:'+(active?'#fff':'var(--t2)')+';border:1px solid '+(active?'var(--ac)':'var(--br2)')+';border-radius:999px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer;">'+label+'</button>';
-          }).join('')
-          +'</div>'
-          +'</div>'
-          +'<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:8px;">'
-          +'<div style="padding:10px 12px;border:1px solid var(--br);border-radius:var(--r);background:var(--bg3);"><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.8px;">Заказы</div><div style="font-size:18px;font-weight:800;margin-top:4px;">'+history.orderCount+'</div></div>'
-          +'<div style="padding:10px 12px;border:1px solid var(--br);border-radius:var(--r);background:var(--bg3);"><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.8px;">Сумма</div><div style="font-size:18px;font-weight:800;margin-top:4px;">₽'+Math.round(history.totalSum).toLocaleString()+'</div></div>'
-          +'<div style="padding:10px 12px;border:1px solid var(--br);border-radius:var(--r);background:var(--bg3);"><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.8px;">Средний чек</div><div style="font-size:18px;font-weight:800;margin-top:4px;">₽'+Math.round(history.avgOrder).toLocaleString()+'</div></div>'
-          +'</div>'
-          +'<div style="display:grid;gap:8px;">'
-          +'<div style="padding:10px 12px;border:1px solid var(--br);border-radius:var(--r);background:var(--bg3);font-size:12px;color:var(--t2);">📦 Последние заказы: '+(history.lastOrders.length?history.lastOrders.map(function(order){
-            return order.id+' · '+order.date+' <button onclick="repeatRestaurantOrder(\''+r.id+'\',\''+order.id+'\')" style="margin-left:6px;background:var(--ac);color:#fff;border:none;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;">Повторить</button>';
-          }).join(' · '):'пока нет')+'</div>'
-          +'<div style="padding:10px 12px;border:1px solid var(--br);border-radius:var(--r);background:var(--bg3);font-size:12px;color:var(--t2);">⭐ Любимые поставщики: '+(history.favoriteSuppliers.length?history.favoriteSuppliers.join(' · '):'пока нет статистики')+'</div>'
-          +'<div style="padding:10px 12px;border:1px solid var(--br);border-radius:var(--r);background:var(--bg3);font-size:12px;color:var(--t2);">🧾 Частые товары: '+(history.frequentItems.length?history.frequentItems.join(' · ')+' <button onclick="startRestaurantOrderFromFrequent(\''+r.id+'\')" style="margin-left:8px;background:var(--bg4);color:var(--t2);border:1px solid var(--br2);border-radius:999px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;">В новый заказ</button>':'пока нет статистики')+'</div>'
-          +'</div>'
-          +'</div>';
-      }
-	    return '<div style="background:var(--bg2);border:1px solid var(--br);border-radius:var(--r2);overflow:hidden;">'
-	      // Шапка заведения
-	      +'<div style="padding:14px 16px;background:var(--bg3);border-bottom:1px solid var(--br);">'
-	      +'<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">'
-      +'<div style="display:flex;align-items:center;gap:12px;">'
-      +'<div style="width:48px;height:48px;border-radius:var(--r);background:var(--bg4);display:flex;align-items:center;justify-content:center;font-size:26px;">'+r.emoji+'</div>'
-      +'<div>'
-      +'<div style="font-family:var(--fH);font-size:16px;font-weight:800;">'+r.name+'</div>'
-      +'<div style="font-size:12px;color:var(--t3);">'
-      +'<span style="color:'+typeColor+';font-weight:600;">'+r.type+'</span>'
-      +(r.city?' · '+r.city:'')
-      +(r.addr?' · '+r.addr:'')
+    var legalNames = orgLegalEntities.map(function(item){ return item.name || item.id; }).filter(Boolean);
+    var switchBtn = isActive
+      ? '<button class="tbBtn acc" disabled style="opacity:.8;cursor:default;">Текущая организация</button>'
+      : '<button class="tbBtn" onclick="setActiveOrganization(\''+org.id+'\')" style="cursor:pointer;">Сделать активной</button>';
+    var ownerBadge = (CU && CU.role==='owner')
+      ? '<span class="badge bg" style="margin-left:10px;">Владелец видит все организации</span>'
+      : '';
+    return '<div class="panel" style="margin-bottom:16px;">'
+      +'<div class="ph" style="margin-bottom:10px;"><div class="pt">'+(org.name||'Организация')+'</div><div style="font-size:11px;color:var(--t3);">'+(org.type||'organization')+'</div></div>'
+      +'<div class="pb">'
+      +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:12px;">'
+      +'<div><div style="font-size:11px;color:var(--t3);">ID</div><div style="font-size:13px;font-weight:700;">'+org.id+'</div></div>'
+      +'<div><div style="font-size:11px;color:var(--t3);">Юр. лица</div><div style="font-size:13px;font-weight:700;">'+(legalNames.length?legalNames.join(' · '):'Не указаны')+'</div></div>'
+      +'<div><div style="font-size:11px;color:var(--t3);">Статус</div><div style="font-size:13px;font-weight:700;">'+(org.status||'active')+'</div></div>'
+      +'<div style="display:flex;justify-content:flex-end;align-items:center;">'+(isActive?'<span class="badge bg">Активная</span>':'<span class="badge br">Не активная</span>')+'</div>'
       +'</div>'
-      +'</div></div>'
-	      +'<div style="display:flex;gap:6px;">'
-        +actionButtons
-	      +'</div></div>'
-	      +sensitiveSummary
-	      +'<div style="padding:0 16px 10px;font-size:11px;color:var(--t3);">🏛 Юр. лицо'+(legalEntities.length>1?'а':'')+': '+legalSummary+'</div>'
-	      +'<div style="padding:0 16px 10px;font-size:11px;color:var(--t3);">📍 Адрес: '+([r.city||'',r.addr||''].filter(Boolean).join(', ')||'Не указан')+'</div>'
-	      +'</div>'
-	      +memberManageBlock
-	      +'</div>';
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'+switchBtn+ownerBadge+'</div>'
+      +'</div>'
+      +'</div>';
   }).join('');
 }
 
