@@ -325,6 +325,40 @@
     return currentUser;
   }
 
+  function buildLegacyUserFromRpcRow(row, activeOrganization, noOrganization, role) {
+    var firstName = row && row.first_name ? row.first_name : '';
+    var lastName = row && row.last_name ? row.last_name : '';
+    var email = row && row.email ? row.email : '';
+    var profileId = row && (row.profileId || row.profile_id) ? (row.profileId || row.profile_id) : '';
+    var authUserId = row && row.auth_user_id ? row.auth_user_id : '';
+    var legacyRole = role === 'platform_owner' ? 'owner' : (role || 'user');
+    var displayName = ((firstName || '') + ' ' + (lastName || '')).trim() || email || 'Пользователь';
+    var activeOrgId = activeOrganization ? activeOrganization.id : (row && (row.activeOrganizationId || row.active_organization_id)) || null;
+    var activeOrgName = activeOrganization ? activeOrganization.name : (row && (row.activeOrganizationName || row.active_organization_name)) || '';
+    var legacyUser = {
+      id: profileId,
+      authUserId: authUserId,
+      email: email,
+      name: displayName,
+      first: firstName || displayName.split(' ')[0] || 'Пользователь',
+      last: lastName || '',
+      firstName: firstName,
+      lastName: lastName,
+      role: legacyRole,
+      status: (row && row.status) || 'active',
+      noOrganization: !!noOrganization,
+      company: noOrganization ? 'КальКа' : (activeOrgName || ''),
+      organizationId: noOrganization ? null : activeOrgId,
+      activeOrganizationId: noOrganization ? null : activeOrgId,
+      activeOrganizationName: noOrganization ? '' : activeOrgName,
+      permissions: []
+    };
+    if (window.ROLES && window.ROLES[legacyUser.role] && Array.isArray(window.ROLES[legacyUser.role].pages)) {
+      legacyUser.permissions = window.ROLES[legacyUser.role].pages.slice();
+    }
+    return legacyUser;
+  }
+
   function ensureAppShellVisible() {
     showAppShell();
     try {
@@ -555,6 +589,8 @@
       throw new Error('Не удалось загрузить профиль пользователя');
     }
     var row = normalized.row;
+    console.log('RPC RAW SESSION', response && response.data);
+    console.log('RPC ROW NORMALIZED', row);
     var profile = {
       id: normalized.profileId || '',
       auth_user_id: normalized.authUserId || authUser.id,
@@ -585,8 +621,19 @@
         updated_at: ''
       };
     }
-    var noOrganization = normalized.membershipsCount > 0 ? false : !!normalized.noOrganization;
+    var noOrganization = (normalized.membershipsCount > 0 || normalized.activeOrganizationId) ? false : !!normalized.noOrganization;
     var role = noOrganization ? 'unassigned' : (normalized.role || (activeMembership && activeMembership.role) || 'manager');
+    var legacyUser = buildLegacyUserFromRpcRow(row, activeOrganization, noOrganization, role);
+    var legacyActiveRest = {
+      id: activeOrganization ? activeOrganization.id : (normalized.activeOrganizationId || null),
+      organizationId: activeOrganization ? activeOrganization.id : (normalized.activeOrganizationId || null),
+      name: normalized.activeOrganizationName || (activeOrganization && activeOrganization.name) || '',
+      kind: (activeOrganization && activeOrganization.type) || 'restaurant',
+      type: (activeOrganization && activeOrganization.type) || 'restaurant',
+      members: []
+    };
+    console.log('LEGACY USER', legacyUser);
+    console.log('LEGACY ACTIVE REST', legacyActiveRest);
     var session = noOrganization
       ? buildNoOrganizationSession(authUser, profile)
       : buildSession(authUser, profile, memberships.map(function (item) {
@@ -632,6 +679,8 @@
         status: item.status
       };
     });
+    session.rawRole = row.role || role;
+    session.currentUser = legacyUser;
     if (memberships.length) {
       console.info('session: memberships loaded');
       markPerf('memberships_loaded');
@@ -663,6 +712,24 @@
       noOrganizationsError.code = 'NO_ORGANIZATIONS';
       throw noOrganizationsError;
     }
+    session.role = role;
+    session.noOrganization = noOrganization;
+    session.activeOrganizationId = noOrganization ? null : legacyActiveRest.organizationId;
+    session.activeOrganization = noOrganization ? null : (activeOrganization || {
+      id: legacyActiveRest.organizationId,
+      name: legacyActiveRest.name,
+      type: legacyActiveRest.type,
+      status: 'active'
+    });
+    session.currentUser.role = legacyUser.role;
+    session.currentUser.noOrganization = noOrganization;
+    session.currentUser.company = noOrganization ? 'КальКа' : (legacyActiveRest.name || session.currentUser.company || 'КальКа');
+    session.currentUser.organizationId = noOrganization ? null : legacyActiveRest.organizationId;
+    session.currentUser.activeOrganizationId = noOrganization ? null : legacyActiveRest.organizationId;
+    session.currentUser.activeOrganizationName = noOrganization ? '' : legacyActiveRest.name;
+    window.CU = legacyUser;
+    window.activeRest = legacyActiveRest;
+    window.__userSession = session;
     applySession(session);
     console.info('session: ready');
     markPerf('session_ready');
@@ -683,7 +750,7 @@
 
   function openAppShell(currentUser) {
     ensureAppShellVisible();
-    var legacyUser = normalizeLegacyUserFromSession(window.__userSession || { currentUser: currentUser });
+    var legacyUser = normalizeLegacyUserFromSession(window.__userSession || { currentUser: currentUser }) || currentUser || null;
     if (legacyUser) {
       window.CU = legacyUser;
       if (window.__userSession && window.__userSession.activeOrganization) {
