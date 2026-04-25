@@ -1259,7 +1259,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
 
 <script>
   window.__APP_COMMIT__ = '007bea4';
-  window.__CLEAN_SHELL_MODE = true;
+  window.__CLEAN_SHELL_MODE = /(?:\\?|&)clean=1(?:&|$)/.test(location.search);
   window.__authServerFirstMode = true;
   (function () {
     var scripts = window.__CLEAN_SHELL_MODE
