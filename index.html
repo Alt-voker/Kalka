@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="kalka-supabase-url" content="https://yoppbecgrugedbewuiol.supabase.co">
 <meta name="kalka-supabase-anon-key" content="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlvcHBiZWNncnVnZWRiZXd1aW9sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNDg1ODUsImV4cCI6MjA5MTcyNDU4NX0.9fTfUT0bnvpXgIoBXsnF78FujBk2oEF5T6riCnz_8a0">
 <title>КальКа — Платформа закупок</title>
@@ -13,6 +16,8 @@
       window.performance.mark('app_start');
     }
   } catch (e) {}
+  window.__BUILD_VERSION__ = '98032d3';
+  window.__BUILD_TIME__ = '2026-04-25T22:18:00+03:00';
   window.__KALKA_SUPABASE__ = {
     url: 'https://yoppbecgrugedbewuiol.supabase.co',
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlvcHBiZWNncnVnZWRiZXd1aW9sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNDg1ODUsImV4cCI6MjA5MTcyNDU4NX0.9fTfUT0bnvpXgIoBXsnF78FujBk2oEF5T6riCnz_8a0'
@@ -1258,25 +1263,27 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
 
 
 <script>
-  window.__APP_COMMIT__ = '007bea4';
+  window.__INDEX_APP_COMMIT__ = '98032d3';
+  window.__APP_COMMIT__ = '98032d3';
   window.__CLEAN_SHELL_MODE = /(?:\\?|&)clean=1(?:&|$)/.test(location.search);
   window.__authServerFirstMode = true;
   (function () {
+    var ver = encodeURIComponent(window.__APP_COMMIT__ || window.__BUILD_VERSION__ || '');
     var scripts = window.__CLEAN_SHELL_MODE
       ? [
           'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
-          'js/app-config.js',
-          'js/app-supabase.js',
-          'js/app-clean-shell.js'
+          'js/app-config.js?v=' + ver,
+          'js/app-supabase.js?v=' + ver,
+          'js/app-clean-shell.js?v=' + ver
         ]
       : [
           'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
-          'js/app-config.js',
-          'js/app-supabase.js',
-          'js/app-supabase-commerce.js',
-          'js/app-legacy.js',
-          'js/app-overrides.js',
-          'js/auth-server-first.js'
+          'js/app-config.js?v=' + ver,
+          'js/app-supabase.js?v=' + ver,
+          'js/app-supabase-commerce.js?v=' + ver,
+          'js/app-legacy.js?v=' + ver,
+          'js/app-overrides.js?v=' + ver,
+          'js/auth-server-first.js?v=' + ver
         ];
     scripts.forEach(function (src) {
       var s = document.createElement('script');
@@ -1284,7 +1291,42 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
       document.body.appendChild(s);
     });
   })();
+
+  window.__renderBuildDebug = function (session) {
+    var el = document.getElementById('buildDebugBody');
+    if (!el) return;
+    var s = session || window.__userSession || {};
+    var cu = s.currentUser || window.CU || {};
+    var mismatched = String(window.__APP_COMMIT__ || '') !== String(window.__INDEX_APP_COMMIT__ || '');
+    if (mismatched) {
+      el.innerHTML = '<div style="color:#ff8a80;font-weight:700;margin-bottom:8px;">Обновите страницу. Загружена старая версия платформы.</div>'
+        +'<button onclick="location.reload(true)" style="width:100%;margin-bottom:8px;background:#5ba3f5;color:#000;border:none;border-radius:8px;padding:8px 10px;font-weight:800;cursor:pointer;">Обновить</button>';
+    } else {
+      el.innerHTML =
+        '<div><b>APP_COMMIT:</b> ' + (window.__APP_COMMIT__ || '—') + '</div>' +
+        '<div><b>BUILD_TIME:</b> ' + (window.__BUILD_TIME__ || '—') + '</div>' +
+        '<div><b>RPC_ONLY:</b> true</div>' +
+        '<div><b>auth_user_id:</b> ' + (cu.authUserId || cu.auth_user_id || '—') + '</div>' +
+        '<div><b>email:</b> ' + (cu.email || '—') + '</div>' +
+        '<div><b>role:</b> ' + ((s.currentUser && s.currentUser.role) || s.role || '—') + '</div>' +
+        '<div><b>rawRole:</b> ' + (s.rawRole || '—') + '</div>' +
+        '<div><b>membershipsCount:</b> ' + (typeof s.membershipsCount === 'number' ? s.membershipsCount : ((s.memberships || []).length || 0)) + '</div>' +
+        '<div><b>organizationsCount:</b> ' + (typeof s.organizationsCount === 'number' ? s.organizationsCount : ((s.organizations || []).length || 0)) + '</div>' +
+        '<div><b>activeOrganizationId:</b> ' + (s.activeOrganizationId || '—') + '</div>' +
+        '<div><b>noOrganization:</b> ' + String(!!s.noOrganization) + '</div>' +
+        '<div><b>source:</b> RPC_ONLY</div>';
+    }
+  };
+  setTimeout(function(){ try { window.__renderBuildDebug(window.__userSession || null); } catch (e) {} }, 0);
 </script>
+
+<div id="buildDebug" style="position:fixed;left:12px;bottom:12px;z-index:9999;max-width:360px;background:rgba(10,14,18,.92);border:1px solid rgba(177,184,198,.35);border-radius:12px;padding:10px 12px;color:#e9edf5;font-size:11px;line-height:1.45;backdrop-filter:blur(10px);box-shadow:0 8px 24px rgba(0,0,0,.22);">
+  <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:6px;">
+    <strong style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;">Build Debug</strong>
+    <span style="color:#7ef0a0;">RPC_ONLY</span>
+  </div>
+  <div id="buildDebugBody">Загрузка...</div>
+</div>
 
 <div class="ov" id="ov-supPriceUpload"><div class="modal wide">
   <div class="m-title" id="supPriceUploadTitle">Загрузка прайса поставщика</div>

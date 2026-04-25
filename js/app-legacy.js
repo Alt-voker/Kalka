@@ -2700,10 +2700,6 @@ function ownerDistinctCompanies(db){
       if(name) map[name.toLowerCase()]=name;
     });
   }
-  (db.users||[]).forEach(function(u){
-    var name=(u&&u.company||'').trim();
-    if(name) map[name.toLowerCase()]=name;
-  });
   return Object.keys(map).map(function(k){return map[k];});
 }
 
@@ -2771,7 +2767,7 @@ function ownerStatusRow(label,value,tone,sub){
 function renderOwner(){
   var db=dbGet();
   var ownerCache = window.__dataCache && window.__dataCache.ownerUsers ? window.__dataCache.ownerUsers : null;
-  var ownerUsers = ownerCache && Array.isArray(ownerCache.items) ? ownerCache.items : (db.users || []);
+  var ownerUsers = ownerCache && Array.isArray(ownerCache.items) ? ownerCache.items : [];
   var companies=ownerDistinctCompanies(db);
   var systemLog=Array.isArray(db.systemLog)?db.systemLog:[];
   var overdueCompanies=companies.filter(function(name){
@@ -2823,10 +2819,10 @@ function renderOwner(){
   if(summaryEl){
     summaryEl.innerHTML=[
       ownerMetricCard('🏢','Компании',companies.length,companies.length?'Активные клиенты платформы':'Пока не добавлены',companies.length?'good':'warn'),
-      ownerMetricCard('👥','Пользователи',activeUsers+'/'+(db.users||[]).length,blockedUsers?'Есть блокировки':'Все активны',blockedUsers?'warn':'good'),
+      ownerMetricCard('👥','Пользователи',activeUsers+'/'+ownerUsers.length,blockedUsers?'Есть блокировки':'Все активны',blockedUsers?'warn':'good'),
       ownerMetricCard('🏭','Поставщики',visibleSuppliers,hiddenSuppliers?'Скрыто: '+hiddenSuppliers:'Все доступны',visibleSuppliers?'good':'warn'),
       ownerMetricCard('📦','Заказы',ORDERS.length,ORDERS.length?'В системе есть история заказов':'Пока без заказов',ORDERS.length?'good':'warn'),
-      ownerMetricCard('📊','Дашборд-доступ',dashboardEnabledUsers,(db.users||[]).length?'Кому разрешена статистика':'Нет пользователей',dashboardEnabledUsers?'good':'warn')
+      ownerMetricCard('📊','Дашборд-доступ',dashboardEnabledUsers,ownerUsers.length?'Кому разрешена статистика':'Нет пользователей',dashboardEnabledUsers?'good':'warn')
     ].join('');
   }
   if(businessEl){

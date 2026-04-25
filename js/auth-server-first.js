@@ -309,6 +309,9 @@
       : { id: 'r0', organizationId: null, name: 'Все рестораны', emoji: '🌐', type: 'all', kind: 'all', members: [] };
     window.__sessionReady = !!(session && session.currentUser);
     setState(session && session.noOrganization ? STATE.NO_ORGANIZATION : STATE.AUTHENTICATED, session || null);
+    if (typeof window.__renderBuildDebug === 'function') {
+      try { window.__renderBuildDebug(session); } catch (error) {}
+    }
   }
 
   function normalizeLegacyUserFromSession(session) {
@@ -788,6 +791,9 @@
     ensureAppShellVisible();
     markPerf('app_shell_rendered');
     printPerfTable();
+    if (typeof window.__renderBuildDebug === 'function') {
+      try { window.__renderBuildDebug(window.__userSession || null); } catch (error) {}
+    }
   }
 
   async function startLoginFlow(email, password) {
@@ -1003,6 +1009,9 @@
       try { window.clearClientStorage(); } catch (storageError) {}
     }
     showLoginScreen();
+    if (typeof window.__renderBuildDebug === 'function') {
+      try { window.__renderBuildDebug(null); } catch (error) {}
+    }
     return Promise.resolve();
   }
 
