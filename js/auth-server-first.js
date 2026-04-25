@@ -92,6 +92,24 @@
     return app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
   }
 
+  function getSupabaseDiagnostics() {
+    var config = app.config && typeof app.config.getSupabaseConfig === 'function'
+      ? app.config.getSupabaseConfig()
+      : { url: '', anonKey: '', source: 'unknown', enabled: false };
+    var host = '';
+    try {
+      host = config.url ? new URL(config.url).host : '';
+    } catch (error) {
+      host = '';
+    }
+    return {
+      hasUrl: !!config.url,
+      hasAnonKey: !!config.anonKey,
+      source: config.source || 'unknown',
+      host: host
+    };
+  }
+
   function errorInfo(error) {
     return {
       code: error && error.code ? error.code : '',
@@ -429,9 +447,22 @@
   }
 
   async function bootstrapSession(authUser) {
-    var profile = await loadUserProfile(authUser);
+    var profile;
+    try {
+      profile = await loadUserProfile(authUser);
+    } catch (profileError) {
+      if (profileError && profileError.message === 'Не удалось создать профиль пользователя') {
+        throw profileError;
+      }
+      throw new Error('Не удалось создать профиль пользователя');
+    }
     setState(STATE.LOADING_MEMBERSHIPS, { authUserId: authUser.id, profileId: profile.id });
-    var memberships = await loadMemberships(profile.id);
+    var memberships;
+    try {
+      memberships = await loadMemberships(profile.id);
+    } catch (membershipError) {
+      throw new Error('Не удалось загрузить доступы пользователя');
+    }
     console.info('initUserSession memberships loaded', memberships.length);
     if (!memberships.length) {
       var noOrgSession = buildNoOrganizationSession(authUser, profile);
@@ -443,7 +474,12 @@
     }
 
     setState(STATE.LOADING_ORGANIZATIONS, { authUserId: authUser.id, profileId: profile.id, membershipsCount: memberships.length });
-    var organizations = await loadOrganizations(memberships);
+    var organizations;
+    try {
+      organizations = await loadOrganizations(memberships);
+    } catch (organizationError) {
+      throw new Error('Не удалось загрузить организации пользователя');
+    }
     if (!organizations.length) {
       var noOrganizationsSession = buildNoOrganizationSession(authUser, profile);
       noOrganizationsSession.errorMessage = 'Не удалось загрузить организации пользователя';
@@ -486,6 +522,7 @@
   async function startLoginFlow(email, password) {
     var client = getClient();
     if (!client) {
+      console.error('missing Supabase config', getSupabaseDiagnostics());
       throw new Error('Сервис авторизации временно недоступен. Обратитесь к администратору');
     }
     console.info('auth: signIn started');
@@ -494,8 +531,37 @@
       client.auth.signInWithPassword({ email: email, password: password }),
       10000,
       'Не удалось подключиться к серверу авторизации'
-    );
+    ).catch(function (error) {
+      var info = errorInfo(error);
+      console.error('signIn failed', {
+        code: info.code,
+        message: info.message,
+        details: info.details,
+        hint: info.hint,
+        raw: error,
+        host: getSupabaseDiagnostics().host,
+        source: getSupabaseDiagnostics().source
+      });
+      var networkLike = /failed to fetch|networkerror|connection reset|ERR_CONNECTION_RESET/i.test(String(info.message || '')) ||
+        /failed to fetch|networkerror|connection reset|ERR_CONNECTION_RESET/i.test(String(error && error.raw && error.raw.message ? error.raw.message : ''));
+      if (networkLike) {
+        var netErr = new Error('Не удалось подключиться к серверу авторизации. Проверьте интернет или попробуйте позже');
+        netErr.code = info.code || 'NETWORK_ERROR';
+        throw netErr;
+      }
+      throw error;
+    });
     if (response.error) {
+      var responseInfo = errorInfo(response.error);
+      console.error('signIn failed', {
+        code: responseInfo.code,
+        message: responseInfo.message,
+        details: responseInfo.details,
+        hint: responseInfo.hint,
+        raw: response.error,
+        host: getSupabaseDiagnostics().host,
+        source: getSupabaseDiagnostics().source
+      });
       throw response.error;
     }
     console.info('auth: signIn success');
@@ -693,6 +759,22 @@
     }
     return login(email, password).catch(function (error) {
       console.error('signIn failed', errorInfo(error));
+      if (error && error.message === 'Не удалось создать профиль пользователя') {
+        if (errEl) errEl.textContent = error.message;
+        return null;
+      }
+      if (error && error.message === 'Не удалось загрузить доступы пользователя') {
+        if (errEl) errEl.textContent = error.message;
+        return null;
+      }
+      if (error && error.message === 'Не удалось загрузить организации пользователя') {
+        if (errEl) errEl.textContent = error.message;
+        return null;
+      }
+      if (error && /Не удалось подключиться к серверу авторизации/i.test(error.message || '')) {
+        if (errEl) errEl.textContent = error.message;
+        return null;
+      }
       if (errEl) errEl.textContent = error && error.message ? error.message : 'Ошибка входа';
       return null;
     });
@@ -702,7 +784,7 @@
   window.app = window.app || {};
   window.app.auth = window.app.auth || {};
   window.app.auth.restoreSession = restoreSession;
-  window.app.auth.initUserSession = function (authUser) { return window.AuthServerFirst.initUserSession(authUser); };
+  window.app.auth.initUserSession = function (authUser, opts) { return window.AuthServerFirst.initUserSession(authUser, opts); };
   window.app.auth.startLogin = function (email, password) { return login(email, password); };
   window.doLogout = function () {
     return logout();

@@ -17,12 +17,57 @@
   }
 
   function getSupabaseConfig() {
-    var raw = window.__KALKA_SUPABASE__ || parseJson(localStorage.getItem(STORAGE_KEY)) || {};
+    var metaConfig = {
+      url: readMeta('kalka-supabase-url') || readMeta('supabase-url') || '',
+      anonKey: readMeta('kalka-supabase-anon-key') || readMeta('supabase-anon-key') || ''
+    };
+    var windowConfig = window.__KALKA_SUPABASE__ || {};
+    var storedConfig = {};
+    try {
+      storedConfig = parseJson(localStorage.getItem(STORAGE_KEY)) || {};
+    } catch (storageError) {
+      storedConfig = {};
+    }
+    var raw = {
+      url: windowConfig.url || windowConfig.supabaseUrl || metaConfig.url || '',
+      anonKey: windowConfig.anonKey || windowConfig.supabaseAnonKey || metaConfig.anonKey || ''
+    };
+    var source = 'window.__KALKA_SUPABASE__';
+    if (!raw.url || !raw.anonKey) {
+      if (metaConfig.url && metaConfig.anonKey) {
+        raw.url = raw.url || metaConfig.url;
+        raw.anonKey = raw.anonKey || metaConfig.anonKey;
+        source = 'meta';
+      } else if (storedConfig.url || storedConfig.supabaseUrl || storedConfig.anonKey || storedConfig.supabaseAnonKey) {
+        raw.url = raw.url || storedConfig.url || storedConfig.supabaseUrl || '';
+        raw.anonKey = raw.anonKey || storedConfig.anonKey || storedConfig.supabaseAnonKey || '';
+        source = 'localStorage';
+      } else {
+        source = 'empty';
+      }
+    }
     var config = {
-      url: raw.url || raw.supabaseUrl || readMeta('kalka-supabase-url') || readMeta('supabase-url') || '',
-      anonKey: raw.anonKey || raw.supabaseAnonKey || readMeta('kalka-supabase-anon-key') || readMeta('supabase-anon-key') || ''
+      url: raw.url,
+      anonKey: raw.anonKey
     };
     config.enabled = !!(config.url && config.anonKey);
+    config.source = source;
+    console.info('supabase config check', {
+      hasUrl: !!config.url,
+      hasAnonKey: !!config.anonKey,
+      source: config.source,
+      host: config.url ? (function () { try { return new URL(config.url).host; } catch (e) { return ''; } })() : ''
+    });
+    if (!config.enabled) {
+      console.error('missing Supabase config', {
+        hasUrl: !!config.url,
+        hasAnonKey: !!config.anonKey,
+        source: config.source
+      });
+    }
+    if (config.enabled && !window.__KALKA_SUPABASE__) {
+      window.__KALKA_SUPABASE__ = { url: config.url, anonKey: config.anonKey };
+    }
     return config;
   }
 
