@@ -2009,7 +2009,7 @@
         var authResult = await client.auth.getUser();
         var currentAuthUser = authResult && authResult.data && authResult.data.user ? authResult.data.user : null;
         if (currentAuthUser) {
-          await window.initUserSession(currentAuthUser);
+          await window.initUserSession(currentAuthUser, { forceReload: true });
         }
       } catch (refreshError) {
         console.error('user membership refresh failed', {
@@ -2338,8 +2338,8 @@
   };
 
   app.auth = {
-    initUserSession: async function (authUser) {
-      return window.initUserSession ? window.initUserSession(authUser) : null;
+    initUserSession: async function (authUser, opts) {
+      return window.initUserSession ? window.initUserSession(authUser, opts) : null;
     },
     restoreSession: async function () {
       var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;

@@ -592,10 +592,7 @@
         showLoginScreen();
         return false;
       }
-      var session = await getBootstrapPromise(authUser, function () {
-        setState(STATE.LOADING_PROFILE, { authUserId: authUser.id });
-        return bootstrapSession(authUser);
-      });
+      var session = await window.AuthServerFirst.initUserSession(authUser, { forceReload: true });
       if (session && session.currentUser) {
         markPerf('auth_success');
         openAppShell(session.currentUser);
@@ -654,10 +651,17 @@
     state: function () { return currentState; },
     startLogin: login,
     restoreSession: restoreSession,
-    initUserSession: function (authUser) {
+    initUserSession: function (authUser, opts) {
+      var options = opts || {};
       if (!authUser) return Promise.resolve(null);
-      if (window.__sessionReady && window.__userSession && window.__userSession.currentUser && String(window.__userSession.currentUser.authUserId || '') === String(authUser.id || '')) {
+      if (!options.forceReload && window.__sessionReady && window.__userSession && window.__userSession.currentUser && String(window.__userSession.currentUser.authUserId || '') === String(authUser.id || '')) {
         return Promise.resolve(window.__userSession);
+      }
+      if (options.forceReload) {
+        var userId = authUser && authUser.id ? String(authUser.id) : '';
+        if (userId && bootstrapPromises[userId]) {
+          delete bootstrapPromises[userId];
+        }
       }
       return getBootstrapPromise(authUser, function () {
         setState(STATE.LOADING_PROFILE, { authUserId: authUser.id });
