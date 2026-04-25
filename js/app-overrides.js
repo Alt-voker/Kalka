@@ -614,6 +614,9 @@
     if (!window.__dataCache.suppliersLoadingByOrg || typeof window.__dataCache.suppliersLoadingByOrg !== 'object') {
       window.__dataCache.suppliersLoadingByOrg = {};
     }
+    if (!window.__dataCache.ownerUsers || typeof window.__dataCache.ownerUsers !== 'object') {
+      window.__dataCache.ownerUsers = { items: null, loading: false, error: null, promise: null, loadedAt: 0 };
+    }
     return window.__dataCache;
   }
 
@@ -715,6 +718,145 @@
   }
 
   window.loadSuppliersForOrganization = loadSuppliersForOrganization;
+
+  async function loadOwnerUsers() {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return [];
+    var cache = getDataCache();
+    if (Array.isArray(cache.ownerUsers.items)) {
+      return cache.ownerUsers.items.slice();
+    }
+    if (cache.ownerUsers.promise) {
+      return cache.ownerUsers.promise;
+    }
+    cache.ownerUsers.loading = true;
+    cache.ownerUsers.error = null;
+    cache.ownerUsers.promise = (async function () {
+      try {
+        console.info('supabase request start', 'owner user_profiles');
+        var profilesResponse = await client
+          .from('user_profiles')
+          .select('id, auth_user_id, email, first_name, last_name, status, created_at')
+          .order('created_at', { ascending: false });
+        if (profilesResponse.error) {
+          console.error('owner user_profiles query failed', {
+            request: 'owner user_profiles',
+            code: profilesResponse.error.code || '',
+            message: profilesResponse.error.message || '',
+            details: profilesResponse.error.details || '',
+            hint: profilesResponse.error.hint || '',
+            raw: profilesResponse.error
+          });
+          cache.ownerUsers.error = supplierErrorInfo(profilesResponse.error);
+          cache.ownerUsers.items = [];
+          return [];
+        }
+        console.info('supabase request start', 'owner organization_members');
+        var membershipsResponse = await client
+          .from('organization_members')
+          .select('id, organization_id, user_profile_id, role, status, created_at')
+          .order('created_at', { ascending: true });
+        if (membershipsResponse.error) {
+          console.error('owner organization_members query failed', {
+            request: 'owner organization_members',
+            code: membershipsResponse.error.code || '',
+            message: membershipsResponse.error.message || '',
+            details: membershipsResponse.error.details || '',
+            hint: membershipsResponse.error.hint || '',
+            raw: membershipsResponse.error
+          });
+          cache.ownerUsers.error = supplierErrorInfo(membershipsResponse.error);
+          cache.ownerUsers.items = [];
+          return [];
+        }
+        var profiles = (profilesResponse.data || []).map(function (row) {
+          return {
+            id: row.id,
+            auth_user_id: row.auth_user_id || '',
+            email: String(row.email || '').toLowerCase(),
+            first_name: row.first_name || '',
+            last_name: row.last_name || '',
+            status: row.status || 'active',
+            created_at: row.created_at || '',
+            memberships: []
+          };
+        }).filter(Boolean);
+        var memberships = (membershipsResponse.data || []).map(function (row) {
+          return {
+            id: row.id,
+            organization_id: row.organization_id || '',
+            user_profile_id: row.user_profile_id || '',
+            role: row.role || 'manager',
+            status: row.status || 'active',
+            created_at: row.created_at || ''
+          };
+        }).filter(Boolean);
+        var orgMap = {};
+        (window.__userSession && Array.isArray(window.__userSession.organizations) ? window.__userSession.organizations : []).forEach(function (org) {
+          if (org && org.id) orgMap[String(org.id)] = org;
+        });
+        var items = profiles.map(function (profile) {
+          var userMemberships = memberships.filter(function (member) {
+            return String(member.user_profile_id || '') === String(profile.id || '');
+          });
+          return {
+            id: profile.auth_user_id || profile.id,
+            profileId: profile.id,
+            authUserId: profile.auth_user_id || '',
+            first: profile.first_name || '',
+            last: profile.last_name || '',
+            email: profile.email || '',
+            role: userMemberships[0] ? normalizeUiRole(userMemberships[0].role) : 'unassigned',
+            status: profile.status || 'active',
+            organizationId: userMemberships[0] ? userMemberships[0].organization_id || '' : '',
+            company: userMemberships[0] && orgMap[userMemberships[0].organization_id] ? (orgMap[userMemberships[0].organization_id].name || '') : '',
+            noOrganization: !userMemberships.length,
+            memberships: userMemberships.map(function (member) {
+              return {
+                organizationId: member.organization_id,
+                role: normalizeUiRole(member.role),
+                status: member.status
+              };
+            }),
+            created: profile.created_at ? String(profile.created_at).slice(0, 10) : ''
+          };
+        });
+        cache.ownerUsers.items = items.slice();
+        cache.ownerUsers.loadedAt = Date.now();
+        cache.ownerUsers.error = null;
+        return items.slice();
+      } catch (error) {
+        cache.ownerUsers.error = supplierErrorInfo(error);
+        console.error('loadOwnerUsers failed', {
+          request: 'owner users',
+          code: error && error.code ? error.code : '',
+          message: error && error.message ? error.message : '',
+          details: error && error.details ? error.details : '',
+          hint: error && error.hint ? error.hint : '',
+          raw: error
+        });
+        return [];
+      } finally {
+        cache.ownerUsers.loading = false;
+        cache.ownerUsers.promise = null;
+      }
+    })();
+    return cache.ownerUsers.promise;
+  }
+
+  window.loadOwnerUsers = loadOwnerUsers;
+  window.retryOwnerUsersLoad = function () {
+    var cache = getDataCache();
+    cache.ownerUsers = { items: null, loading: true, error: null, promise: null, loadedAt: 0 };
+    return loadOwnerUsers().then(function (items) {
+      if (typeof window.renderAdmin === 'function') window.renderAdmin();
+      return items;
+    }).catch(function (error) {
+      console.error('retryOwnerUsersLoad failed', error);
+      if (typeof window.renderAdmin === 'function') window.renderAdmin();
+      return [];
+    });
+  };
 
   function pickActiveOrganization(organizations, memberships) {
     var orgIds = {};
@@ -1532,8 +1674,12 @@
       if (typeof window.toast === 'function') window.toast('Только владелец может назначать организации', 'err');
       return;
     }
+    var ownerUsers = window.__dataCache && window.__dataCache.ownerUsers && Array.isArray(window.__dataCache.ownerUsers.items)
+      ? window.__dataCache.ownerUsers.items
+      : [];
     var db = ensureArrays(window._dbCache || getDefaults());
-    var user = (db.users || []).find(function (item) { return String(item.id || '') === String(userId || ''); });
+    var user = ownerUsers.find(function (item) { return String(item.id || '') === String(userId || '') || String(item.profileId || '') === String(userId || ''); })
+      || (db.users || []).find(function (item) { return String(item.id || '') === String(userId || '') || String(item.profileId || '') === String(userId || ''); });
     if (!user) {
       if (typeof window.toast === 'function') window.toast('Пользователь не найден', 'err');
       return;

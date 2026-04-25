@@ -2203,15 +2203,42 @@ function renderSupAnalytics(){
   }).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--t3);padding:30px;">Нет данных о заказах</td></tr>';
 }
 function renderAdmin(){
-  const db=dbGet();const pending=db.users.filter(u=>u.status==='pending');const all=db.users.filter(u=>u.status!=='pending');
+  const db=dbGet();
+  const ownerCache = window.__dataCache && window.__dataCache.ownerUsers ? window.__dataCache.ownerUsers : null;
+  const allUsers = ownerCache && Array.isArray(ownerCache.items) ? ownerCache.items : db.users.filter(function(u){ return u.status !== 'pending'; });
+  const pending = allUsers.filter(function(u){ return u.status === 'pending'; });
+  const all = allUsers.filter(function(u){ return u.status !== 'pending'; });
   document.getElementById('pendCnt').textContent=pending.length;
-  document.getElementById('adminSub').textContent=`${db.users.length} пользователей · ${pending.length} ожидают`;
+  document.getElementById('adminSub').textContent=`${allUsers.length} пользователей · ${pending.length} ожидают`;
   if(adTab==='pending'){
     document.getElementById('adPending').innerHTML=pending.length?pending.map(u=>{const rd=ROLES[u.role]||{};const tc=['owner','chef','buyer'].includes(u.role)?'#000':'#fff';return`<div class="pc"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><div class="u-ava" style="background:linear-gradient(135deg,${rd.color},${rd.color}88);color:${tc};width:38px;height:38px;font-size:12px;">${(u.first[0]+u.last[0]).toUpperCase()}</div><div style="flex:1;"><div style="font-weight:700;font-size:14px;">${u.first} ${u.last}</div><div style="font-size:12px;color:var(--t2);">${u.company} · ${u.email}</div><div style="font-size:11px;color:var(--t3);margin-top:2px;">Роль: ${rd.emoji} ${rd.label} · Заявка: ${u.created}${u.reason?' · "'+u.reason+'"':''}</div></div><div style="display:flex;gap:7px;flex-wrap:wrap;"><button onclick="approveUser('${u.id}')" style="background:var(--grD);color:var(--gr);border:1px solid var(--gr);border-radius:var(--r);padding:8px 16px;font-weight:700;font-size:12px;cursor:pointer;">✓ Одобрить</button><button onclick="rejectUser('${u.id}')" style="background:var(--rdD);color:var(--rd);border:1px solid var(--rd);border-radius:var(--r);padding:8px 16px;font-size:12px;cursor:pointer;">✕ Отклонить</button></div></div></div>`;}).join(''):
     '<div class="empty"><div class="empty-ico">✅</div><div class="empty-txt">Нет новых заявок</div></div>';
   }
   if(adTab==='all'){
-    document.getElementById('adAll').innerHTML=`<div class="panel"><div class="tw"><table><thead><tr><th></th><th>Пользователь</th><th>Компания / Email</th><th>Организации</th><th>Роль</th><th>Дашборд</th><th>Статус</th><th>Действия</th></tr></thead><tbody>${all.map(u=>{const rd=ROLES[u.role]||{};const tc=['owner','chef','buyer'].includes(u.role)?'#000':'#fff';const da=normalizeDashboardAccess(u);const restIds=getUserScopedRestaurantIds(u,db);const restCount=restIds.length;const dashCount=getUserDashboardRestaurantIds(u,db).length;const dashLabel=u.role==='owner'?'Весь дашборд':(!da.enabled?'Нет доступа':da.scope==='all_orgs'?'Все организации':da.scope==='selected'?'Выбрано: '+dashCount:'Назначено: '+dashCount);const dashTone=u.role==='owner'?'bg':(da.enabled?'bb':'br');const dashAction=(CU&&CU.role==='owner'&&u.role!=='owner')?`<button onclick="openDashboardAccessModal('${u.id}')" style="margin-top:6px;background:var(--bg4);border:1px solid var(--br2);border-radius:5px;padding:4px 8px;font-size:11px;cursor:pointer;color:var(--t2);">⚙️ Настроить</button>`:'';const assignAction=(CU&&CU.role==='owner')?`<button onclick="openAssignUserToOrganizationModal('${u.id}')" style="margin-top:6px;background:var(--aD);border:1px solid var(--ac);border-radius:5px;padding:4px 8px;font-size:11px;cursor:pointer;color:var(--ac);">🏢 Добавить в организацию</button>`:'';const orgLabel=u.role==='owner'?'Все организации':(restCount?('Доступно: '+restCount):'Не назначены');return`<tr><td><div class="u-ava" style="background:linear-gradient(135deg,${rd.color},${rd.color}88);color:${tc};">${(u.first[0]+u.last[0]).toUpperCase()}</div></td><td><b>${u.first} ${u.last}</b></td><td style="font-size:12px;color:var(--t2);">${u.company}<br>${u.email}</td><td style="font-size:11px;color:var(--t3);">${orgLabel}</td><td><select class="role-sel" onchange="changeRole('${u.id}',this.value)">${Object.entries(ROLES).map(([k,r])=>`<option value="${k}" ${u.role===k?'selected':''}>${r.emoji} ${r.label}</option>`).join('')}</select></td><td style="font-size:11px;color:var(--t2);"><span class="badge ${dashTone}">${dashLabel}</span>${dashAction}</td><td><span class="badge ${u.status==='active'?'bg':u.status==='blocked'?'br':'by'}">${u.status==='active'?'Активен':u.status==='blocked'?'Заблокирован':'Ожидает'}</span></td><td style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;"><button onclick="toggleBlock('${u.id}')" style="background:${u.status==='blocked'?'var(--grD)':'var(--rdD)'};color:${u.status==='blocked'?'var(--gr)':'var(--rd)'};border:1px solid ${u.status==='blocked'?'var(--gr)':'var(--rd)'};border-radius:5px;padding:4px 10px;font-size:11px;cursor:pointer;">${u.status==='blocked'?'✓ Разблокировать':'🚫 Заблокировать'}</button>${assignAction}</td></tr>`;}).join('')}</tbody></table></div></div>`;
+    var ownerUsersLoading = !!(ownerCache && ownerCache.loading);
+    var ownerUsersError = ownerCache && ownerCache.error;
+    var ownerAllNode = document.getElementById('adAll');
+    if((!ownerCache || !Array.isArray(ownerCache.items)) && !ownerUsersLoading && typeof window.loadOwnerUsers === 'function'){
+      ownerAllNode.innerHTML='<div class="empty"><div class="empty-ico">⏳</div><div class="empty-txt">Загрузка пользователей...</div></div>';
+      window.loadOwnerUsers().then(function(){ renderAdmin(); });
+      return;
+    }
+    if(ownerUsersLoading && !all.length){
+      ownerAllNode.innerHTML='<div class="empty"><div class="empty-ico">⏳</div><div class="empty-txt">Загрузка пользователей...</div></div>';
+      if (typeof window.loadOwnerUsers === 'function' && !(ownerCache && ownerCache.promise)) {
+        window.loadOwnerUsers().then(function(){ renderAdmin(); });
+      }
+      return;
+    }
+    if(ownerUsersError && !all.length){
+      ownerAllNode.innerHTML='<div class="empty"><div class="empty-ico">⚠️</div><div class="empty-txt">Не удалось загрузить пользователей. Повторить</div><div style="margin-top:10px;"><button class="btnA" style="width:auto;min-width:170px;" onclick="window.retryOwnerUsersLoad && window.retryOwnerUsersLoad()">Повторить</button></div></div>';
+      return;
+    }
+    if(!all.length){
+      ownerAllNode.innerHTML='<div class="empty"><div class="empty-ico">👥</div><div class="empty-txt">Пользователи не найдены</div></div>';
+      return;
+    }
+    ownerAllNode.innerHTML=`<div class="panel"><div class="tw"><table><thead><tr><th></th><th>Пользователь</th><th>Компания / Email</th><th>Организации</th><th>Роль</th><th>Дашборд</th><th>Статус</th><th>Действия</th></tr></thead><tbody>${all.map(u=>{const rd=ROLES[u.role]||{};const tc=['owner','chef','buyer'].includes(u.role)?'#000':'#fff';const da=normalizeDashboardAccess(u);const restIds=getUserScopedRestaurantIds(u,db);const restCount=restIds.length;const dashCount=getUserDashboardRestaurantIds(u,db).length;const dashLabel=u.role==='owner'?'Весь дашборд':(!da.enabled?'Нет доступа':da.scope==='all_orgs'?'Все организации':da.scope==='selected'?'Выбрано: '+dashCount:'Назначено: '+dashCount);const dashTone=u.role==='owner'?'bg':(da.enabled?'bb':'br');const dashAction=(CU&&CU.role==='owner'&&u.role!=='owner')?`<button onclick="openDashboardAccessModal('${u.id}')" style="margin-top:6px;background:var(--bg4);border:1px solid var(--br2);border-radius:5px;padding:4px 8px;font-size:11px;cursor:pointer;color:var(--t2);">⚙️ Настроить</button>`:'';const assignAction=(CU&&CU.role==='owner')?`<button onclick="openAssignUserToOrganizationModal('${u.id}')" style="margin-top:6px;background:var(--aD);border:1px solid var(--ac);border-radius:5px;padding:4px 8px;font-size:11px;cursor:pointer;color:var(--ac);">🏢 Добавить в организацию</button>`:'';const orgLabel=u.role==='owner'?'Все организации':(restCount?('Доступно: '+restCount):'Не назначены');return`<tr><td><div class="u-ava" style="background:linear-gradient(135deg,${rd.color},${rd.color}88);color:${tc};">${(u.first[0]+u.last[0]).toUpperCase()}</div></td><td><b>${u.first} ${u.last}</b></td><td style="font-size:12px;color:var(--t2);">${u.company}<br>${u.email}</td><td style="font-size:11px;color:var(--t3);">${orgLabel}</td><td><select class="role-sel" onchange="changeRole('${u.id}',this.value)">${Object.entries(ROLES).map(([k,r])=>`<option value="${k}" ${u.role===k?'selected':''}>${r.emoji} ${r.label}</option>`).join('')}</select></td><td style="font-size:11px;color:var(--t2);"><span class="badge ${dashTone}">${dashLabel}</span>${dashAction}</td><td><span class="badge ${u.status==='active'?'bg':u.status==='blocked'?'br':'by'}">${u.status==='active'?'Активен':u.status==='blocked'?'Заблокирован':'Ожидает'}</span></td><td style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;"><button onclick="toggleBlock('${u.id}')" style="background:${u.status==='blocked'?'var(--grD)':'var(--rdD)'};color:${u.status==='blocked'?'var(--gr)':'var(--rd)'};border:1px solid ${u.status==='blocked'?'var(--gr)':'var(--rd)'};border-radius:5px;padding:4px 10px;font-size:11px;cursor:pointer;">${u.status==='blocked'?'✓ Разблокировать':'🚫 Заблокировать'}</button>${assignAction}</td></tr>`;}).join('')}</tbody></table></div></div>`;
   }
   if(adTab==='matrix'){
     const pages=['restaurants','dashboard','catalog','order','cart','orders','favorites','suppliers','analytics','tender','techcards','chef-calc','sup-products','sup-dashboard','sup-orders','sup-analytics','admin','owner'];
@@ -2725,15 +2752,17 @@ function ownerStatusRow(label,value,tone,sub){
 
 function renderOwner(){
   var db=dbGet();
+  var ownerCache = window.__dataCache && window.__dataCache.ownerUsers ? window.__dataCache.ownerUsers : null;
+  var ownerUsers = ownerCache && Array.isArray(ownerCache.items) ? ownerCache.items : (db.users || []);
   var companies=ownerDistinctCompanies(db);
   var systemLog=Array.isArray(db.systemLog)?db.systemLog:[];
   var overdueCompanies=companies.filter(function(name){
     var bill=ownerGetBillingSettings(db,name);
     return bill.status==='overdue' || (bill.overdueDays||0)>0;
   }).length;
-  var activeUsers=(db.users||[]).filter(function(u){return u.status==='active';}).length;
-  var blockedUsers=(db.users||[]).filter(function(u){return u.status==='blocked';}).length;
-  var pendingUsers=(db.users||[]).filter(function(u){return u.status==='pending';}).length;
+  var activeUsers=ownerUsers.filter(function(u){return u.status==='active';}).length;
+  var blockedUsers=ownerUsers.filter(function(u){return u.status==='blocked';}).length;
+  var pendingUsers=ownerUsers.filter(function(u){return u.status==='pending';}).length;
   var visibleSuppliers=(SUPS_DATA||[]).filter(function(s){return !s.hidden;}).length;
   var hiddenSuppliers=(SUPS_DATA||[]).filter(function(s){return s.hidden;}).length;
   var productsWithoutUnit=(PRODUCTS||[]).filter(function(p){return !(p&&p.unit);}).length+(SUP_PRODS||[]).filter(function(p){return !(p&&p.unit);}).length;
@@ -2741,7 +2770,7 @@ function renderOwner(){
     return !((p.pKg||0)>0 || (p.pSh||0)>0 || (p.pL||0)>0 || (p.pMl||0)>0 || (p.price||0)>0);
   }).length;
   var duplicateProducts=ownerDuplicateCount(PRODUCTS,function(p){return p&&p.name;})+ownerDuplicateCount(SUP_PRODS,function(p){return p&&p.name;});
-  var dashboardEnabledUsers=(db.users||[]).filter(function(u){ return userCanSeeDashboard(u); }).length;
+  var dashboardEnabledUsers=ownerUsers.filter(function(u){ return userCanSeeDashboard(u); }).length;
   var audit=(db.audit||[]).slice(0,8);
   var clientStateVersion = (window._dbCache && Number(window._dbCache.__clientStateVersion || 0)) || 0;
   var localStateVersion = 0;
