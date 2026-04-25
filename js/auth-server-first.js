@@ -79,6 +79,13 @@
     }
   }
 
+  function setAuthServiceStatus(message, tone) {
+    var el = document.getElementById('authSvcStatus');
+    if (!el) return;
+    el.textContent = message || '';
+    el.style.color = tone === 'err' ? 'var(--rd)' : (tone === 'ok' ? 'var(--gr)' : 'var(--t3)');
+  }
+
   function showAppShell() {
     var auth = document.getElementById('AUTH');
     var appShell = document.getElementById('APP');
@@ -523,8 +530,10 @@
     var client = getClient();
     if (!client) {
       console.error('missing Supabase config', getSupabaseDiagnostics());
+      setAuthServiceStatus('Сервис авторизации временно недоступен. Обратитесь к администратору', 'err');
       throw new Error('Сервис авторизации временно недоступен. Обратитесь к администратору');
     }
+    setAuthServiceStatus('');
     console.info('auth: signIn started');
     markPerf('auth_start');
     var response = await withTimeout(
@@ -547,6 +556,7 @@
       if (networkLike) {
         var netErr = new Error('Не удалось подключиться к серверу авторизации. Проверьте интернет или попробуйте позже');
         netErr.code = info.code || 'NETWORK_ERROR';
+        setAuthServiceStatus(netErr.message, 'err');
         throw netErr;
       }
       throw error;
@@ -562,6 +572,7 @@
         host: getSupabaseDiagnostics().host,
         source: getSupabaseDiagnostics().source
       });
+      setAuthServiceStatus('Не удалось подключиться к серверу авторизации. Проверьте интернет или попробуйте позже', 'err');
       throw response.error;
     }
     console.info('auth: signIn success');
@@ -761,21 +772,31 @@
       console.error('signIn failed', errorInfo(error));
       if (error && error.message === 'Не удалось создать профиль пользователя') {
         if (errEl) errEl.textContent = error.message;
+        setAuthServiceStatus(error.message, 'err');
         return null;
       }
       if (error && error.message === 'Не удалось загрузить доступы пользователя') {
         if (errEl) errEl.textContent = error.message;
+        setAuthServiceStatus(error.message, 'err');
         return null;
       }
       if (error && error.message === 'Не удалось загрузить организации пользователя') {
         if (errEl) errEl.textContent = error.message;
+        setAuthServiceStatus(error.message, 'err');
         return null;
       }
       if (error && /Не удалось подключиться к серверу авторизации/i.test(error.message || '')) {
         if (errEl) errEl.textContent = error.message;
+        setAuthServiceStatus(error.message, 'err');
+        return null;
+      }
+      if (error && error.code === 'NO_CLIENT') {
+        if (errEl) errEl.textContent = 'Сервис авторизации временно недоступен. Обратитесь к администратору';
+        setAuthServiceStatus('Сервис авторизации временно недоступен. Обратитесь к администратору', 'err');
         return null;
       }
       if (errEl) errEl.textContent = error && error.message ? error.message : 'Ошибка входа';
+      setAuthServiceStatus(errEl ? errEl.textContent : 'Ошибка входа', 'err');
       return null;
     });
   };
@@ -789,4 +810,13 @@
   window.doLogout = function () {
     return logout();
   };
+
+  setTimeout(function () {
+    try {
+      var config = app.config && typeof app.config.getSupabaseConfig === 'function' ? app.config.getSupabaseConfig() : null;
+      if (!config || !config.enabled) {
+        setAuthServiceStatus('Сервис авторизации временно недоступен. Обратитесь к администратору', 'err');
+      }
+    } catch (error) {}
+  }, 0);
 })(window);

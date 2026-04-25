@@ -38,7 +38,7 @@
         raw.url = raw.url || metaConfig.url;
         raw.anonKey = raw.anonKey || metaConfig.anonKey;
         source = 'meta';
-      } else if (storedConfig.url || storedConfig.supabaseUrl || storedConfig.anonKey || storedConfig.supabaseAnonKey) {
+    } else if (!window.__authServerFirstMode && (storedConfig.url || storedConfig.supabaseUrl || storedConfig.anonKey || storedConfig.supabaseAnonKey)) {
         raw.url = raw.url || storedConfig.url || storedConfig.supabaseUrl || '';
         raw.anonKey = raw.anonKey || storedConfig.anonKey || storedConfig.supabaseAnonKey || '';
         source = 'localStorage';
