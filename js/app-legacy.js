@@ -178,6 +178,12 @@ var _FB_URL = 'https://restobaza-d2c05-default-rtdb.europe-west1.firebasedatabas
 var _dbCache = null;
 
 function dbLoad(callback){
+  if (window.__authServerFirstMode) {
+    if (typeof callback === 'function') {
+      setTimeout(function () { callback(); }, 0);
+    }
+    return;
+  }
   var xhr = new XMLHttpRequest();
   xhr.open('GET', _FB_URL, true);
   xhr.timeout = 8000;
@@ -9531,11 +9537,18 @@ document.addEventListener('DOMContentLoaded',function(){
   setBar(40,'Подключение к базе данных...');
   setTimeout(function(){
     var ld=document.getElementById('pvLoad');
-    if(ld && !(window.__sessionReady || window.__loginInProgress || window.__restoreInProgress)){
+    if(ld && !(window.__sessionReady || window.__loginInProgress || window.__restoreInProgress || window.__authServerFirstMode)){
       console.error('Boot loader fallback triggered');
       finalizeBoot();
     }
   },6000);
+  if (window.__authServerFirstMode) {
+    setTimeout(function () {
+      setBar(100,'Готово!');
+      finalizeBoot();
+    }, 0);
+    return;
+  }
   dbLoad(function(){
     setBar(100,'Готово!');
     setTimeout(function(){
