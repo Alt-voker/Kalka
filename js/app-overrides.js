@@ -99,12 +99,6 @@
       ALL_SUPS = allSups;
       if (typeof selSups !== 'undefined' && (!selSups || !selSups.length)) selSups = allSups.slice();
     } catch (error) {}
-    if (!isServerFirstMode()) {
-      try {
-        localStorage.setItem('pv_cache', JSON.stringify(normalized));
-        localStorage.setItem(LOCAL_DB_KEY, JSON.stringify(normalized));
-      } catch (error) {}
-    }
     return normalized;
   }
 
@@ -137,15 +131,7 @@
   }
 
   function readLocalState() {
-    if (isServerFirstMode()) return null;
-    try {
-      var raw = localStorage.getItem(LOCAL_DB_KEY) || localStorage.getItem('pv_cache');
-      if (!raw) return null;
-      var parsed = ensureArrays(JSON.parse(raw));
-      return isCompatibleLocalState(parsed) ? parsed : null;
-    } catch (error) {
-      return null;
-    }
+    return null;
   }
 
   function clearClientRuntimeState() {
@@ -156,14 +142,8 @@
       window.__restoreInProgress = false;
       window._dbCache = null;
       window.CU = null;
-      window.activeRest = { id: 'r0', name: 'Все рестораны', emoji: '🌐' };
-      window.__dataCache = {
-        suppliersByOrg: {},
-        suppliersPromisesByOrg: {},
-        suppliersErrorsByOrg: {},
-        suppliersLoadingByOrg: {},
-        ownerUsers: { items: null, loading: false, error: null, promise: null, loadedAt: 0 }
-      };
+      window.activeRest = null;
+      window.__dataCache = {};
       if (typeof window.cart !== 'undefined') window.cart = [];
       if (typeof window.tenderChanges !== 'undefined') window.tenderChanges = [];
       if (typeof window.tenderLoaded !== 'undefined') window.tenderLoaded = false;
@@ -180,11 +160,12 @@
       if (typeof window._orderLegalEntityNames !== 'undefined') window._orderLegalEntityNames = [];
     } catch (error) {}
   }
+  window.clearClientRuntimeState = clearClientRuntimeState;
 
   function clearClientStorage() {
     try {
       Object.keys(localStorage).forEach(function (key) {
-        if (/^(pv_|kalka_)/.test(key)) localStorage.removeItem(key);
+        if (/^(pv_|kalka_|owner_|sup_|auth_|session_|role_|org_|user_)/.test(key)) localStorage.removeItem(key);
       });
       localStorage.removeItem(LOCAL_DB_KEY);
       localStorage.removeItem('pv_cache');
@@ -193,87 +174,43 @@
     try { sessionStorage.clear(); } catch (error) {}
   }
 
-  function saveLastUser(user) {
+  function clearBusinessStorageKeysForLogin() {
     try {
-      localStorage.setItem(LAST_USER_KEY, JSON.stringify({
-        id: user.id,
-        email: user.email,
-        first: user.first,
-        last: user.last,
-        company: user.company,
-        role: user.role,
-        status: user.status
-      }));
+      if (typeof window.clearClientStorage === 'function') {
+        window.clearClientStorage();
+      } else {
+        clearClientStorage();
+      }
     } catch (error) {}
+  }
+  window.clearClientStorage = clearClientStorage;
+
+  function saveLastUser(user) {
+    return;
   }
 
   function clearLastUser() {
-    try {
-      localStorage.removeItem(LAST_USER_KEY);
-    } catch (error) {}
+    return;
   }
 
   async function loadStateFromSupabase() {
-    if (!isServerFirstMode()) return null;
-    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
-    if (!client) return null;
-
-    var response = await client
-      .from('app_state')
-      .select('payload')
-      .eq('scope', 'default')
-      .maybeSingle();
-
-    if (response.error || !response.data || !response.data.payload) return null;
-    var payload = ensureArrays(response.data.payload);
-    return hasMeaningfulState(payload) ? payload : null;
+    return null;
   }
 
   async function saveStateToSupabase(db) {
-    if (!isServerFirstMode()) return false;
-    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
-    if (!client) return false;
-
-    var response = await client
-      .from('app_state')
-      .upsert({
-        scope: 'default',
-        payload: db,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'scope' });
-
-    return !response.error;
+    return false;
   }
 
   async function hydrateStateFromSupabase() {
-    try {
-      var loaded = await loadStateFromSupabase();
-      if (loaded) {
-        syncRuntime(loaded);
-        return loaded;
-      }
-    } catch (error) {
-      console.error('Supabase state hydrate failed:', error);
-    }
     return null;
   }
 
   async function loadBusinessDataFromSupabase(baseDb) {
-    if (window.__loginInProgress || isServerFirstMode() || !app.commerce || !app.commerce.load) return baseDb;
-    try {
-      var loaded = await app.commerce.load(baseDb);
-      return loaded || baseDb;
-    } catch (error) {
-      console.error('Supabase business data hydrate failed:', error);
-      return baseDb;
-    }
+    return baseDb;
   }
 
   function saveBusinessDataSnapshot(db) {
-    if (window.__loginInProgress || window.__restoreInProgress || !isServerFirstMode() || !app.commerce || !app.commerce.save) return;
-    app.commerce.save(db).catch(function (error) {
-      console.error('Supabase business data save failed:', error);
-    });
+    return;
   }
 
   function setSessionReady(session) {
@@ -1593,7 +1530,7 @@
     if (isServerFirstMode()) {
       return ensureArrays(window._dbCache || getDefaults());
     }
-    return ensureArrays(window._dbCache || readLocalState() || (legacy.dbGet ? legacy.dbGet() : null) || getDefaults());
+    return ensureArrays(window._dbCache || (legacy.dbGet ? legacy.dbGet() : null) || getDefaults());
   };
 
   window.dbSet = function (db) {
@@ -1601,7 +1538,7 @@
       console.warn('dbSet skipped during auth bootstrap');
       return ensureArrays(window._dbCache || getDefaults());
     }
-    var currentState = ensureArrays(window._dbCache || readLocalState() || (legacy.dbGet ? legacy.dbGet() : null) || getDefaults());
+    var currentState = ensureArrays(window._dbCache || (legacy.dbGet ? legacy.dbGet() : null) || getDefaults());
     var normalized = syncRuntime(db);
     if (!hasMeaningfulState(normalized) && hasMeaningfulState(currentState)) {
       console.warn('dbSet skipped empty overwrite because meaningful state already exists');
@@ -1659,7 +1596,7 @@
           if (!finished && !isServerFirstMode()) {
             console.error('dbLoad timeout: fallback to local state');
             try {
-              syncRuntime(readLocalState() || (legacy.dbGet ? legacy.dbGet() : null) || getDefaults());
+              syncRuntime((legacy.dbGet ? legacy.dbGet() : null) || getDefaults());
             } catch (error) {
               console.error('dbLoad timeout fallback failed:', error);
             }
@@ -1680,7 +1617,7 @@
             } catch (error) {
               console.error('legacy dbLoad fallback hydrate failed:', error);
               try {
-                syncRuntime(window._dbCache || (legacy.dbGet ? legacy.dbGet() : null) || readLocalState() || getDefaults());
+                syncRuntime(window._dbCache || (legacy.dbGet ? legacy.dbGet() : null) || getDefaults());
               } catch (innerError) {
                 console.error('legacy dbLoad final fallback failed:', innerError);
               }
@@ -1691,7 +1628,7 @@
         }
 
         try {
-          var mergedLocalState = await loadBusinessDataFromSupabase(readLocalState() || getDefaults());
+          var mergedLocalState = await loadBusinessDataFromSupabase(getDefaults());
           var localState = syncRuntime(mergedLocalState);
           if (hasMeaningfulState(localState)) {
             saveBusinessDataSnapshot(localState);
@@ -1700,7 +1637,7 @@
         } catch (error) {
           console.warn('dbLoad secondary hydrate failed:', error);
           try {
-            syncRuntime(readLocalState() || (legacy.dbGet ? legacy.dbGet() : null) || getDefaults());
+            syncRuntime((legacy.dbGet ? legacy.dbGet() : null) || getDefaults());
           } catch (innerError) {
             console.error('dbLoad local recovery failed:', innerError);
           }
@@ -1708,7 +1645,7 @@
       } catch (error) {
         console.error('dbLoad fatal fallback path failed:', error);
         try {
-          syncRuntime(readLocalState() || (legacy.dbGet ? legacy.dbGet() : null) || getDefaults());
+          syncRuntime((legacy.dbGet ? legacy.dbGet() : null) || getDefaults());
         } catch (innerError) {
           console.error('dbLoad local recovery failed:', innerError);
         }
@@ -1760,6 +1697,7 @@
       console.info('login started');
       markLoginStage('login:start', email);
       bindAuthListener();
+      clearBusinessStorageKeysForLogin();
       var client = app.supabase.getClient();
       if (!client) {
         throw new Error('Сервис авторизации временно недоступен. Обратитесь к администратору');

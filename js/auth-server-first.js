@@ -870,6 +870,9 @@
     if (typeof window.clearClientRuntimeState === 'function') {
       window.clearClientRuntimeState();
     }
+    if (typeof window.clearClientStorage === 'function') {
+      try { window.clearClientStorage(); } catch (error) {}
+    }
 
     window.__loginInProgress = true;
     window.__restoreInProgress = false;
@@ -983,15 +986,21 @@
       } else {
         window.__userSession = null;
         window.CU = null;
-        window.activeRest = { id: 'r0', name: 'Все рестораны', emoji: '🌐' };
+        window.activeRest = null;
       }
     } catch (error) {}
     if (client && client.auth && client.auth.signOut) {
       return client.auth.signOut().catch(function (error) {
         console.error('logout signOut failed', errorInfo(error));
       }).finally(function () {
+        if (typeof window.clearClientStorage === 'function') {
+          try { window.clearClientStorage(); } catch (storageError) {}
+        }
         showLoginScreen();
       });
+    }
+    if (typeof window.clearClientStorage === 'function') {
+      try { window.clearClientStorage(); } catch (storageError) {}
     }
     showLoginScreen();
     return Promise.resolve();

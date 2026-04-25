@@ -201,7 +201,6 @@ function dbLoad(callback){
           PRODUCTS  = Array.isArray(d.products) ? d.products : [];
           ORDERS    = Array.isArray(d.orders) ? d.orders : [];
           TECH_CARDS = Array.isArray(d.techCards) ? d.techCards : [];
-          try{ localStorage.setItem('pv_cache', JSON.stringify(d)); }catch(e){}
           if(callback) callback();
           return;
         }
@@ -212,8 +211,8 @@ function dbLoad(callback){
         }
       }catch(e){}
     }
-    // Fallback — localStorage
-    var local = _getLocal();
+    // Fallback disabled in production — keep in-memory defaults only.
+    var local = _getDefaults();
     _dbCache = _migrateOwner(local);
     if(Array.isArray(local.supProds)) SUP_PRODS = local.supProds;
     if(Array.isArray(local.supsData)) SUPS_DATA = local.supsData;
@@ -223,7 +222,7 @@ function dbLoad(callback){
     if(callback) callback();
   };
   xhr.ontimeout = xhr.onerror = function(){
-    var local = _getLocal();
+    var local = _getDefaults();
     _dbCache = _migrateOwner(local);
     if(Array.isArray(local.supProds)) SUP_PRODS = local.supProds;
     if(Array.isArray(local.supsData)) SUPS_DATA = local.supsData;
@@ -283,19 +282,11 @@ function dbSet(d){
   if(!Array.isArray(d.supplierImportTemplates)) d.supplierImportTemplates = [];
   d.__clientStateVersion = 2;
   _dbCache = d;
-  try{ localStorage.setItem('pv_cache', JSON.stringify(d)); }catch(e){}
   _writeToFirebase(d, null);
 }
 function dbSave(d){ dbSet(d); }
 
 function _getLocal(){
-  try{
-    var r = localStorage.getItem('pv_cache');
-    if(r){
-      var d=JSON.parse(r);
-      if(d&&Array.isArray(d.users) && Number(d.__clientStateVersion||0)===2) return d;
-    }
-  }catch(e){}
   return _getDefaults();
 }
 
@@ -587,7 +578,7 @@ function doLogin(){
   xhr.open('GET',_FB_URL,true); xhr.timeout=7000;
   xhr.onload=function(){
     if(xhr.status===200){
-      try{var d=JSON.parse(xhr.responseText);if(d&&Array.isArray(d.users)){_dbCache=d;try{localStorage.setItem('pv_cache',JSON.stringify(d));}catch(e){}check(d);return;}}catch(e){}
+      try{var d=JSON.parse(xhr.responseText);if(d&&Array.isArray(d.users)){_dbCache=d;check(d);return;}}catch(e){}
     }
     check(dbGet());
   };
@@ -674,7 +665,7 @@ function doLogout(){
   }catch(e){}
   try{
     window._dbCache=null;
-    activeRest={id:'r0',name:'Все рестораны',emoji:'🌐'};
+    activeRest=null;
     _supPriceOrganizationId='';
     _supPriceLegalEntityIds=[];
     _supPriceLegalEntityNames=[];
@@ -1798,9 +1789,11 @@ function togglePersonalSup(supName){
   if(!CU)return;
   var hiddenKey='pv_hidden_'+CU.id;
   var hiddenLocal={};
-  try{var h=localStorage.getItem(hiddenKey);if(h)hiddenLocal=JSON.parse(h);}catch(e){}
+  window.__cleanUiState = window.__cleanUiState || { hiddenSuppliersByUser: {}, priceLayoutsBySupplier: {}, importTemplatesBySupplier: {} };
+  var hiddenStore = window.__cleanUiState.hiddenSuppliersByUser;
+  var hiddenLocal=hiddenStore[hiddenKey] || {};
   hiddenLocal[supName]=!hiddenLocal[supName];
-  try{localStorage.setItem(hiddenKey,JSON.stringify(hiddenLocal));}catch(e){}
+  hiddenStore[hiddenKey]=hiddenLocal;
   renderSuppliers();
   // Обновляем каталог — скрытые поставщики не показываются в колонках
   updatePersonalHiddenSups();
@@ -1811,7 +1804,9 @@ function updatePersonalHiddenSups(){
   if(!CU)return;
   var hiddenKey='pv_hidden_'+CU.id;
   var hiddenLocal={};
-  try{var h=localStorage.getItem(hiddenKey);if(h)hiddenLocal=JSON.parse(h);}catch(e){}
+  window.__cleanUiState = window.__cleanUiState || { hiddenSuppliersByUser: {}, priceLayoutsBySupplier: {}, importTemplatesBySupplier: {} };
+  var hiddenStore = window.__cleanUiState.hiddenSuppliersByUser;
+  var hiddenLocal=hiddenStore[hiddenKey] || {};
   // Обновляем selSups — убираем скрытые для этого пользователя
   selSups=ALL_SUPS.filter(function(s){return !hiddenLocal[s];});
   renderCatalog();
@@ -2798,11 +2793,6 @@ function renderOwner(){
   var clientStateVersion = (window._dbCache && Number(window._dbCache.__clientStateVersion || 0)) || 0;
   var localStateVersion = 0;
   try{
-    var rawState = localStorage.getItem('kalka_app_state_v1') || localStorage.getItem('pv_cache');
-    if(rawState){
-      var parsedState = JSON.parse(rawState);
-      localStateVersion = Number(parsedState && parsedState.__clientStateVersion || 0) || 0;
-    }
   }catch(e){}
   var activeUser = (CU && (CU.first || CU.last || CU.email)) ? [
     [CU.first, CU.last].filter(Boolean).join(' ').trim() || CU.email || '—',
@@ -2878,17 +2868,27 @@ function renderOwner(){
     ].join('');
   }
   if(diagEl){
-    var localStateSource = 'нет';
-    try{
-      localStateSource = localStorage.getItem('kalka_app_state_v1') ? 'kalka_app_state_v1' : (localStorage.getItem('pv_cache') ? 'pv_cache' : 'нет');
-    }catch(e){}
+    var sessionMeta = window.__userSession || {};
+    var sessionAuthUserId = sessionMeta.currentUser && (sessionMeta.currentUser.authUserId || sessionMeta.currentUser.auth_user_id) || '';
+    var sessionEmail = sessionMeta.currentUser && sessionMeta.currentUser.email || (CU && CU.email) || '—';
+    var sessionRole = sessionMeta.role || (CU && CU.role) || '—';
+    var sessionMembershipsCount = typeof sessionMeta.membershipsCount === 'number'
+      ? sessionMeta.membershipsCount
+      : (Array.isArray(sessionMeta.memberships) ? sessionMeta.memberships.length : 0);
+    var sessionOrganizationsCount = typeof sessionMeta.organizationsCount === 'number'
+      ? sessionMeta.organizationsCount
+      : (Array.isArray(sessionMeta.organizations) ? sessionMeta.organizations.length : 0);
+    var sessionNoOrg = !!(sessionMeta.noOrganization || (CU && CU.noOrganization));
     diagEl.innerHTML = [
-      ownerStatusRow('Пользователь', activeUser[0], activeUser[0] !== '—' ? 'good' : 'warn', 'Email: ' + (CU && CU.email ? CU.email : '—') + ' · Роль: ' + activeUser[1] + ' · Статус: ' + activeUser[2]),
+      ownerStatusRow('Пользователь', activeUser[0], activeUser[0] !== '—' ? 'good' : 'warn', 'Email: ' + sessionEmail + ' · Роль: ' + activeUser[1] + ' · Статус: ' + activeUser[2]),
+      ownerStatusRow('Auth user id', sessionAuthUserId || '—', sessionAuthUserId ? 'good' : 'warn', 'Источник: RPC_ONLY'),
       ownerStatusRow('Активная организация', activeOrgId ? (activeOrgName + ' · ' + activeOrgId) : '—', activeOrgId ? 'good' : 'warn', 'Берётся из серверного контекста/кабинета'),
+      ownerStatusRow('Memberships', String(sessionMembershipsCount), sessionMembershipsCount > 0 ? 'good' : 'warn', 'noOrganization: ' + String(sessionNoOrg)),
+      ownerStatusRow('Organizations', String(sessionOrganizationsCount), sessionOrganizationsCount > 0 ? 'good' : 'warn', 'activeOrganizationId: ' + String((sessionMeta.activeOrganizationId || (CU && CU.activeOrganizationId) || '—'))),
       ownerStatusRow('Активные юр. лица', activeLegalNames.length ? activeLegalNames.join(' · ') : '—', activeLegalNames.length ? 'good' : 'warn', 'Список текущего price/context scope'),
       ownerStatusRow('Версия client state', String(clientStateVersion || 0), clientStateVersion === 2 ? 'good' : 'warn', 'Синхронный snapshot в памяти'),
-      ownerStatusRow('Версия localStorage', String(localStateVersion || 0), localStateVersion === 2 ? 'good' : 'warn', 'Старый кэш не должен подхватываться'),
-      ownerStatusRow('Источник локального state', localStateSource, localStateSource !== 'нет' ? 'good' : 'warn', 'Используется только как временный ускоритель')
+      ownerStatusRow('Версия localStorage', '0', 'good', 'Отключено в production'),
+      ownerStatusRow('Источник state', 'RPC_ONLY', 'good', 'Не используется для business data')
     ].join('');
   }
   if(auditEl){
@@ -3378,7 +3378,7 @@ function submitCreateUser(forceCreate){
   xhr.open('GET',_FB_URL,true); xhr.timeout=6000;
   xhr.onload=function(){
     var fresh=null;
-    if(xhr.status===200){try{var d=JSON.parse(xhr.responseText);if(d&&Array.isArray(d.users)){fresh=d;_dbCache=d;try{localStorage.setItem('pv_cache',JSON.stringify(d));}catch(e){}}}catch(e){}}
+    if(xhr.status===200){try{var d=JSON.parse(xhr.responseText);if(d&&Array.isArray(d.users)){fresh=d;_dbCache=d;}}catch(e){}}
     create(fresh||dbGet());
   };
   xhr.ontimeout=xhr.onerror=function(){create(dbGet());};
@@ -3395,7 +3395,6 @@ function clearCacheAndReload(){
 function resetDatabase(){
   if(!confirm('Сбросить базу к начальным данным? Все созданные аккаунты будут удалены!'))return;
   var fresh=_getDefaults(); _dbCache=fresh;
-  try{localStorage.setItem('pv_cache',JSON.stringify(fresh));}catch(e){}
   _writeToFirebase(fresh,null);
   renderDemoG(); toast('База данных сброшена','ok');
 }
@@ -4914,12 +4913,12 @@ function _saveSupPriceTemplate(supName, template){
     headerRow: typeof template.headerRow === 'number' ? template.headerRow : parseInt(template.headerRow, 10) || 0
   });
   try{
-    var current = JSON.parse(localStorage.getItem(key) || 'null') || {};
-    var merged = Object.assign({}, current, next, {
+    window.__cleanUiState = window.__cleanUiState || { hiddenSuppliersByUser: {}, priceLayoutsBySupplier: {}, importTemplatesBySupplier: {} };
+    window.__cleanUiState.importTemplatesBySupplier = window.__cleanUiState.importTemplatesBySupplier || {};
+    window.__cleanUiState.importTemplatesBySupplier[key] = Object.assign({}, next, {
       supplierName: supName,
       updatedAt: new Date().toISOString()
     });
-    localStorage.setItem(key, JSON.stringify(merged));
   }catch(e){}
 
   try{
@@ -4958,7 +4957,7 @@ function _loadSupPriceTemplate(supName){
     }
   }catch(e){}
   try{
-    var raw = localStorage.getItem(_supPriceTemplateStorageKey(supName));
+    var raw = window.__cleanUiState && window.__cleanUiState.importTemplatesBySupplier ? JSON.stringify(window.__cleanUiState.importTemplatesBySupplier[_supPriceTemplateStorageKey(supName)] || null) : null;
     if(!raw) return null;
     var parsed = JSON.parse(raw);
     return {
@@ -7039,21 +7038,18 @@ function rememberPriceLayout(supName, layout) {
     savedAt:   new Date().toISOString()
   };
   // Сохранить в localStorage
-  try {
-    localStorage.setItem('pv_price_layouts', JSON.stringify(_priceLayoutMemory));
-  } catch(e) {}
+  window.__cleanUiState = window.__cleanUiState || { hiddenSuppliersByUser: {}, priceLayoutsBySupplier: {}, importTemplatesBySupplier: {} };
+  window.__cleanUiState.priceLayoutsBySupplier = JSON.parse(JSON.stringify(_priceLayoutMemory));
 }
 
 function recallPriceLayout(supName) {
   // Попробовать из памяти
   if(_priceLayoutMemory[supName]) return _priceLayoutMemory[supName];
-  // Попробовать из localStorage
   try {
-    var stored = localStorage.getItem('pv_price_layouts');
-    if(stored) {
-      var parsed = JSON.parse(stored);
-      _priceLayoutMemory = parsed;
-      if(parsed[supName]) return parsed[supName];
+    var cache = window.__cleanUiState && window.__cleanUiState.priceLayoutsBySupplier ? window.__cleanUiState.priceLayoutsBySupplier : null;
+    if(cache) {
+      _priceLayoutMemory = JSON.parse(JSON.stringify(cache));
+      if(_priceLayoutMemory[supName]) return _priceLayoutMemory[supName];
     }
   } catch(e) {}
   return null;
@@ -7078,8 +7074,8 @@ function _layoutLooksCompatible(rows, layout) {
 
 function loadPriceLayoutsFromStorage() {
   try {
-    var stored = localStorage.getItem('pv_price_layouts');
-    if(stored) _priceLayoutMemory = JSON.parse(stored);
+    var cache = window.__cleanUiState && window.__cleanUiState.priceLayoutsBySupplier ? window.__cleanUiState.priceLayoutsBySupplier : null;
+    if(cache) _priceLayoutMemory = JSON.parse(JSON.stringify(cache));
   } catch(e) {}
 }
 

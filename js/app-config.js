@@ -22,12 +22,6 @@
       anonKey: readMeta('kalka-supabase-anon-key') || readMeta('supabase-anon-key') || ''
     };
     var windowConfig = window.__KALKA_SUPABASE__ || {};
-    var storedConfig = {};
-    try {
-      storedConfig = parseJson(localStorage.getItem(STORAGE_KEY)) || {};
-    } catch (storageError) {
-      storedConfig = {};
-    }
     var raw = {
       url: windowConfig.url || windowConfig.supabaseUrl || metaConfig.url || '',
       anonKey: windowConfig.anonKey || windowConfig.supabaseAnonKey || metaConfig.anonKey || ''
@@ -38,10 +32,6 @@
         raw.url = raw.url || metaConfig.url;
         raw.anonKey = raw.anonKey || metaConfig.anonKey;
         source = 'meta';
-    } else if (!window.__authServerFirstMode && (storedConfig.url || storedConfig.supabaseUrl || storedConfig.anonKey || storedConfig.supabaseAnonKey)) {
-        raw.url = raw.url || storedConfig.url || storedConfig.supabaseUrl || '';
-        raw.anonKey = raw.anonKey || storedConfig.anonKey || storedConfig.supabaseAnonKey || '';
-        source = 'localStorage';
       } else {
         source = 'empty';
       }
