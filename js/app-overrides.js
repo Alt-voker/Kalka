@@ -858,6 +858,149 @@
     });
   };
 
+  function normalizeOwnerUserIdentity(row) {
+    if (!row) return null;
+    var authUserId = String(row.auth_user_id || row.authUserId || row.auth_user || row.userId || row.id || '').trim();
+    var profileId = String(row.profileId || row.user_profile_id || row.user_profile || row.profile_id || row.userProfileId || '').trim();
+    var email = String(row.email || '').trim().toLowerCase();
+    var first = String(row.first || row.first_name || row.firstName || '').trim();
+    var last = String(row.last || row.last_name || row.lastName || '').trim();
+    var status = String(row.status || 'active').trim() || 'active';
+    return {
+      id: authUserId || profileId || email,
+      auth_user_id: authUserId,
+      profileId: profileId || '',
+      user_profile_id: profileId || '',
+      email: email,
+      first: first,
+      last: last,
+      status: status,
+      company: String(row.company || row.orgName || row.organization || '').trim(),
+      role: row.role || '',
+      memberships: Array.isArray(row.memberships) ? row.memberships.slice() : [],
+      organizations: Array.isArray(row.organizations) ? row.organizations.slice() : []
+    };
+  }
+
+  function findOwnerUserCandidate(userId, userProfileId, email) {
+    var cache = getDataCache();
+    var candidates = [];
+    if (cache && cache.ownerUsers && Array.isArray(cache.ownerUsers.items)) candidates = candidates.concat(cache.ownerUsers.items);
+    var db = ensureArrays(window._dbCache || getDefaults());
+    if (db && Array.isArray(db.users)) candidates = candidates.concat(db.users);
+    var normalizedEmail = String(email || '').trim().toLowerCase();
+    var normalizedUserId = String(userId || '').trim();
+    var normalizedProfileId = String(userProfileId || '').trim();
+    var looksLikeUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalizedUserId);
+    for (var i = 0; i < candidates.length; i++) {
+      var item = normalizeOwnerUserIdentity(candidates[i]);
+      if (!item) continue;
+      if (normalizedProfileId && (item.user_profile_id === normalizedProfileId || item.profileId === normalizedProfileId)) return item;
+      if (normalizedUserId && item.auth_user_id && item.auth_user_id === normalizedUserId) return item;
+      if (normalizedUserId && looksLikeUuid && String(item.id || '').trim() === normalizedUserId) return item;
+      if (normalizedEmail && item.email && item.email === normalizedEmail) return item;
+    }
+    return null;
+  }
+
+  async function ensureAssignableUserProfile(client, identifiers) {
+    if (!client || !identifiers) return null;
+    var profileId = String(identifiers.userProfileId || '').trim();
+    var authUserId = String(identifiers.authUserId || '').trim();
+    var email = String(identifiers.email || '').trim().toLowerCase();
+    var first = String(identifiers.first || '').trim();
+    var last = String(identifiers.last || '').trim();
+    var phone = String(identifiers.phone || '').trim();
+    var status = String(identifiers.status || 'active').trim() || 'active';
+
+    if (profileId) {
+      console.info('supabase request start', 'resolve user_profiles by id');
+      var byIdResponse = await client
+        .from('user_profiles')
+        .select('id, auth_user_id, email, first_name, last_name, phone, status')
+        .eq('id', profileId)
+        .maybeSingle();
+      if (byIdResponse.error) {
+        console.error('resolve user_profiles by id failed', {
+          code: byIdResponse.error.code || '',
+          message: byIdResponse.error.message || '',
+          details: byIdResponse.error.details || '',
+          hint: byIdResponse.error.hint || '',
+          raw: byIdResponse.error
+        });
+        throw byIdResponse.error;
+      }
+      if (byIdResponse.data) return byIdResponse.data;
+    }
+
+    if (authUserId) {
+      console.info('supabase request start', 'resolve user_profiles by auth_user_id');
+      var byAuthResponse = await client
+        .from('user_profiles')
+        .select('id, auth_user_id, email, first_name, last_name, phone, status')
+        .eq('auth_user_id', authUserId)
+        .maybeSingle();
+      if (byAuthResponse.error) {
+        console.error('resolve user_profiles by auth_user_id failed', {
+          code: byAuthResponse.error.code || '',
+          message: byAuthResponse.error.message || '',
+          details: byAuthResponse.error.details || '',
+          hint: byAuthResponse.error.hint || '',
+          raw: byAuthResponse.error
+        });
+        throw byAuthResponse.error;
+      }
+      if (byAuthResponse.data) return byAuthResponse.data;
+
+      console.info('supabase request start', 'user_profiles create from auth identity');
+      var createResponse = await client
+        .from('user_profiles')
+        .upsert({
+          auth_user_id: authUserId,
+          email: email,
+          first_name: first || 'Пользователь',
+          last_name: last || '',
+          phone: phone || '',
+          status: status
+        }, { onConflict: 'auth_user_id' })
+        .select('id, auth_user_id, email, first_name, last_name, phone, status')
+        .maybeSingle();
+      if (createResponse.error) {
+        console.error('create user_profiles from auth identity failed', {
+          code: createResponse.error.code || '',
+          message: createResponse.error.message || '',
+          details: createResponse.error.details || '',
+          hint: createResponse.error.hint || '',
+          raw: createResponse.error
+        });
+        throw createResponse.error;
+      }
+      if (createResponse.data) return createResponse.data;
+    }
+
+    if (email) {
+      console.info('supabase request start', 'resolve user_profiles by email');
+      var byEmailResponse = await client
+        .from('user_profiles')
+        .select('id, auth_user_id, email, first_name, last_name, phone, status')
+        .ilike('email', email)
+        .maybeSingle();
+      if (byEmailResponse.error) {
+        console.error('resolve user_profiles by email failed', {
+          code: byEmailResponse.error.code || '',
+          message: byEmailResponse.error.message || '',
+          details: byEmailResponse.error.details || '',
+          hint: byEmailResponse.error.hint || '',
+          raw: byEmailResponse.error
+        });
+        throw byEmailResponse.error;
+      }
+      if (byEmailResponse.data) return byEmailResponse.data;
+    }
+
+    return null;
+  }
+
   function pickActiveOrganization(organizations, memberships) {
     var orgIds = {};
     (memberships || []).forEach(function (item) {
@@ -1674,12 +1817,7 @@
       if (typeof window.toast === 'function') window.toast('Только владелец может назначать организации', 'err');
       return;
     }
-    var ownerUsers = window.__dataCache && window.__dataCache.ownerUsers && Array.isArray(window.__dataCache.ownerUsers.items)
-      ? window.__dataCache.ownerUsers.items
-      : [];
-    var db = ensureArrays(window._dbCache || getDefaults());
-    var user = ownerUsers.find(function (item) { return String(item.id || '') === String(userId || '') || String(item.profileId || '') === String(userId || ''); })
-      || (db.users || []).find(function (item) { return String(item.id || '') === String(userId || '') || String(item.profileId || '') === String(userId || ''); });
+    var user = findOwnerUserCandidate(userId, '', '');
     if (!user) {
       if (typeof window.toast === 'function') window.toast('Пользователь не найден', 'err');
       return;
@@ -1689,9 +1827,13 @@
     var info = document.getElementById('auo-user-info');
     if (info) info.innerHTML = '<b>' + [user.first, user.last].filter(Boolean).join(' ') + '</b><br><span style="color:var(--t3);font-size:12px;">' + (user.email || '—') + '</span>';
     var userIdInput = document.getElementById('auo-user-id');
-    if (userIdInput) userIdInput.value = user.id || '';
+    if (userIdInput) userIdInput.value = user.auth_user_id || user.id || '';
+    var authUserIdInput = document.getElementById('auo-auth-user-id');
+    if (authUserIdInput) authUserIdInput.value = user.auth_user_id || user.id || '';
     var userProfileIdInput = document.getElementById('auo-user-profile-id');
     if (userProfileIdInput) userProfileIdInput.value = user.profileId || '';
+    var emailInput = document.getElementById('auo-email');
+    if (emailInput) emailInput.value = user.email || '';
     var orgSelect = document.getElementById('auo-org');
     if (orgSelect) {
       var organizations = (window.__userSession && Array.isArray(window.__userSession.organizations)) ? window.__userSession.organizations : [];
@@ -1714,8 +1856,10 @@
     var errEl = document.getElementById('auo-err');
     var okEl = document.getElementById('auo-ok');
     var btn = document.getElementById('auo-submit-btn');
-    var userId = ((document.getElementById('auo-user-id') || {}).value || '').trim();
+    var legacyUserId = ((document.getElementById('auo-user-id') || {}).value || '').trim();
+    var authUserId = ((document.getElementById('auo-auth-user-id') || {}).value || '').trim();
     var userProfileId = ((document.getElementById('auo-user-profile-id') || {}).value || '').trim();
+    var email = ((document.getElementById('auo-email') || {}).value || '').trim().toLowerCase();
     var orgId = ((document.getElementById('auo-org') || {}).value || '').trim();
     var role = ((document.getElementById('auo-role') || {}).value || '').trim();
     var status = ((document.getElementById('auo-status') || {}).value || 'active').trim() || 'active';
@@ -1736,48 +1880,50 @@
       if (!client || !app.supabase || !app.supabase.isEnabled || !app.supabase.isEnabled()) {
         throw new Error('Supabase не настроен');
       }
-      if (!userId) throw new Error('Пользователь не выбран');
       if (!orgId) throw new Error('Выберите организацию');
       if (!role) throw new Error('Выберите роль');
       console.info('selected organization_id', orgId);
       console.info('selected role', role);
-      console.info('auth_user_id', userId);
+      console.info('auth_user_id', authUserId || legacyUserId || '');
+      console.info('resolved user_profile_id input', userProfileId || '');
+      console.info('email', email || '');
 
-      var db = ensureArrays(window._dbCache || getDefaults());
-      var user = (db.users || []).find(function (item) {
-        return String(item.id || '') === String(userId) || String(item.profileId || '') === String(userProfileId);
-      });
-      if (!user) throw new Error('Пользователь не найден');
-      if (!user.profileId && !userProfileId) {
-        console.error('profile missing for selected user:', user);
+      if (!legacyUserId && !authUserId && !userProfileId && !email) {
+        throw new Error('Пользователь не найден');
       }
 
-      var profilePayload = {
-        auth_user_id: String(user.id || userId || '').trim(),
-        email: String(user.email || '').toLowerCase(),
-        first_name: user.first || 'Пользователь',
-        last_name: user.last || '',
-        phone: user.phone || '',
-        status: user.status || 'active'
-      };
-      console.info('supabase request start', 'assign user_profiles upsert');
-      var profileResponse = await client
-        .from('user_profiles')
-        .upsert(profilePayload, { onConflict: 'auth_user_id' })
-        .select('id, auth_user_id, email, first_name, last_name, phone, status')
-        .maybeSingle();
-      if (profileResponse.error) {
-        console.error('assign user profile upsert failed', {
-          code: profileResponse.error.code || '',
-          message: profileResponse.error.message || '',
-          details: profileResponse.error.details || '',
-          hint: profileResponse.error.hint || '',
-          raw: profileResponse.error
+      var selectedUser = findOwnerUserCandidate(legacyUserId || authUserId, userProfileId, email);
+      if (!selectedUser) {
+        selectedUser = normalizeOwnerUserIdentity({
+          auth_user_id: authUserId || legacyUserId,
+          profileId: userProfileId,
+          email: email
         });
-        throw profileResponse.error;
+      }
+      if (!selectedUser || (!selectedUser.auth_user_id && !selectedUser.profileId && !selectedUser.email)) {
+        throw new Error('Не удалось найти пользователя в public.user_profiles');
       }
 
-      var profileId = profileResponse.data && profileResponse.data.id ? profileResponse.data.id : (user.profileId || userProfileId || '');
+      var profileRow = await ensureAssignableUserProfile(client, {
+        userProfileId: selectedUser.profileId || userProfileId,
+        authUserId: selectedUser.auth_user_id || authUserId || legacyUserId,
+        email: selectedUser.email || email,
+        first: selectedUser.first,
+        last: selectedUser.last,
+        phone: selectedUser.phone,
+        status: selectedUser.status || 'active'
+      });
+      if (!profileRow || !profileRow.id) {
+        console.error('failed to create or resolve user profile', {
+          legacyUserId: legacyUserId,
+          authUserId: authUserId,
+          userProfileId: userProfileId,
+          email: email
+        });
+        throw new Error('Не удалось создать профиль пользователя');
+      }
+
+      var profileId = String(profileRow.id || selectedUser.profileId || userProfileId || '').trim();
       if (!profileId) throw new Error('Не удалось определить профиль пользователя');
       console.info('resolved user_profile_id', profileId);
 
@@ -1836,6 +1982,26 @@
           throw insertMemberResponse.error;
         }
       }
+      console.info('supabase request start', 'organization_members verify');
+      var verifyMemberResponse = await client
+        .from('organization_members')
+        .select('id, organization_id, user_profile_id, role, status')
+        .eq('organization_id', orgId)
+        .eq('user_profile_id', profileId)
+        .maybeSingle();
+      if (verifyMemberResponse.error) {
+        console.error('organization_members verify failed', {
+          code: verifyMemberResponse.error.code || '',
+          message: verifyMemberResponse.error.message || '',
+          details: verifyMemberResponse.error.details || '',
+          hint: verifyMemberResponse.error.hint || '',
+          raw: verifyMemberResponse.error
+        });
+        throw verifyMemberResponse.error;
+      }
+      if (!verifyMemberResponse.data || !verifyMemberResponse.data.id) {
+        throw new Error('Не удалось подтвердить сохранение membership');
+      }
       console.info('membership saved');
 
       try {
@@ -1856,11 +2022,14 @@
       }
 
       if (typeof window.closeModal === 'function') window.closeModal('assignUserOrg');
+      if (window.retryOwnerUsersLoad) {
+        try { await window.retryOwnerUsersLoad(); } catch (ownerReloadError) {}
+      }
       if (typeof window.renderAdmin === 'function') window.renderAdmin();
       if (typeof window.renderOwner === 'function') window.renderOwner();
       if (typeof window.toast === 'function') window.toast('Пользователь добавлен в организацию', 'ok');
       if (window.logAudit) {
-        window.logAudit(auditActor(), 'Назначил организацию и роль пользователю ' + user.email + ' → ' + orgId + ' / ' + role, 'Пользователи');
+        window.logAudit(auditActor(), 'Назначил организацию и роль пользователю ' + (profileRow.email || selectedUser.email || email || legacyUserId) + ' → ' + orgId + ' / ' + role, 'Пользователи');
       }
       return true;
     } catch (error) {
@@ -1943,6 +2112,35 @@
           raw: response.error
         });
         throw response.error;
+      }
+
+      if (response.data && response.data.user) {
+        try {
+          console.info('supabase request start', 'registration user_profiles upsert');
+          var registrationProfileResponse = await client
+            .from('user_profiles')
+            .upsert({
+              auth_user_id: response.data.user.id,
+              email: email,
+              first_name: first,
+              last_name: last,
+              phone: '',
+              status: 'pending'
+            }, { onConflict: 'auth_user_id' })
+            .select('id, auth_user_id, email, first_name, last_name, phone, status')
+            .maybeSingle();
+          if (registrationProfileResponse.error) {
+            console.error('registration user_profiles upsert failed', {
+              code: registrationProfileResponse.error.code || '',
+              message: registrationProfileResponse.error.message || '',
+              details: registrationProfileResponse.error.details || '',
+              hint: registrationProfileResponse.error.hint || '',
+              raw: registrationProfileResponse.error
+            });
+          }
+        } catch (registrationProfileError) {
+          console.error('registration user_profiles upsert failed', registrationProfileError);
+        }
       }
 
       var db = ensureArrays(window._dbCache || readLocalState() || getDefaults());

@@ -2205,7 +2205,7 @@ function renderSupAnalytics(){
 function renderAdmin(){
   const db=dbGet();
   const ownerCache = window.__dataCache && window.__dataCache.ownerUsers ? window.__dataCache.ownerUsers : null;
-  const allUsers = ownerCache && Array.isArray(ownerCache.items) ? ownerCache.items : db.users.filter(function(u){ return u.status !== 'pending'; });
+  const allUsers = ownerCache && Array.isArray(ownerCache.items) ? ownerCache.items : [];
   const pending = allUsers.filter(function(u){ return u.status === 'pending'; });
   const all = allUsers.filter(function(u){ return u.status !== 'pending'; });
   document.getElementById('pendCnt').textContent=pending.length;
