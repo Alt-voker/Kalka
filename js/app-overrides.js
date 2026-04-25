@@ -598,29 +598,120 @@
     };
   }
 
+  function getDataCache() {
+    if (!window.__dataCache || typeof window.__dataCache !== 'object') {
+      window.__dataCache = {};
+    }
+    if (!window.__dataCache.suppliersByOrg || typeof window.__dataCache.suppliersByOrg !== 'object') {
+      window.__dataCache.suppliersByOrg = {};
+    }
+    if (!window.__dataCache.suppliersPromisesByOrg || typeof window.__dataCache.suppliersPromisesByOrg !== 'object') {
+      window.__dataCache.suppliersPromisesByOrg = {};
+    }
+    if (!window.__dataCache.suppliersErrorsByOrg || typeof window.__dataCache.suppliersErrorsByOrg !== 'object') {
+      window.__dataCache.suppliersErrorsByOrg = {};
+    }
+    if (!window.__dataCache.suppliersLoadingByOrg || typeof window.__dataCache.suppliersLoadingByOrg !== 'object') {
+      window.__dataCache.suppliersLoadingByOrg = {};
+    }
+    return window.__dataCache;
+  }
+
+  function supplierErrorInfo(error) {
+    return {
+      code: error && error.code ? error.code : '',
+      message: error && error.message ? error.message : '',
+      details: error && error.details ? error.details : '',
+      hint: error && error.hint ? error.hint : '',
+      raw: error
+    };
+  }
+
   async function loadSuppliersForOrganization(organizationId) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     var orgId = String(organizationId || '').trim();
     if (!client || !orgId) return [];
-    var response = await client
-      .from('suppliers')
-      .select('*')
-      .eq('organization_id', orgId)
-      .eq('status', 'active')
-      .order('name', { ascending: true });
-    if (response.error) {
-      console.error('loadSuppliersForOrganization failed', {
-        code: response.error.code || '',
-        message: response.error.message || '',
-        details: response.error.details || '',
-        hint: response.error.hint || '',
-        raw: response.error
-      });
-      throw response.error;
+    var cache = getDataCache();
+    if (Array.isArray(cache.suppliersByOrg[orgId])) {
+      return cache.suppliersByOrg[orgId].slice();
     }
-    var suppliers = (response.data || []).map(normalizeSupplierRow).filter(Boolean);
-    console.log('Suppliers loaded:', suppliers.length, 'organization:', orgId);
-    return suppliers;
+    if (cache.suppliersPromisesByOrg[orgId]) {
+      return cache.suppliersPromisesByOrg[orgId];
+    }
+    cache.suppliersLoadingByOrg[orgId] = true;
+    delete cache.suppliersErrorsByOrg[orgId];
+    var promise = (async function () {
+      try {
+        if (window.performance && window.performance.mark) window.performance.mark('suppliers_load_start');
+      } catch (markError) {}
+      console.info('suppliers_load_start', orgId);
+      try {
+        var response = await client
+          .from('suppliers')
+          .select('id, organization_id, name, phone, contact, status, created_at')
+          .eq('organization_id', orgId)
+          .eq('status', 'active')
+          .order('name', { ascending: true })
+          .limit(100);
+        if (response.error) {
+          console.error('loadSuppliersForOrganization failed', {
+            request: 'suppliers',
+            organizationId: orgId,
+            code: response.error.code || '',
+            message: response.error.message || '',
+            details: response.error.details || '',
+            hint: response.error.hint || '',
+            raw: response.error
+          });
+        try {
+          if (window.performance && window.performance.mark) window.performance.mark('suppliers_load_failed');
+        } catch (markError) {}
+        console.info('suppliers_load_failed', orgId);
+        if (typeof window.__printPerfTable === 'function') {
+          window.__printPerfTable();
+        }
+        cache.suppliersErrorsByOrg[orgId] = supplierErrorInfo(response.error);
+        cache.suppliersByOrg[orgId] = [];
+        return [];
+      }
+      var suppliers = (response.data || []).map(normalizeSupplierRow).filter(Boolean);
+      cache.suppliersByOrg[orgId] = suppliers.slice();
+      delete cache.suppliersErrorsByOrg[orgId];
+      try {
+        if (window.performance && window.performance.mark) window.performance.mark('suppliers_load_success');
+      } catch (markError) {}
+      console.info('suppliers_load_success', orgId, suppliers.length);
+      if (typeof window.__printPerfTable === 'function') {
+        window.__printPerfTable();
+      }
+      return suppliers.slice();
+      } catch (error) {
+        console.error('loadSuppliersForOrganization failed', {
+          request: 'suppliers',
+          organizationId: orgId,
+          code: error && error.code ? error.code : '',
+          message: error && error.message ? error.message : '',
+          details: error && error.details ? error.details : '',
+          hint: error && error.hint ? error.hint : '',
+          raw: error
+        });
+        try {
+          if (window.performance && window.performance.mark) window.performance.mark('suppliers_load_failed');
+        } catch (markError) {}
+        console.info('suppliers_load_failed', orgId);
+        if (typeof window.__printPerfTable === 'function') {
+          window.__printPerfTable();
+        }
+        cache.suppliersErrorsByOrg[orgId] = supplierErrorInfo(error);
+        cache.suppliersByOrg[orgId] = [];
+        return [];
+      } finally {
+        cache.suppliersLoadingByOrg[orgId] = false;
+        delete cache.suppliersPromisesByOrg[orgId];
+      }
+    })();
+    cache.suppliersPromisesByOrg[orgId] = promise;
+    return promise;
   }
 
   window.loadSuppliersForOrganization = loadSuppliersForOrganization;
@@ -723,12 +814,7 @@
       };
     });
 
-    try {
-      session.suppliers = await loadSuppliersWithTimeout(targetOrg.id, 2500);
-    } catch (supplierError) {
-      console.error('loadSuppliersForOrganization failed after organization switch:', supplierError);
-      session.suppliers = [];
-    }
+    session.suppliers = Array.isArray(session.suppliers) ? session.suppliers : [];
 
     var baseDb = ensureArrays(window._dbCache || getDefaults());
     baseDb.users = session.dbUsers || [];

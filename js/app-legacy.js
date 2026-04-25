@@ -1653,20 +1653,58 @@ function repeatVisibleOrder(orderId){
 function renderSuppliers(){
   var el=document.getElementById('supGrid');if(!el)return;
   var activeOrgId = String((window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
+  var cache = window.__dataCache || {};
   var sessionSuppliers = (window.__userSession && Array.isArray(window.__userSession.suppliers)) ? window.__userSession.suppliers : [];
   var visible=getUserVisibleSuppliers(CU);
   var supSub=document.getElementById('supSub');
-  if(!visible.length && activeOrgId && window.loadSuppliersForOrganization && !window.__loginInProgress && !window.__restoreInProgress){
+  var cachedSuppliers = activeOrgId && cache.suppliersByOrg ? cache.suppliersByOrg[activeOrgId] : null;
+  var loading = !!(activeOrgId && cache.suppliersLoadingByOrg && cache.suppliersLoadingByOrg[activeOrgId]);
+  var errorInfo = activeOrgId && cache.suppliersErrorsByOrg ? cache.suppliersErrorsByOrg[activeOrgId] : null;
+  if(!activeOrgId){
+    if(supSub) supSub.textContent='Организация не выбрана';
+    el.innerHTML='<div class="empty"><div class="empty-ico">🔒</div><div class="empty-txt">Организация не выбрана</div></div>';
+    return;
+  }
+  if(visible.length){
+    sessionSuppliers = visible.slice();
+  } else if(Array.isArray(cachedSuppliers) && cachedSuppliers.length){
+    sessionSuppliers = cachedSuppliers.slice();
+  }
+  if(!sessionSuppliers.length && loading){
+    if(supSub) supSub.textContent='Загрузка поставщиков...';
+    el.innerHTML='<div class="empty"><div class="empty-ico">🏭</div><div class="empty-txt">Загрузка поставщиков...</div></div>';
+    return;
+  }
+  if(!sessionSuppliers.length && errorInfo){
+    if(supSub) supSub.textContent='Не удалось загрузить поставщиков';
+    el.innerHTML='<div class="empty"><div class="empty-ico">⚠️</div><div class="empty-txt">Не удалось загрузить поставщиков. Повторить</div><div style="margin-top:10px;"><button class="btnA" style="width:auto;min-width:170px;" onclick="window.retrySuppliersLoad && window.retrySuppliersLoad(\''+activeOrgId.replace(/'/g,"\\'")+'\')">Повторить</button></div></div>';
+    return;
+  }
+  if(!sessionSuppliers.length && activeOrgId && window.loadSuppliersForOrganization && !window.__loginInProgress && !window.__restoreInProgress){
+    if(supSub) supSub.textContent='Загрузка поставщиков...';
     el.innerHTML='<div class="empty"><div class="empty-ico">🏭</div><div class="empty-txt">Загрузка поставщиков...</div></div>';
     window.loadSuppliersForOrganization(activeOrgId).then(function(items){
       if(window.__userSession){
         window.__userSession.suppliers = Array.isArray(items) ? items.slice() : [];
       }
+      if(window.__dataCache && window.__dataCache.suppliersByOrg){
+        window.__dataCache.suppliersByOrg[activeOrgId] = Array.isArray(items) ? items.slice() : [];
+      }
       renderSuppliers();
     }).catch(function(error){
       console.error('loadSuppliersForOrganization failed for suppliers page:', error);
-      if(supSub) supSub.textContent='Нет поставщиков';
-      el.innerHTML='<div class="empty"><div class="empty-ico">🏭</div><div class="empty-txt">Нет поставщиков</div></div>';
+      if(window.__dataCache){
+        window.__dataCache.suppliersErrorsByOrg = window.__dataCache.suppliersErrorsByOrg || {};
+        window.__dataCache.suppliersErrorsByOrg[activeOrgId] = {
+          code: error && error.code ? error.code : '',
+          message: error && error.message ? error.message : '',
+          details: error && error.details ? error.details : '',
+          hint: error && error.hint ? error.hint : '',
+          raw: error
+        };
+      }
+      if(supSub) supSub.textContent='Не удалось загрузить поставщиков';
+      el.innerHTML='<div class="empty"><div class="empty-ico">⚠️</div><div class="empty-txt">Не удалось загрузить поставщиков. Повторить</div><div style="margin-top:10px;"><button class="btnA" style="width:auto;min-width:170px;" onclick="window.retrySuppliersLoad && window.retrySuppliersLoad(\''+activeOrgId.replace(/'/g,"\\'")+'\')">Повторить</button></div></div>';
     });
     return;
   }
@@ -2348,6 +2386,30 @@ function getUserVisibleOrders(user){
     return allowedIds.indexOf(String(order.restId||''))>=0;
   });
 }
+
+window.retrySuppliersLoad = function (organizationId) {
+  var orgId = String(organizationId || (window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
+  if (!orgId || !window.loadSuppliersForOrganization) return;
+  var cache = window.__dataCache || {};
+  if (cache.suppliersErrorsByOrg) delete cache.suppliersErrorsByOrg[orgId];
+  if (cache.suppliersLoadingByOrg) cache.suppliersLoadingByOrg[orgId] = true;
+  window.loadSuppliersForOrganization(orgId).then(function(items){
+    if(window.__userSession){
+      window.__userSession.suppliers = Array.isArray(items) ? items.slice() : [];
+    }
+    if(window.__dataCache && window.__dataCache.suppliersByOrg){
+      window.__dataCache.suppliersByOrg[orgId] = Array.isArray(items) ? items.slice() : [];
+    }
+    renderSuppliers();
+  }).catch(function(error){
+    console.error('retrySuppliersLoad failed:', error);
+    renderSuppliers();
+  }).finally(function(){
+    if (window.__dataCache && window.__dataCache.suppliersLoadingByOrg) {
+      window.__dataCache.suppliersLoadingByOrg[orgId] = false;
+    }
+  });
+};
 
 function getUserOutgoingOrders(user){
   if(!user) return [];

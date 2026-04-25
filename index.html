@@ -8,6 +8,11 @@
 <title>КальКа — Платформа закупок</title>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
 <script>
+  try {
+    if (window.performance && window.performance.mark) {
+      window.performance.mark('app_start');
+    }
+  } catch (e) {}
   window.__authServerFirstMode = true;
   window.__loginInProgress = false;
   window.__restoreInProgress = false;

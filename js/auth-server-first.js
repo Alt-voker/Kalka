@@ -14,7 +14,45 @@
   };
 
   var bootstrapPromises = {};
+  var perfMarks = window.__perfMarks = window.__perfMarks || {};
   var currentState = window.__authState || STATE.UNAUTHENTICATED;
+
+  function markPerf(name) {
+    try {
+      if (window.performance && window.performance.mark) window.performance.mark(name);
+      perfMarks[name] = (window.performance && window.performance.now ? window.performance.now() : Date.now());
+    } catch (error) {}
+  }
+
+  function printPerfTable() {
+    try {
+      var order = [
+        'app_start',
+        'auth_start',
+        'auth_success',
+        'profile_loaded',
+        'memberships_loaded',
+        'organizations_loaded',
+        'session_ready',
+        'app_shell_rendered',
+        'suppliers_load_start',
+        'suppliers_load_success',
+        'suppliers_load_failed'
+      ];
+      var start = perfMarks.app_start;
+      var rows = order.map(function (name) {
+        var point = perfMarks[name];
+        return {
+          step: name,
+          ms: typeof point === 'number' && typeof start === 'number' ? Math.round(point - start) : '',
+          at: typeof point === 'number' ? Math.round(point) : ''
+        };
+      });
+      if (console && console.table) console.table(rows);
+    } catch (error) {}
+  }
+
+  window.__printPerfTable = printPerfTable;
 
   function setState(next, details) {
     currentState = next;
@@ -251,6 +289,7 @@
 
     if (response && response.data) {
       console.info('session: profile loaded');
+      markPerf('profile_loaded');
       return response.data;
     }
 
@@ -297,6 +336,7 @@
     }
 
     console.info('session: profile loaded');
+    markPerf('profile_loaded');
     return upsertResponse.data || buildFallbackProfile(authUser);
   }
 
@@ -339,6 +379,7 @@
 
     var memberships = response && Array.isArray(response.data) ? response.data.slice() : [];
     console.info('session: memberships loaded');
+    markPerf('memberships_loaded');
     return memberships;
   }
 
@@ -383,6 +424,7 @@
 
     var organizations = response && Array.isArray(response.data) ? response.data.slice() : [];
     console.info('session: organizations loaded');
+    markPerf('organizations_loaded');
     return organizations;
   }
 
@@ -394,6 +436,8 @@
       var noOrgSession = buildNoOrganizationSession(authUser, profile);
       applySession(noOrgSession);
       console.info('session: ready');
+      markPerf('session_ready');
+      printPerfTable();
       return noOrgSession;
     }
 
@@ -403,12 +447,16 @@
       var noOrganizationsSession = buildNoOrganizationSession(authUser, profile);
       applySession(noOrganizationsSession);
       console.info('session: ready');
+      markPerf('session_ready');
+      printPerfTable();
       return noOrganizationsSession;
     }
 
     var session = buildSession(authUser, profile, memberships, organizations);
     applySession(session);
     console.info('session: ready');
+    markPerf('session_ready');
+    printPerfTable();
     return session;
   }
 
@@ -429,6 +477,8 @@
       window.enterApp(currentUser);
     }
     ensureAppShellVisible();
+    markPerf('app_shell_rendered');
+    printPerfTable();
   }
 
   async function startLoginFlow(email, password) {
@@ -437,6 +487,7 @@
       throw new Error('Сервис авторизации временно недоступен. Обратитесь к администратору');
     }
     console.info('auth: signIn started');
+    markPerf('auth_start');
     var response = await withTimeout(
       client.auth.signInWithPassword({ email: email, password: password }),
       10000,
@@ -516,6 +567,7 @@
       if (session.noOrganization) {
         console.info('no organization mode');
       }
+      markPerf('auth_success');
       openAppShell(session.currentUser);
       window.__sessionReady = true;
       return session;
@@ -545,6 +597,7 @@
         return bootstrapSession(authUser);
       });
       if (session && session.currentUser) {
+        markPerf('auth_success');
         openAppShell(session.currentUser);
         window.__sessionReady = true;
         return true;
