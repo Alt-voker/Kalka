@@ -209,7 +209,8 @@
   function buildSession(authUser, profile, memberships, organizations) {
     var activeMembership = memberships[0] || null;
     var activeOrganization = organizations[0] || null;
-    var role = activeMembership && activeMembership.role ? activeMembership.role : 'manager';
+    var rawRole = activeMembership && activeMembership.role ? activeMembership.role : 'manager';
+    var role = rawRole === 'platform_owner' ? 'owner' : rawRole;
     var currentUser = {
       id: profile.id,
       email: profile.email || (authUser && authUser.email) || '',
@@ -454,50 +455,131 @@
   }
 
   async function bootstrapSession(authUser) {
-    var profile;
-    try {
-      profile = await loadUserProfile(authUser);
-    } catch (profileError) {
-      if (profileError && profileError.message === 'Не удалось создать профиль пользователя') {
-        throw profileError;
-      }
-      throw new Error('Не удалось создать профиль пользователя');
+    var client = getClient();
+    if (!client || !authUser) return null;
+    setState(STATE.LOADING_PROFILE, { authUserId: authUser.id });
+    console.info('supabase request start', 'get_my_session');
+    var response = await withTimeout(
+      client.rpc('get_my_session'),
+      8000,
+      'Не удалось загрузить профиль пользователя'
+    ).catch(function (error) {
+      console.error('rpc get_my_session failed', {
+        request: 'get_my_session',
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
+      });
+      throw error;
+    });
+    if (response && response.error) {
+      console.error('rpc get_my_session failed', {
+        request: 'get_my_session',
+        code: response.error.code || '',
+        message: response.error.message || '',
+        details: response.error.details || '',
+        hint: response.error.hint || '',
+        raw: response.error
+      });
+      throw response.error;
     }
-    setState(STATE.LOADING_MEMBERSHIPS, { authUserId: authUser.id, profileId: profile.id });
-    var memberships;
-    try {
-      memberships = await loadMemberships(profile.id);
-    } catch (membershipError) {
-      throw new Error('Не удалось загрузить доступы пользователя');
+    var row = Array.isArray(response && response.data) ? response.data[0] || null : (response && response.data) || null;
+    if (!row) {
+      throw new Error('Не удалось загрузить профиль пользователя');
     }
-    console.info('initUserSession memberships loaded', memberships.length);
-    if (!memberships.length) {
-      var noOrgSession = buildNoOrganizationSession(authUser, profile);
-      applySession(noOrgSession);
-      console.info('session: ready');
-      markPerf('session_ready');
-      printPerfTable();
-      return noOrgSession;
-    }
+    var profile = {
+      id: row.profile_id || '',
+      auth_user_id: row.auth_user_id || authUser.id,
+      email: row.email || authUser.email || '',
+      first_name: row.first_name || 'Пользователь',
+      last_name: row.last_name || '',
+      phone: '',
+      status: row.status || 'active',
+      created_at: '',
+      updated_at: ''
+    };
+    var memberships = Array.isArray(row.memberships) ? row.memberships.slice() : [];
+    var organizations = Array.isArray(row.organizations) ? row.organizations.slice() : [];
+    var activeOrganization = row.active_organization_id
+      ? organizations.find(function (org) { return String(org.id || '') === String(row.active_organization_id || ''); }) || null
+      : null;
+    if (!activeOrganization && organizations.length) activeOrganization = organizations[0];
+    var activeMembership = activeOrganization
+      ? memberships.find(function (item) { return String(item.organization_id || '') === String(activeOrganization.id || ''); }) || memberships[0] || null
+      : memberships[0] || null;
+    var noOrganization = !!row.no_organization || !memberships.length;
+    var role = noOrganization ? 'unassigned' : (row.role || (activeMembership && activeMembership.role) || 'manager');
+    var session = noOrganization
+      ? buildNoOrganizationSession(authUser, profile)
+      : buildSession(authUser, profile, memberships.map(function (item) {
+          return {
+            id: item.id || '',
+            organization_id: item.organization_id || '',
+            user_profile_id: item.user_profile_id || profile.id,
+            role: item.role || 'manager',
+            status: item.status || 'active',
+            created_at: item.created_at || '',
+            updated_at: item.updated_at || ''
+          };
+        }), organizations.map(function (item) {
+          return {
+            id: item.id || '',
+            name: item.name || '',
+            type: item.type || 'organization',
+            status: item.status || 'active',
+            created_at: item.created_at || '',
+            updated_at: item.updated_at || ''
+          };
+        }));
 
-    setState(STATE.LOADING_ORGANIZATIONS, { authUserId: authUser.id, profileId: profile.id, membershipsCount: memberships.length });
-    var organizations;
-    try {
-      organizations = await loadOrganizations(memberships);
-    } catch (organizationError) {
-      throw new Error('Не удалось загрузить организации пользователя');
+    session.profile = profile;
+    session.memberships = memberships;
+    session.organizations = organizations;
+    session.activeOrganization = activeOrganization;
+    session.activeOrganizationId = activeOrganization ? activeOrganization.id : null;
+    session.currentMembership = activeMembership;
+    session.role = role;
+    session.noOrganization = noOrganization;
+    session.permissions = noOrganization ? [] : ((window.ROLES && window.ROLES[role] && window.ROLES[role].pages) ? window.ROLES[role].pages.slice() : []);
+    session.currentUser.role = role;
+    session.currentUser.noOrganization = noOrganization;
+    session.currentUser.company = noOrganization ? 'КальКа' : ((activeOrganization && activeOrganization.name) || session.currentUser.company || 'КальКа');
+    session.currentUser.organizationId = noOrganization ? null : session.activeOrganizationId;
+    session.currentUser.activeOrganizationId = noOrganization ? null : session.activeOrganizationId;
+    session.currentUser.activeOrganizationName = activeOrganization && activeOrganization.name ? activeOrganization.name : '';
+    session.currentUser.memberships = memberships.map(function (item) {
+      return {
+        organizationId: item.organization_id,
+        role: item.role === 'platform_owner' ? 'owner' : (item.role || 'manager'),
+        status: item.status
+      };
+    });
+    if (memberships.length) {
+      console.info('session: memberships loaded');
+      markPerf('memberships_loaded');
+      console.info('initUserSession memberships loaded', memberships.length);
     }
-    if (!organizations.length) {
-      var noOrganizationsSession = buildNoOrganizationSession(authUser, profile);
-      noOrganizationsSession.errorMessage = 'Не удалось загрузить организации пользователя';
-      applySession(noOrganizationsSession);
-      console.info('session: ready');
-      markPerf('session_ready');
-      printPerfTable();
-      return noOrganizationsSession;
+    if (organizations.length || noOrganization) {
+      console.info('session: organizations loaded');
+      markPerf('organizations_loaded');
     }
-
-    var session = buildSession(authUser, profile, memberships, organizations);
+    console.info('session: profile loaded');
+    markPerf('profile_loaded');
+    console.info('initUserSession resolved', {
+      authUserId: authUser.id,
+      profileId: profile.id,
+      membershipsCount: memberships.length,
+      organizationsCount: organizations.length,
+      activeOrganizationId: session.activeOrganizationId,
+      noOrganization: noOrganization
+    });
+    if (memberships.length && !organizations.length) {
+      var noOrganizationsError = new Error('Не удалось загрузить организации пользователя');
+      noOrganizationsError.code = 'NO_ORGANIZATIONS';
+      throw noOrganizationsError;
+    }
     applySession(session);
     console.info('session: ready');
     markPerf('session_ready');
@@ -601,6 +683,10 @@
     if (window.__sessionReady && window.__userSession && window.__userSession.currentUser) {
       openAppShell(window.__userSession.currentUser);
       return window.__userSession;
+    }
+
+    if (typeof window.clearClientRuntimeState === 'function') {
+      window.clearClientRuntimeState();
     }
 
     window.__loginInProgress = true;
@@ -710,9 +796,13 @@
     window.__loginInProgress = false;
     window.__restoreInProgress = false;
     try {
-      window.__userSession = null;
-      window.CU = null;
-      window.activeRest = { id: 'r0', name: 'Все рестораны', emoji: '🌐' };
+      if (typeof window.clearClientRuntimeState === 'function') {
+        window.clearClientRuntimeState();
+      } else {
+        window.__userSession = null;
+        window.CU = null;
+        window.activeRest = { id: 'r0', name: 'Все рестораны', emoji: '🌐' };
+      }
     } catch (error) {}
     if (client && client.auth && client.auth.signOut) {
       return client.auth.signOut().catch(function (error) {

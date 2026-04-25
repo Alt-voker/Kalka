@@ -151,9 +151,19 @@
   function clearClientRuntimeState() {
     try {
       window.__userSession = null;
+      window.__sessionReady = false;
+      window.__loginInProgress = false;
+      window.__restoreInProgress = false;
       window._dbCache = null;
       window.CU = null;
       window.activeRest = { id: 'r0', name: 'Все рестораны', emoji: '🌐' };
+      window.__dataCache = {
+        suppliersByOrg: {},
+        suppliersPromisesByOrg: {},
+        suppliersErrorsByOrg: {},
+        suppliersLoadingByOrg: {},
+        ownerUsers: { items: null, loading: false, error: null, promise: null, loadedAt: 0 }
+      };
       if (typeof window.cart !== 'undefined') window.cart = [];
       if (typeof window.tenderChanges !== 'undefined') window.tenderChanges = [];
       if (typeof window.tenderLoaded !== 'undefined') window.tenderLoaded = false;
@@ -733,92 +743,64 @@
     cache.ownerUsers.error = null;
     cache.ownerUsers.promise = (async function () {
       try {
-        console.info('supabase request start', 'owner user_profiles');
-        var profilesResponse = await client
-          .from('user_profiles')
-          .select('id, auth_user_id, email, first_name, last_name, status, created_at')
-          .order('created_at', { ascending: false });
-        if (profilesResponse.error) {
-          console.error('owner user_profiles query failed', {
-            request: 'owner user_profiles',
-            code: profilesResponse.error.code || '',
-            message: profilesResponse.error.message || '',
-            details: profilesResponse.error.details || '',
-            hint: profilesResponse.error.hint || '',
-            raw: profilesResponse.error
-          });
-          cache.ownerUsers.error = supplierErrorInfo(profilesResponse.error);
-          cache.ownerUsers.items = [];
-          return [];
-        }
-        console.info('supabase request start', 'owner organization_members');
-        var membershipsResponse = await client
-          .from('organization_members')
-          .select('id, organization_id, user_profile_id, role, status, created_at')
-          .order('created_at', { ascending: true });
-        if (membershipsResponse.error) {
-          console.error('owner organization_members query failed', {
-            request: 'owner organization_members',
-            code: membershipsResponse.error.code || '',
-            message: membershipsResponse.error.message || '',
-            details: membershipsResponse.error.details || '',
-            hint: membershipsResponse.error.hint || '',
-            raw: membershipsResponse.error
-          });
-          cache.ownerUsers.error = supplierErrorInfo(membershipsResponse.error);
-          cache.ownerUsers.items = [];
-          return [];
-        }
-        var profiles = (profilesResponse.data || []).map(function (row) {
+        var rows = await rpcOwnerListUsers(client);
+        var orgMap = {};
+        (window.__userSession && Array.isArray(window.__userSession.organizations) ? window.__userSession.organizations : []).forEach(function (org) {
+          if (org && org.id) orgMap[String(org.id)] = org;
+        });
+        var profiles = rows.map(function (row) {
           return {
-            id: row.id,
+            id: row.profile_id || '',
             auth_user_id: row.auth_user_id || '',
             email: String(row.email || '').toLowerCase(),
             first_name: row.first_name || '',
             last_name: row.last_name || '',
             status: row.status || 'active',
             created_at: row.created_at || '',
-            memberships: []
+            memberships: parseRpcList(row.memberships)
           };
         }).filter(Boolean);
-        var memberships = (membershipsResponse.data || []).map(function (row) {
-          return {
-            id: row.id,
-            organization_id: row.organization_id || '',
-            user_profile_id: row.user_profile_id || '',
-            role: row.role || 'manager',
-            status: row.status || 'active',
-            created_at: row.created_at || ''
-          };
-        }).filter(Boolean);
-        var orgMap = {};
-        (window.__userSession && Array.isArray(window.__userSession.organizations) ? window.__userSession.organizations : []).forEach(function (org) {
-          if (org && org.id) orgMap[String(org.id)] = org;
-        });
-        var items = profiles.map(function (profile) {
-          var userMemberships = memberships.filter(function (member) {
-            return String(member.user_profile_id || '') === String(profile.id || '');
+        var memberships = rows.reduce(function (acc, row) {
+          parseRpcList(row.memberships).forEach(function (member) {
+            acc.push({
+              id: member.id || '',
+              organization_id: member.organization_id || '',
+              user_profile_id: member.user_profile_id || row.profile_id || '',
+              role: member.role || 'manager',
+              status: member.status || 'active',
+              created_at: member.created_at || ''
+            });
           });
+          return acc;
+        }, []);
+        var items = rows.map(function (row) {
+          var userMemberships = parseRpcList(row.memberships).map(function (member) {
+            return {
+              organizationId: member.organization_id,
+              role: normalizeUiRole(member.role),
+              status: member.status
+            };
+          });
+          var orgs = parseRpcList(row.organizations).map(function (org) {
+            return org;
+          });
+          var firstMembership = userMemberships[0] || null;
+          var orgId = firstMembership ? String(firstMembership.organizationId || '') : '';
           return {
-            id: profile.auth_user_id || profile.id,
-            profileId: profile.id,
-            authUserId: profile.auth_user_id || '',
-            first: profile.first_name || '',
-            last: profile.last_name || '',
-            email: profile.email || '',
-            role: userMemberships[0] ? normalizeUiRole(userMemberships[0].role) : 'unassigned',
-            status: profile.status || 'active',
-            organizationId: userMemberships[0] ? userMemberships[0].organization_id || '' : '',
-            company: userMemberships[0] && orgMap[userMemberships[0].organization_id] ? (orgMap[userMemberships[0].organization_id].name || '') : '',
-            noOrganization: !userMemberships.length,
-            memberships: userMemberships.map(function (member) {
-              return {
-                organizationId: member.organization_id,
-                role: normalizeUiRole(member.role),
-                status: member.status
-              };
-            }),
-            created: profile.created_at ? String(profile.created_at).slice(0, 10) : ''
+            id: row.auth_user_id || row.profile_id || '',
+            profileId: row.profile_id || '',
+            authUserId: row.auth_user_id || '',
+            first: row.first_name || '',
+            last: row.last_name || '',
+            email: row.email || '',
+            role: row.role === 'platform_owner' ? 'owner' : (row.role || (firstMembership ? firstMembership.role : 'unassigned')),
+            status: row.status || 'active',
+            organizationId: orgId,
+            company: orgMap[orgId] ? (orgMap[orgId].name || '') : ((orgs[0] && orgs[0].name) || ''),
+            noOrganization: !!row.no_organization,
+            memberships: userMemberships,
+            organizations: orgs,
+            created: row.created_at ? String(row.created_at).slice(0, 10) : ''
           };
         });
         cache.ownerUsers.items = items.slice();
@@ -886,8 +868,6 @@
     var cache = getDataCache();
     var candidates = [];
     if (cache && cache.ownerUsers && Array.isArray(cache.ownerUsers.items)) candidates = candidates.concat(cache.ownerUsers.items);
-    var db = ensureArrays(window._dbCache || getDefaults());
-    if (db && Array.isArray(db.users)) candidates = candidates.concat(db.users);
     var normalizedEmail = String(email || '').trim().toLowerCase();
     var normalizedUserId = String(userId || '').trim();
     var normalizedProfileId = String(userProfileId || '').trim();
@@ -902,6 +882,137 @@
     }
     return null;
   }
+
+  function parseRpcList(value) {
+    if (!value) return [];
+    if (Array.isArray(value)) return value.slice();
+    if (typeof value === 'string') {
+      try {
+        var parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        return [];
+      }
+    }
+    return [];
+  }
+
+  async function rpcOwnerListUsers(client) {
+    console.info('supabase request start', 'owner_list_users');
+    var response = await withTimeout(
+      client.rpc('owner_list_users'),
+      8000,
+      'Не удалось загрузить пользователей'
+    ).catch(function (error) {
+      console.error('rpc owner_list_users failed', {
+        request: 'owner_list_users',
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
+      });
+      throw error;
+    });
+    if (response && response.error) {
+      console.error('rpc owner_list_users failed', {
+        request: 'owner_list_users',
+        code: response.error.code || '',
+        message: response.error.message || '',
+        details: response.error.details || '',
+        hint: response.error.hint || '',
+        raw: response.error
+      });
+      throw response.error;
+    }
+    return Array.isArray(response && response.data) ? response.data.slice() : [];
+  }
+
+  async function rpcAssignUserToOrganization(client, payload) {
+    console.info('supabase request start', 'owner_assign_user_to_organization');
+    var response = await withTimeout(
+      client.rpc('owner_assign_user_to_organization', payload),
+      8000,
+      'Не удалось добавить пользователя в организацию'
+    ).catch(function (error) {
+      console.error('rpc owner_assign_user_to_organization failed', {
+        request: 'owner_assign_user_to_organization',
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
+      });
+      throw error;
+    });
+    if (response && response.error) {
+      console.error('rpc owner_assign_user_to_organization failed', {
+        request: 'owner_assign_user_to_organization',
+        code: response.error.code || '',
+        message: response.error.message || '',
+        details: response.error.details || '',
+        hint: response.error.hint || '',
+        raw: response.error
+      });
+      throw response.error;
+    }
+    var row = Array.isArray(response && response.data) ? response.data[0] || null : (response && response.data) || null;
+    if (!row || !row.membership_id) throw new Error('Не удалось добавить пользователя в организацию');
+    return row;
+  }
+
+  async function rpcUpdateUserRole(client, payload) {
+    console.info('supabase request start', 'owner_update_user_role');
+    var response = await withTimeout(
+      client.rpc('owner_update_user_role', payload),
+      8000,
+      'Не удалось сохранить роль пользователя'
+    ).catch(function (error) {
+      console.error('rpc owner_update_user_role failed', {
+        request: 'owner_update_user_role',
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
+      });
+      throw error;
+    });
+    if (response && response.error) {
+      console.error('rpc owner_update_user_role failed', {
+        request: 'owner_update_user_role',
+        code: response.error.code || '',
+        message: response.error.message || '',
+        details: response.error.details || '',
+        hint: response.error.hint || '',
+        raw: response.error
+      });
+      throw response.error;
+    }
+    var row = Array.isArray(response && response.data) ? response.data[0] || null : (response && response.data) || null;
+    if (!row || !row.membership_id) throw new Error('Не удалось сохранить роль пользователя');
+    return row;
+  }
+
+  window.ownerListUsers = function () {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.resolve([]);
+    return rpcOwnerListUsers(client);
+  };
+  window.ownerAssignUserToOrganization = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcAssignUserToOrganization(client, payload || {});
+  };
+  window.ownerUpdateUserRole = function (targetUserProfileId, targetOrganizationId, targetRole) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcUpdateUserRole(client, {
+      target_user_profile_id: targetUserProfileId,
+      target_organization_id: targetOrganizationId,
+      target_role: targetRole
+    });
+  };
 
   async function ensureAssignableUserProfile(client, identifiers) {
     if (!client || !identifiers) return null;
@@ -1146,104 +1257,82 @@
     }
   };
 
-  async function loadServerSession(authUser) {
+  async function loadServerSession(authUser, opts) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client || !authUser) return null;
-
-    console.info('supabase request start', 'user_profiles');
-    var profileResponse = await client
-      .from('user_profiles')
-      .select('id, auth_user_id, email, first_name, last_name, phone, status, created_at, updated_at')
-      .eq('auth_user_id', authUser.id)
-      .maybeSingle();
-    if (profileResponse.error) {
-      console.error('user_profiles query failed', {
-        code: profileResponse.error.code || '',
-        message: profileResponse.error.message || '',
-        details: profileResponse.error.details || '',
-        hint: profileResponse.error.hint || '',
-        raw: profileResponse.error
+    console.info('supabase request start', 'get_my_session');
+    var response = await withTimeout(
+      client.rpc('get_my_session'),
+      8000,
+      'Не удалось загрузить профиль пользователя'
+    ).catch(function (error) {
+      console.error('rpc get_my_session failed', {
+        request: 'get_my_session',
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
       });
-    }
-    var rawProfile = profileResponse && profileResponse.data ? profileResponse.data : null;
-    var profile = normalizeProfileRow(rawProfile || buildFallbackProfile(authUser));
-    if (!profile) return null;
-    if (!rawProfile) {
-      try {
-        console.info('supabase request start', 'user_profiles bootstrap upsert');
-        await client
-          .from('user_profiles')
-          .upsert({
-            auth_user_id: authUser.id,
-            email: profile.email,
-            first_name: profile.first_name,
-            last_name: profile.last_name,
-            phone: profile.phone,
-            status: profile.status
-          }, { onConflict: 'auth_user_id' });
-      } catch (profileError) {
-        console.error('user_profiles bootstrap upsert failed:', profileError);
-      }
-    }
-
-    console.info('supabase request start', 'organization_members');
-    var membershipsResponse = await client
-      .from('organization_members')
-      .select('id, organization_id, user_profile_id, role, status, created_at, updated_at')
-      .eq('user_profile_id', profile.id)
-      .order('created_at', { ascending: true });
-    if (membershipsResponse.error) {
-      console.error('organization_members query failed', {
-        code: membershipsResponse.error.code || '',
-        message: membershipsResponse.error.message || '',
-        details: membershipsResponse.error.details || '',
-        hint: membershipsResponse.error.hint || '',
-        raw: membershipsResponse.error
-      });
-      return null;
-    }
-    var memberships = (membershipsResponse.data || []).map(normalizeMembershipRow).filter(Boolean);
-    console.info('membership query result', {
-      authUserId: authUser.id,
-      resolvedUserProfileId: profile.id,
-      membershipsCount: memberships.length
+      throw error;
     });
-
-    var orgIds = Array.from(new Set(memberships.map(function (item) {
-      return item.organization_id;
-    }).filter(Boolean)));
-
-    console.info('supabase request start', 'organizations');
-    var organizationsResponse = orgIds.length
-      ? await client
-          .from('organizations')
-          .select('id, name, type, status, created_at, updated_at')
-          .in('id', orgIds)
-          .order('created_at', { ascending: true })
-      : { error: null, data: [] };
-    if (organizationsResponse.error) {
-      console.error('organizations query failed', {
-        code: organizationsResponse.error.code || '',
-        message: organizationsResponse.error.message || '',
-        details: organizationsResponse.error.details || '',
-        hint: organizationsResponse.error.hint || '',
-        raw: organizationsResponse.error
+    if (response && response.error) {
+      console.error('rpc get_my_session failed', {
+        request: 'get_my_session',
+        code: response.error.code || '',
+        message: response.error.message || '',
+        details: response.error.details || '',
+        hint: response.error.hint || '',
+        raw: response.error
       });
-      return null;
+      throw response.error;
     }
-    var organizations = (organizationsResponse.data || []).map(normalizeOrganizationRow).filter(Boolean);
 
-    var activeOrganization = pickActiveOrganization(organizations, memberships);
+    var row = Array.isArray(response && response.data) ? response.data[0] || null : (response && response.data) || null;
+    if (!row) {
+      var fallbackProfile = normalizeProfileRow(buildFallbackProfile(authUser));
+      var fallbackSession = buildNoOrganizationSession(authUser, fallbackProfile);
+      applyServerSession(fallbackSession);
+      return fallbackSession;
+    }
+    if (row.error_message) {
+      var controlledError = new Error(row.error_message);
+      controlledError.code = 'SESSION_ERROR';
+      throw controlledError;
+    }
+
+    var profile = normalizeProfileRow({
+      id: row.profile_id || '',
+      auth_user_id: row.auth_user_id || authUser.id,
+      email: row.email || authUser.email || '',
+      first_name: row.first_name || '',
+      last_name: row.last_name || '',
+      phone: '',
+      status: row.status || 'active',
+      created_at: '',
+      updated_at: ''
+    });
+    if (!profile) return null;
+
+    var memberships = parseRpcList(row.memberships).map(normalizeMembershipRow).filter(Boolean);
+    var organizations = parseRpcList(row.organizations).map(normalizeOrganizationRow).filter(Boolean);
+    var noOrganization = !!row.no_organization || !memberships.length;
+    var activeOrganization = row.active_organization_id
+      ? organizations.find(function (org) { return String(org.id || '') === String(row.active_organization_id || ''); }) || null
+      : null;
+    if (!activeOrganization) activeOrganization = pickActiveOrganization(organizations, memberships);
     var activeMembership = activeOrganization
       ? memberships.find(function (item) { return String(item.organization_id) === String(activeOrganization.id); }) || memberships[0] || null
       : memberships[0] || null;
-    var legalEntities = [];
-    var activeLegalEntities = [];
-    var suppliers = [];
-    var accessibleProfiles = [profile];
+    var uiRole = noOrganization ? 'unassigned' : normalizeUiRole((activeMembership && activeMembership.role) || row.role || 'manager');
 
-    var noOrganization = !activeOrganization || !memberships.length;
-    var uiRole = noOrganization ? 'unassigned' : normalizeUiRole((activeMembership && activeMembership.role) || 'manager');
+    console.info('session: profile loaded');
+    markPerf('profile_loaded');
+    console.info('session: memberships loaded');
+    markPerf('memberships_loaded');
+    console.info('initUserSession memberships loaded', memberships.length);
+    console.info('session: organizations loaded');
+    markPerf('organizations_loaded');
     console.info('initUserSession resolved', {
       authUserId: authUser.id,
       profileId: profile.id,
@@ -1252,26 +1341,25 @@
       activeOrganizationId: activeOrganization ? activeOrganization.id : null,
       noOrganization: noOrganization
     });
-    console.info('initUserSession resolved', {
-      authUserId: authUser && authUser.id,
-      profileId: profile.id,
-      membershipsCount: memberships.length,
-      organizationsCount: organizations.length,
-      activeOrganizationId: activeOrganization ? activeOrganization.id : null,
-      noOrganization: noOrganization
-    });
+
+    if (memberships.length && !organizations.length) {
+      var noOrgError = new Error('Не удалось загрузить организации пользователя');
+      noOrgError.code = 'NO_ORGANIZATIONS';
+      throw noOrgError;
+    }
+
     var session = {
       profile: profile,
       memberships: memberships,
       organizations: organizations,
-      legalEntities: legalEntities,
+      legalEntities: [],
       noOrganization: noOrganization,
-      activeOrganization: activeOrganization,
-      activeOrganizationId: activeOrganization ? activeOrganization.id : null,
-      activeLegalEntities: activeLegalEntities,
-      activeLegalEntityIds: activeLegalEntities.map(function (item) { return item.id; }),
-      activeLegalEntityNames: activeLegalEntities.map(function (item) { return item.name; }),
-      currentMembership: activeMembership,
+      activeOrganization: noOrganization ? null : activeOrganization,
+      activeOrganizationId: noOrganization ? null : (activeOrganization ? activeOrganization.id : null),
+      activeLegalEntities: [],
+      activeLegalEntityIds: [],
+      activeLegalEntityNames: [],
+      currentMembership: noOrganization ? null : activeMembership,
       role: uiRole,
       permissions: noOrganization ? [] : ((window.ROLES && window.ROLES[uiRole] && window.ROLES[uiRole].pages) ? window.ROLES[uiRole].pages.slice() : []),
       currentUser: {
@@ -1279,13 +1367,13 @@
         profileId: profile.id,
         first: profile.first_name || 'Пользователь',
         last: profile.last_name || '',
-        company: (activeOrganization && activeOrganization.name) || profile.company || 'КальКа',
+        company: noOrganization ? 'КальКа' : ((activeOrganization && activeOrganization.name) || profile.company || 'КальКа'),
         email: String(profile.email || authUser.email || '').toLowerCase(),
         role: uiRole,
         status: profile.status || 'active',
         ev: true,
         created: (profile.created_at || new Date().toISOString()).slice(0, 10),
-        organizationId: activeOrganization ? activeOrganization.id : null,
+        organizationId: noOrganization ? null : (activeOrganization ? activeOrganization.id : null),
         noOrganization: noOrganization,
         memberships: memberships.map(function (item) {
           return {
@@ -1295,34 +1383,19 @@
           };
         })
       },
-      suppliers: suppliers,
-      dbUsers: accessibleProfiles.map(function (row) {
-        var membership = memberships.filter(function (item) {
-          return String(item.user_profile_id) === String(row.id);
-        });
-        return mapProfileToLegacyUser(row, membership, organizations, activeOrganization);
-      })
+      suppliers: [],
+      dbUsers: []
     };
 
-    if (noOrganization) {
-      session.activeOrganization = null;
-      session.activeOrganizationId = null;
-      session.activeLegalEntities = [];
-      session.activeLegalEntityIds = [];
-      session.activeLegalEntityNames = [];
-      session.suppliers = [];
-      session.currentMembership = null;
-      session.permissions = [];
-      session.currentUser.role = 'unassigned';
-      session.currentUser.noOrganization = true;
-      session.currentUser.company = 'КальКа';
-    }
-
     applyServerSession(session);
+    console.info('session: ready');
+    markPerf('session_ready');
+    printPerfTable();
     return session;
   }
 
-  window.initUserSession = async function (authUser) {
+  window.initUserSession = async function (authUser, opts) {
+    var options = opts || {};
     if (!authUser) {
       clearClientRuntimeState();
       window.__userSession = null;
@@ -1331,11 +1404,15 @@
     }
 
     try {
+      if (options.forceReload) {
+        var key = getBootstrapKey(authUser);
+        if (key && bootstrapPromises[key]) delete bootstrapPromises[key];
+      }
       var session = await getOrCreateBootstrapPromise(authUser, function () {
-        if (window.__sessionReady && window.__userSession && window.__userSession.currentUser && String(window.__userSession.currentUser.id || '') === String(authUser.id || '')) {
+        if (!options.forceReload && window.__sessionReady && window.__userSession && window.__userSession.currentUser && String(window.__userSession.currentUser.id || '') === String(authUser.id || '')) {
           return window.__userSession;
         }
-        return loadServerSession(authUser);
+        return loadServerSession(authUser, options);
       });
       if (!session) {
         clearClientRuntimeState();
@@ -1893,114 +1970,23 @@
       }
 
       var selectedUser = findOwnerUserCandidate(legacyUserId || authUserId, userProfileId, email);
-      if (!selectedUser) {
-        selectedUser = normalizeOwnerUserIdentity({
-          auth_user_id: authUserId || legacyUserId,
-          profileId: userProfileId,
-          email: email
-        });
-      }
-      if (!selectedUser || (!selectedUser.auth_user_id && !selectedUser.profileId && !selectedUser.email)) {
-        throw new Error('Не удалось найти пользователя в public.user_profiles');
+      var targetProfileId = String(userProfileId || (selectedUser && selectedUser.profileId) || '').trim();
+      var targetAuthUserId = String(authUserId || legacyUserId || (selectedUser && selectedUser.auth_user_id) || '').trim();
+      var targetEmail = String(email || (selectedUser && selectedUser.email) || '').trim().toLowerCase();
+
+      if (!selectedUser && !targetProfileId && !targetAuthUserId && !targetEmail) {
+        throw new Error('Пользователь не найден');
       }
 
-      var profileRow = await ensureAssignableUserProfile(client, {
-        userProfileId: selectedUser.profileId || userProfileId,
-        authUserId: selectedUser.auth_user_id || authUserId || legacyUserId,
-        email: selectedUser.email || email,
-        first: selectedUser.first,
-        last: selectedUser.last,
-        phone: selectedUser.phone,
-        status: selectedUser.status || 'active'
+      var result = await rpcAssignUserToOrganization(client, {
+        target_user_profile_id: targetProfileId || null,
+        target_auth_user_id: targetAuthUserId || null,
+        target_email: targetEmail || null,
+        target_organization_id: orgId,
+        target_role: role
       });
-      if (!profileRow || !profileRow.id) {
-        console.error('failed to create or resolve user profile', {
-          legacyUserId: legacyUserId,
-          authUserId: authUserId,
-          userProfileId: userProfileId,
-          email: email
-        });
-        throw new Error('Не удалось создать профиль пользователя');
-      }
-
-      var profileId = String(profileRow.id || selectedUser.profileId || userProfileId || '').trim();
-      if (!profileId) throw new Error('Не удалось определить профиль пользователя');
-      console.info('resolved user_profile_id', profileId);
-
-      var memberPayload = {
-        organization_id: orgId,
-        user_profile_id: profileId,
-        role: role,
-        status: status
-      };
-      console.info('supabase request start', 'organization_members lookup');
-      var existingMemberResponse = await client
-        .from('organization_members')
-        .select('id, organization_id, user_profile_id, role, status')
-        .eq('organization_id', orgId)
-        .eq('user_profile_id', profileId)
-        .maybeSingle();
-      if (existingMemberResponse.error) {
-        console.error('organization_members lookup failed', {
-          code: existingMemberResponse.error.code || '',
-          message: existingMemberResponse.error.message || '',
-          details: existingMemberResponse.error.details || '',
-          hint: existingMemberResponse.error.hint || '',
-          raw: existingMemberResponse.error
-        });
-        throw existingMemberResponse.error;
-      }
-      if (existingMemberResponse.data && existingMemberResponse.data.id) {
-        console.info('supabase request start', 'organization_members update');
-        var updateMemberResponse = await client
-          .from('organization_members')
-          .update({ role: role, status: status })
-          .eq('id', existingMemberResponse.data.id);
-        if (updateMemberResponse.error) {
-          console.error('organization_members update failed', {
-            code: updateMemberResponse.error.code || '',
-            message: updateMemberResponse.error.message || '',
-            details: updateMemberResponse.error.details || '',
-            hint: updateMemberResponse.error.hint || '',
-            raw: updateMemberResponse.error
-          });
-          throw updateMemberResponse.error;
-        }
-      } else {
-        console.info('supabase request start', 'organization_members insert');
-        var insertMemberResponse = await client
-          .from('organization_members')
-          .insert(memberPayload);
-        if (insertMemberResponse.error) {
-          console.error('organization_members insert failed', {
-            code: insertMemberResponse.error.code || '',
-            message: insertMemberResponse.error.message || '',
-            details: insertMemberResponse.error.details || '',
-            hint: insertMemberResponse.error.hint || '',
-            raw: insertMemberResponse.error
-          });
-          throw insertMemberResponse.error;
-        }
-      }
-      console.info('supabase request start', 'organization_members verify');
-      var verifyMemberResponse = await client
-        .from('organization_members')
-        .select('id, organization_id, user_profile_id, role, status')
-        .eq('organization_id', orgId)
-        .eq('user_profile_id', profileId)
-        .maybeSingle();
-      if (verifyMemberResponse.error) {
-        console.error('organization_members verify failed', {
-          code: verifyMemberResponse.error.code || '',
-          message: verifyMemberResponse.error.message || '',
-          details: verifyMemberResponse.error.details || '',
-          hint: verifyMemberResponse.error.hint || '',
-          raw: verifyMemberResponse.error
-        });
-        throw verifyMemberResponse.error;
-      }
-      if (!verifyMemberResponse.data || !verifyMemberResponse.data.id) {
-        throw new Error('Не удалось подтвердить сохранение membership');
+      if (!result || !result.membership_id) {
+        throw new Error('Не удалось добавить пользователя в организацию');
       }
       console.info('membership saved');
 
@@ -2029,7 +2015,7 @@
       if (typeof window.renderOwner === 'function') window.renderOwner();
       if (typeof window.toast === 'function') window.toast('Пользователь добавлен в организацию', 'ok');
       if (window.logAudit) {
-        window.logAudit(auditActor(), 'Назначил организацию и роль пользователю ' + (profileRow.email || selectedUser.email || email || legacyUserId) + ' → ' + orgId + ' / ' + role, 'Пользователи');
+        window.logAudit(auditActor(), 'Назначил организацию и роль пользователю ' + (result.email || (selectedUser && selectedUser.email) || email || legacyUserId) + ' → ' + orgId + ' / ' + role, 'Пользователи');
       }
       return true;
     } catch (error) {
@@ -2116,48 +2102,20 @@
 
       if (response.data && response.data.user) {
         try {
-          console.info('supabase request start', 'registration user_profiles upsert');
-          var registrationProfileResponse = await client
-            .from('user_profiles')
-            .upsert({
-              auth_user_id: response.data.user.id,
-              email: email,
-              first_name: first,
-              last_name: last,
-              phone: '',
-              status: 'pending'
-            }, { onConflict: 'auth_user_id' })
-            .select('id, auth_user_id, email, first_name, last_name, phone, status')
-            .maybeSingle();
-          if (registrationProfileResponse.error) {
-            console.error('registration user_profiles upsert failed', {
-              code: registrationProfileResponse.error.code || '',
-              message: registrationProfileResponse.error.message || '',
-              details: registrationProfileResponse.error.details || '',
-              hint: registrationProfileResponse.error.hint || '',
-              raw: registrationProfileResponse.error
-            });
+          console.info('supabase request start', 'ensure_user_profile');
+          if (response.data.session && response.data.session.user) {
+            await client.rpc('ensure_user_profile');
           }
         } catch (registrationProfileError) {
-          console.error('registration user_profiles upsert failed', registrationProfileError);
+          console.error('registration ensure_user_profile failed', {
+            code: registrationProfileError && registrationProfileError.code ? registrationProfileError.code : '',
+            message: registrationProfileError && registrationProfileError.message ? registrationProfileError.message : '',
+            details: registrationProfileError && registrationProfileError.details ? registrationProfileError.details : '',
+            hint: registrationProfileError && registrationProfileError.hint ? registrationProfileError.hint : '',
+            raw: registrationProfileError
+          });
         }
       }
-
-      var db = ensureArrays(window._dbCache || readLocalState() || getDefaults());
-      var pendingUser = {
-        id: response.data.user ? response.data.user.id : ('u' + Date.now()),
-        first: first,
-        last: last,
-        company: company,
-        email: email,
-        role: role,
-        status: 'pending',
-        ev: true,
-        created: new Date().toISOString().slice(0, 10),
-        reason: note,
-        createdBy: 'self-signup'
-      };
-      upsertUserInDb(pendingUser);
 
       if (response.data.session) {
         await client.auth.signOut();

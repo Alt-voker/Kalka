@@ -2282,7 +2282,29 @@ function rejectUser(id){
   logAudit(auditActor(), 'Отклонил '+u.email,'Пользователи');
   updPendBadge();
 }
-function changeRole(id,role){const db=dbGet();const u=db.users.find(x=>x.id===id);if(!u||!ROLES[role])return;u.role=role;dbSet(db);renderOwner();toast(`✅ Роль изменена на ${ROLES[role].label}`,'ok');logAudit(CU?.first+' '+(CU?.last||''),`Изменил роль ${u.email} на ${role}`,'Пользователи');}
+async function changeRole(id,role){
+  if(!ROLES[role])return;
+  const ownerCache=window.__dataCache&&window.__dataCache.ownerUsers?window.__dataCache.ownerUsers:null;
+  const user=(ownerCache&&Array.isArray(ownerCache.items)?ownerCache.items:[]).find(function(item){
+    return item&&(item.id===id||item.authUserId===id||item.profileId===id||item.email===id);
+  })||null;
+  if(!user){toast('Пользователь не найден','err');return;}
+  var profileId=user.profileId||'';
+  var orgId=user.organizationId||((user.memberships&&user.memberships[0]&&user.memberships[0].organizationId)||'');
+  if(!profileId){toast('Пользователь не найден','err');return;}
+  if(!orgId){toast('У пользователя нет организации','err');return;}
+  try{
+    if(!window.ownerUpdateUserRole)throw new Error('Не удалось сохранить роль пользователя');
+    await window.ownerUpdateUserRole(profileId,orgId,role);
+    if(window.retryOwnerUsersLoad)await window.retryOwnerUsersLoad();
+    renderOwner();
+    toast(`✅ Роль изменена на ${ROLES[role].label}`,'ok');
+    logAudit(CU?.first+' '+(CU?.last||''),`Изменил роль ${user.email} на ${role}`,'Пользователи');
+  }catch(error){
+    console.error('changeRole failed',error);
+    toast(error&&error.message?error.message:'Не удалось сохранить роль пользователя','err');
+  }
+}
 function toggleBlock(id){const db=dbGet();const u=db.users.find(x=>x.id===id);if(!u||u.id===CU?.id)return;u.status=u.status==='blocked'?'active':'blocked';dbSet(db);renderAdmin();renderOwner();toast(u.status==='blocked'?`🚫 ${u.first} заблокирован`:`✅ ${u.first} разблокирован`,'ok');}
 var _dashboardAccessUserId='';
 function openDashboardAccessModal(userId){
