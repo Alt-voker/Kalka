@@ -127,6 +127,49 @@
     };
   }
 
+  function normalizeSessionRow(data) {
+    var row = Array.isArray(data) ? (data[0] || null) : (data || null);
+    console.info('get_my_session raw rpc data', data);
+    console.info('get_my_session normalized row', row);
+    if (!row) return null;
+    var memberships = Array.isArray(row.memberships) ? row.memberships.slice() : [];
+    var organizations = Array.isArray(row.organizations) ? row.organizations.slice() : [];
+    var membershipsCount = typeof row.membershipsCount === 'number'
+      ? row.membershipsCount
+      : (typeof row.memberships_count === 'number' ? row.memberships_count : memberships.length);
+    var organizationsCount = typeof row.organizationsCount === 'number'
+      ? row.organizationsCount
+      : (typeof row.organizations_count === 'number' ? row.organizations_count : organizations.length);
+    var noOrganization = row.noOrganization ?? row.no_organization ?? false;
+    if (membershipsCount > 0) noOrganization = false;
+    var activeOrganizationId = row.activeOrganizationId ?? row.active_organization_id ?? null;
+    var activeOrganizationName = row.activeOrganizationName ?? row.active_organization_name ?? null;
+    var role = row.role ?? 'unassigned';
+    var profileId = row.profileId ?? row.profile_id ?? null;
+    var authUserId = row.auth_user_id ?? null;
+    var email = row.email ?? '';
+    var firstName = row.first_name ?? '';
+    var lastName = row.last_name ?? '';
+    var status = row.status ?? 'active';
+    return {
+      row: row,
+      profileId: profileId,
+      authUserId: authUserId,
+      email: email,
+      firstName: firstName,
+      lastName: lastName,
+      status: status,
+      memberships: memberships,
+      organizations: organizations,
+      activeOrganizationId: activeOrganizationId,
+      activeOrganizationName: activeOrganizationName,
+      membershipsCount: membershipsCount,
+      organizationsCount: organizationsCount,
+      noOrganization: !!noOrganization,
+      role: role
+    };
+  }
+
   function withTimeout(promise, ms, message) {
     var timeout = Number(ms || 10000);
     return Promise.race([
@@ -254,10 +297,32 @@
     window.__userSession = session;
     window.CU = session && session.currentUser ? session.currentUser : null;
     window.activeRest = session && session.activeOrganization
-      ? { id: session.activeOrganization.id, name: session.activeOrganization.name || '', emoji: session.activeOrganization.emoji || '🏢' }
-      : { id: 'r0', name: 'Все рестораны', emoji: '🌐' };
+      ? {
+          id: session.activeOrganization.id,
+          organizationId: session.activeOrganization.id,
+          name: session.activeOrganization.name || '',
+          emoji: session.activeOrganization.emoji || '🏢',
+          type: session.activeOrganization.type || 'organization',
+          kind: session.activeOrganization.type || 'organization',
+          members: session.memberships ? session.memberships.slice() : []
+        }
+      : { id: 'r0', organizationId: null, name: 'Все рестораны', emoji: '🌐', type: 'all', kind: 'all', members: [] };
     window.__sessionReady = !!(session && session.currentUser);
     setState(session && session.noOrganization ? STATE.NO_ORGANIZATION : STATE.AUTHENTICATED, session || null);
+  }
+
+  function normalizeLegacyUserFromSession(session) {
+    var currentUser = session && session.currentUser ? Object.assign({}, session.currentUser) : null;
+    if (!currentUser) return null;
+    if (currentUser.role === 'platform_owner') currentUser.role = 'owner';
+    if (currentUser.activeOrganizationId && !currentUser.organizationId) currentUser.organizationId = currentUser.activeOrganizationId;
+    if (session && session.activeOrganization && !currentUser.company) currentUser.company = session.activeOrganization.name || '';
+    if (session && session.noOrganization) currentUser.noOrganization = true;
+    if (!currentUser.permissions || !currentUser.permissions.length) {
+      var roleDef = window.ROLES && window.ROLES[currentUser.role] ? window.ROLES[currentUser.role] : null;
+      currentUser.permissions = roleDef && Array.isArray(roleDef.pages) ? roleDef.pages.slice() : [];
+    }
+    return currentUser;
   }
 
   function ensureAppShellVisible() {
@@ -485,32 +550,43 @@
       });
       throw response.error;
     }
-    var row = Array.isArray(response && response.data) ? response.data[0] || null : (response && response.data) || null;
-    if (!row) {
+    var normalized = normalizeSessionRow(response && response.data);
+    if (!normalized || !normalized.row) {
       throw new Error('Не удалось загрузить профиль пользователя');
     }
+    var row = normalized.row;
     var profile = {
-      id: row.profile_id || '',
-      auth_user_id: row.auth_user_id || authUser.id,
-      email: row.email || authUser.email || '',
-      first_name: row.first_name || 'Пользователь',
-      last_name: row.last_name || '',
+      id: normalized.profileId || '',
+      auth_user_id: normalized.authUserId || authUser.id,
+      email: normalized.email || authUser.email || '',
+      first_name: normalized.firstName || 'Пользователь',
+      last_name: normalized.lastName || '',
       phone: '',
-      status: row.status || 'active',
+      status: normalized.status || 'active',
       created_at: '',
       updated_at: ''
     };
-    var memberships = Array.isArray(row.memberships) ? row.memberships.slice() : [];
-    var organizations = Array.isArray(row.organizations) ? row.organizations.slice() : [];
-    var activeOrganization = row.active_organization_id
-      ? organizations.find(function (org) { return String(org.id || '') === String(row.active_organization_id || ''); }) || null
+    var memberships = normalized.memberships.slice();
+    var organizations = normalized.organizations.slice();
+    var activeOrganization = normalized.activeOrganizationId
+      ? organizations.find(function (org) { return String(org.id || '') === String(normalized.activeOrganizationId || ''); }) || null
       : null;
     if (!activeOrganization && organizations.length) activeOrganization = organizations[0];
     var activeMembership = activeOrganization
       ? memberships.find(function (item) { return String(item.organization_id || '') === String(activeOrganization.id || ''); }) || memberships[0] || null
       : memberships[0] || null;
-    var noOrganization = !!row.no_organization || !memberships.length;
-    var role = noOrganization ? 'unassigned' : (row.role || (activeMembership && activeMembership.role) || 'manager');
+    if (!activeOrganization && normalized.activeOrganizationName && normalized.activeOrganizationId) {
+      activeOrganization = {
+        id: normalized.activeOrganizationId,
+        name: normalized.activeOrganizationName,
+        type: 'organization',
+        status: 'active',
+        created_at: '',
+        updated_at: ''
+      };
+    }
+    var noOrganization = normalized.membershipsCount > 0 ? false : !!normalized.noOrganization;
+    var role = noOrganization ? 'unassigned' : (normalized.role || (activeMembership && activeMembership.role) || 'manager');
     var session = noOrganization
       ? buildNoOrganizationSession(authUser, profile)
       : buildSession(authUser, profile, memberships.map(function (item) {
@@ -538,7 +614,7 @@
     session.memberships = memberships;
     session.organizations = organizations;
     session.activeOrganization = activeOrganization;
-    session.activeOrganizationId = activeOrganization ? activeOrganization.id : null;
+    session.activeOrganizationId = activeOrganization ? activeOrganization.id : (normalized.activeOrganizationId || null);
     session.currentMembership = activeMembership;
     session.role = role;
     session.noOrganization = noOrganization;
@@ -567,15 +643,22 @@
     }
     console.info('session: profile loaded');
     markPerf('profile_loaded');
-    console.info('initUserSession resolved', {
-      authUserId: authUser.id,
-      profileId: profile.id,
-      membershipsCount: memberships.length,
-      organizationsCount: organizations.length,
+    console.info('normalized session', {
+      profileId: normalized.profileId,
+      membershipsCount: normalized.membershipsCount,
+      organizationsCount: normalized.organizationsCount,
       activeOrganizationId: session.activeOrganizationId,
       noOrganization: noOrganization
     });
-    if (memberships.length && !organizations.length) {
+    console.info('initUserSession resolved', {
+      authUserId: authUser.id,
+      profileId: profile.id,
+      membershipsCount: normalized.membershipsCount,
+      organizationsCount: normalized.organizationsCount,
+      activeOrganizationId: session.activeOrganizationId,
+      noOrganization: noOrganization
+    });
+    if (normalized.membershipsCount > 0 && !normalized.organizationsCount) {
       var noOrganizationsError = new Error('Не удалось загрузить организации пользователя');
       noOrganizationsError.code = 'NO_ORGANIZATIONS';
       throw noOrganizationsError;
@@ -600,7 +683,39 @@
 
   function openAppShell(currentUser) {
     ensureAppShellVisible();
-    if (typeof window.enterApp === 'function') {
+    var legacyUser = normalizeLegacyUserFromSession(window.__userSession || { currentUser: currentUser });
+    if (legacyUser) {
+      window.CU = legacyUser;
+      if (window.__userSession && window.__userSession.activeOrganization) {
+        window.activeRest = {
+          id: window.__userSession.activeOrganization.id,
+          organizationId: window.__userSession.activeOrganization.id,
+          name: window.__userSession.activeOrganization.name || '',
+          emoji: window.__userSession.activeOrganization.emoji || '🏢',
+          type: window.__userSession.activeOrganization.type || 'organization',
+          kind: window.__userSession.activeOrganization.type || 'organization',
+          members: window.__userSession.memberships ? window.__userSession.memberships.slice() : []
+        };
+      }
+      if (typeof window.enterApp === 'function') {
+        window.enterApp(legacyUser);
+      }
+      if (typeof window.setupUI === 'function') {
+        try { window.setupUI(legacyUser); } catch (error) {}
+      }
+      if (typeof window.buildNav === 'function') {
+        try { window.buildNav(legacyUser); } catch (error) {}
+      }
+      if (typeof window.renderDash === 'function') {
+        try { window.renderDash(); } catch (error) {}
+      }
+      if (typeof window.goPage === 'function') {
+        try { window.goPage('dash'); } catch (error) {}
+      }
+      if (typeof window.go === 'function') {
+        try { window.go('dash'); } catch (error) {}
+      }
+    } else if (typeof window.enterApp === 'function') {
       window.enterApp(currentUser);
     }
     ensureAppShellVisible();
