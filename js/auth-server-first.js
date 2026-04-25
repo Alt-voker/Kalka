@@ -310,7 +310,7 @@
         .select('id, auth_user_id, email, first_name, last_name, phone, status, created_at, updated_at')
         .single(),
       8000,
-      'Не удалось загрузить профиль пользователя'
+      'Не удалось создать профиль пользователя'
     ).catch(function (error) {
       console.error('supabase request failed', {
         request: 'user_profiles upsert',
@@ -352,7 +352,7 @@
         .eq('user_profile_id', profileId)
         .eq('status', 'active'),
       8000,
-      'Не удалось загрузить доступные организации'
+      'Не удалось загрузить доступы пользователя'
     ).catch(function (error) {
       console.error('supabase request failed', {
         request: 'organization_members',
@@ -432,6 +432,7 @@
     var profile = await loadUserProfile(authUser);
     setState(STATE.LOADING_MEMBERSHIPS, { authUserId: authUser.id, profileId: profile.id });
     var memberships = await loadMemberships(profile.id);
+    console.info('initUserSession memberships loaded', memberships.length);
     if (!memberships.length) {
       var noOrgSession = buildNoOrganizationSession(authUser, profile);
       applySession(noOrgSession);
@@ -445,6 +446,7 @@
     var organizations = await loadOrganizations(memberships);
     if (!organizations.length) {
       var noOrganizationsSession = buildNoOrganizationSession(authUser, profile);
+      noOrganizationsSession.errorMessage = 'Не удалось загрузить организации пользователя';
       applySession(noOrganizationsSession);
       console.info('session: ready');
       markPerf('session_ready');
@@ -664,6 +666,7 @@
         }
       }
       return getBootstrapPromise(authUser, function () {
+        window.__authState = STATE.LOADING_PROFILE;
         setState(STATE.LOADING_PROFILE, { authUserId: authUser.id });
         return bootstrapSession(authUser);
       });
