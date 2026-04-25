@@ -1,7 +1,7 @@
 
 let ROLES={
   owner:     {label:'Владелец',     emoji:'👑',color:'#5ba3f5',dim:'rgba(200,240,80,.12)',   pages:['owner','admin','restaurants','dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-dashboard','sup-products','sup-orders','sup-analytics']},
-  admin:     {label:'Администратор',emoji:'🛡️',color:'#ab7df8',dim:'rgba(171,125,248,.12)', pages:['admin','restaurants','dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products']},
+  admin:     {label:'Правая рука владельца',emoji:'🛡️',color:'#ab7df8',dim:'rgba(171,125,248,.12)', pages:['admin','restaurants','dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products']},
   manager:   {label:'Управляющий',  emoji:'👔',color:'#4fc3f7',dim:'rgba(79,195,247,.12)',  pages:['dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products','restaurants']},
   chef:      {label:'Шеф-повар',    emoji:'👨‍🍳',color:'#ff7043',dim:'rgba(255,112,67,.12)',  pages:['dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products','restaurants']},
   buyer:     {label:'Закупщик',     emoji:'🛒',color:'#4caf82',dim:'rgba(76,175,130,.12)',  pages:['dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','restaurants']},
@@ -2297,6 +2297,7 @@ async function changeRole(id,role){
     if(!window.ownerUpdateUserRole)throw new Error('Не удалось сохранить роль пользователя');
     await window.ownerUpdateUserRole(profileId,orgId,role);
     if(window.retryOwnerUsersLoad)await window.retryOwnerUsersLoad();
+    else if(window.loadOwnerUsers) await window.loadOwnerUsers();
     renderOwner();
     toast(`✅ Роль изменена на ${ROLES[role].label}`,'ok');
     logAudit(CU?.first+' '+(CU?.last||''),`Изменил роль ${user.email} на ${role}`,'Пользователи');
