@@ -1257,13 +1257,34 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
 </div></div>
 
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/app-config.js"></script>
-<script src="js/app-supabase.js"></script>
-<script src="js/app-supabase-commerce.js"></script>
-<script src="js/app-legacy.js"></script>
-<script src="js/app-overrides.js"></script>
-<script src="js/auth-server-first.js"></script>
+<script>
+  window.__APP_COMMIT__ = '007bea4';
+  window.__CLEAN_SHELL_MODE = true;
+  window.__authServerFirstMode = true;
+  (function () {
+    var scripts = window.__CLEAN_SHELL_MODE
+      ? [
+          'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
+          'js/app-config.js',
+          'js/app-supabase.js',
+          'js/app-clean-shell.js'
+        ]
+      : [
+          'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
+          'js/app-config.js',
+          'js/app-supabase.js',
+          'js/app-supabase-commerce.js',
+          'js/app-legacy.js',
+          'js/app-overrides.js',
+          'js/auth-server-first.js'
+        ];
+    scripts.forEach(function (src) {
+      var s = document.createElement('script');
+      s.src = src;
+      document.body.appendChild(s);
+    });
+  })();
+</script>
 
 <div class="ov" id="ov-supPriceUpload"><div class="modal wide">
   <div class="m-title" id="supPriceUploadTitle">Загрузка прайса поставщика</div>
