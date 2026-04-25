@@ -1,5 +1,6 @@
 (function (window, document) {
   'use strict';
+  console.info('clean shell loaded');
 
   var app = window.KalkaApp = window.KalkaApp || {};
   var state = {
@@ -146,10 +147,19 @@
       '</div>'
     ].join('');
     var form = qs('#csLoginForm');
-    form.addEventListener('submit', function (ev) {
-      ev.preventDefault();
-      startLogin();
-    });
+    var btn = qs('#csLoginBtn');
+    if (form) {
+      form.addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        console.info('login form mounted');
+        startLogin();
+      });
+    }
+    if (btn) {
+      btn.addEventListener('click', function () {
+        console.info('login button clicked');
+      });
+    }
   }
 
   function renderShell() {
@@ -497,6 +507,7 @@
     if (btn) { btn.disabled = true; btn.textContent = 'Входим...'; }
     if (err) err.textContent = '';
     try {
+      console.info('login form mounted');
       var client = getClient();
       if (!client) {
         throw new Error('Сервис авторизации временно недоступен. Обратитесь к администратору');
@@ -689,8 +700,14 @@
     }
   });
 
-  document.addEventListener('DOMContentLoaded', function () {
+  function boot() {
     wireGlobalApi();
     init();
-  });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
 })(window, document);
