@@ -13,8 +13,8 @@ set search_path = public, auth
 as $$
 declare
   v_profile public.user_profiles%rowtype;
-  v_auth_user auth.users%rowtype;
   v_email text;
+  v_auth_user auth.users%rowtype;
   v_first_name text;
   v_last_name text;
   v_phone text;
@@ -24,6 +24,15 @@ begin
   if p_auth_user_id is null then
     raise exception 'auth_user_id is required';
   end if;
+
+  select u.*
+    into v_auth_user
+  from auth.users u
+  where u.id = p_auth_user_id
+  limit 1;
+
+  v_meta := coalesce(v_auth_user.raw_user_meta_data, '{}'::jsonb);
+  v_email := lower(coalesce(nullif(trim(coalesce(p_email, v_auth_user.email, '')), ''), ''));
 
   select *
     into v_profile
@@ -43,18 +52,33 @@ begin
            status = coalesce(nullif(trim(p_status), ''), status),
            updated_at = now()
      where id = v_profile.id
-     returning * into v_profile;
+    returning * into v_profile;
     return v_profile;
   end if;
 
-  select u.*
-    into v_auth_user
-  from auth.users u
-  where u.id = p_auth_user_id
-  limit 1;
+  if v_email <> '' then
+    select *
+      into v_profile
+    from public.user_profiles
+    where lower(email) = v_email
+    order by created_at asc
+    limit 1;
 
-  v_meta := coalesce(v_auth_user.raw_user_meta_data, '{}'::jsonb);
-  v_email := lower(coalesce(nullif(trim(coalesce(p_email, v_auth_user.email, '')), ''), ''));
+    if found then
+      update public.user_profiles
+         set auth_user_id = p_auth_user_id,
+             email = lower(v_email),
+             first_name = coalesce(nullif(trim(coalesce(p_first_name, first_name)), ''), first_name),
+             last_name = coalesce(nullif(trim(coalesce(p_last_name, last_name)), ''), last_name),
+             phone = coalesce(nullif(trim(p_phone), ''), phone),
+             status = coalesce(nullif(trim(coalesce(p_status, 'active')), ''), status),
+             updated_at = now()
+       where id = v_profile.id
+       returning * into v_profile;
+      return v_profile;
+    end if;
+  end if;
+
   if v_email = '' then
     raise exception 'email is required to create user profile';
   end if;
@@ -143,19 +167,21 @@ revoke all on function public._is_platform_owner() from public;
 
 create or replace function public.get_my_session()
 returns table (
-  profile_id uuid,
-  auth_user_id uuid,
+  "profileId" uuid,
+  "authUserId" uuid,
   email text,
-  first_name text,
-  last_name text,
+  "firstName" text,
+  "lastName" text,
   status text,
   memberships jsonb,
   organizations jsonb,
-  active_organization_id uuid,
-  active_organization_name text,
+  "activeOrganizationId" uuid,
+  "activeOrganizationName" text,
   role text,
-  no_organization boolean,
-  error_message text
+  "noOrganization" boolean,
+  "membershipsCount" integer,
+  "organizationsCount" integer,
+  "errorMessage" text
 )
 language plpgsql
 security definer
@@ -168,6 +194,9 @@ declare
   v_active_org_id uuid;
   v_active_org_name text;
   v_role text := 'unassigned';
+  v_error_message text;
+  v_memberships_count integer := 0;
+  v_organizations_count integer := 0;
 begin
   if auth.uid() is null then
     raise exception 'auth.uid() is required';
@@ -191,6 +220,7 @@ begin
   from public.organization_members om
   where om.user_profile_id = v_profile.id
     and om.status = 'active';
+  v_memberships_count := coalesce(jsonb_array_length(v_memberships), 0);
 
   select coalesce(jsonb_agg(
            jsonb_build_object(
@@ -209,18 +239,18 @@ begin
   where om.user_profile_id = v_profile.id
     and om.status = 'active'
     and o.status = 'active';
+  v_organizations_count := coalesce(jsonb_array_length(v_organizations), 0);
 
-  select o.id, o.name, om.role
+  select om.organization_id, o.name, om.role
     into v_active_org_id, v_active_org_name, v_role
   from public.organization_members om
-  join public.organizations o on o.id = om.organization_id
+  left join public.organizations o on o.id = om.organization_id
   where om.user_profile_id = v_profile.id
     and om.status = 'active'
-    and o.status = 'active'
   order by om.created_at asc
   limit 1;
 
-  if coalesce(jsonb_array_length(v_memberships), 0) > 0 and coalesce(jsonb_array_length(v_organizations), 0) = 0 then
+  if v_memberships_count > 0 and v_organizations_count = 0 then
     v_error_message := 'Не удалось загрузить организации пользователя';
   end if;
 
@@ -237,7 +267,9 @@ begin
     v_active_org_id,
     v_active_org_name,
     coalesce(v_role, 'unassigned'),
-    case when v_active_org_id is null then true else false end,
+    case when v_memberships_count = 0 then true else false end,
+    v_memberships_count,
+    v_organizations_count,
     v_error_message;
 end;
 $$;
