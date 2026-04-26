@@ -21,6 +21,7 @@
     var version = window.__BUILD_VERSION__ || String(Date.now());
     return 'https://kalka-hub.vercel.app/?v=' + encodeURIComponent(version);
   };
+  var MISSING_SUPABASE_LIB_MESSAGE = 'Не загрузилась библиотека Supabase. Проверьте интернет или обновите страницу';
   var initStarted = false;
   var initReady = false;
   var initError = null;
@@ -229,22 +230,6 @@
     ].join('\n');
   }
 
-  function buildAuthDiagnostics() {
-    var diag = getSupabaseDiagnostics();
-    var client = getClient();
-    var session = window.__userSession || {};
-    var currentUser = session.currentUser || window.CU || {};
-    return [
-      'domain=' + ((window.location && window.location.hostname) || ''),
-      'build=' + (window.__BUILD_VERSION__ || ''),
-      'hasConfig=' + String(!!(diag.hasUrl && diag.hasAnonKey)),
-      'clientReady=' + String(!!client),
-      'step=' + (window.__lastAuthStep || ''),
-      'lastError=' + (window.__lastAuthError || window.__lastRpcError || window.__lastInitError || ''),
-      'authUserId=' + (currentUser.authUserId || currentUser.auth_user_id || '')
-    ].join('\n');
-  }
-
   function copyAuthDiagnostics() {
     var text = buildAuthDiagnostics();
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -337,7 +322,7 @@
       window.__authConfigStatus = diagnostics.hasUrl && diagnostics.hasAnonKey ? 'OK' : 'FAIL';
       if (!client) {
         if (diagnostics.hasUrl && diagnostics.hasAnonKey) {
-          setAuthServiceStatus('Сервис авторизации временно недоступен. Обратитесь к администратору', 'err');
+          setAuthServiceStatus(MISSING_SUPABASE_LIB_MESSAGE, 'err');
         } else {
           setAuthServiceStatus('Модуль авторизации не загрузился. Обновите страницу', 'err');
         }
@@ -1062,7 +1047,7 @@
       var diag = getSupabaseDiagnostics();
       console.error('missing Supabase client', diag);
       var clientErrorMessage = diag.hasUrl && diag.hasAnonKey
-        ? 'Модуль авторизации не загрузился. Обновите страницу'
+        ? MISSING_SUPABASE_LIB_MESSAGE
         : 'Сервис авторизации временно недоступен. Обратитесь к администратору';
       setAuthServiceStatus(clientErrorMessage, 'err');
       setInitError(new Error(clientErrorMessage));
@@ -1137,7 +1122,7 @@
     if (!client) {
       var clientDiag = getSupabaseDiagnostics();
       var initMessage = clientDiag.hasUrl && clientDiag.hasAnonKey
-        ? 'Модуль авторизации не загрузился. Обновите страницу'
+        ? MISSING_SUPABASE_LIB_MESSAGE
         : 'Сервис авторизации временно недоступен. Обратитесь к администратору';
       setInitError(new Error(initMessage));
       setAuthServiceStatus(initMessage, 'err');
@@ -1208,11 +1193,45 @@
           throw signInError;
         }
       }
-      var authUser = await resolveAuthUserAfterSignIn(client, response);
+      var userResponse = await client.auth.getUser().catch(function (userError) {
+        console.error('auth: getUser after signIn failed', errorInfo(userError));
+        return null;
+      });
+      var authUser = userResponse && userResponse.data && userResponse.data.user
+        ? userResponse.data.user
+        : await resolveAuthUserAfterSignIn(client, response);
+      var postSignInSession = await client.auth.getSession().catch(function (sessionError) {
+        console.error('auth: getSession after signIn failed', errorInfo(sessionError));
+        return null;
+      });
+      var accessTokenExists = !!(postSignInSession && postSignInSession.data && postSignInSession.data.session && postSignInSession.data.session.access_token);
+      console.info('auth: getUser after signIn', {
+        authUserId: authUser && authUser.id ? authUser.id : '',
+        email: authUser && authUser.email ? authUser.email : '',
+        access_token_exists: accessTokenExists
+      });
       if (!authUser) {
         throw new Error('Не удалось подключиться к серверу авторизации');
       }
+      if (!authUser.id) {
+        var sessionMissingError = new Error('Авторизация прошла, но пользовательская сессия не получена');
+        sessionMissingError.code = 'NO_AUTH_USER';
+        sessionMissingError.details = '';
+        sessionMissingError.hint = '';
+        setAuthServiceStatus(sessionMissingError.message, 'err');
+        setLastAuthError(sessionMissingError);
+        setAuthStepStatus('auth failed', 'err');
+        throw sessionMissingError;
+      }
+      console.info('auth: session check', {
+        authUserId: authUser.id,
+        access_token_exists: accessTokenExists
+      });
       setAuthStepStatus('get_my_session started', 'ok');
+      console.info('auth: get_my_session request', {
+        authUserId: authUser.id,
+        access_token_exists: accessTokenExists
+      });
       var session = await getBootstrapPromise(authUser, function () {
         setState(STATE.LOADING_PROFILE, { authUserId: authUser.id });
         return bootstrapSession(authUser);
@@ -1395,8 +1414,8 @@
         return null;
       }
       if (error && error.code === 'NO_CLIENT') {
-        if (errEl) errEl.textContent = 'Сервис авторизации временно недоступен. Обратитесь к администратору';
-        setAuthServiceStatus('Сервис авторизации временно недоступен. Обратитесь к администратору', 'err');
+        if (errEl) errEl.textContent = MISSING_SUPABASE_LIB_MESSAGE;
+        setAuthServiceStatus(MISSING_SUPABASE_LIB_MESSAGE, 'err');
         return null;
       }
       if (errEl) errEl.textContent = error && error.message ? error.message : 'Ошибка входа';

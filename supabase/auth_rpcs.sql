@@ -32,7 +32,10 @@ begin
   limit 1;
 
   v_meta := coalesce(v_auth_user.raw_user_meta_data, '{}'::jsonb);
-  v_email := lower(coalesce(nullif(trim(coalesce(p_email, v_auth_user.email, '')), ''), ''));
+  v_email := lower(coalesce(
+    nullif(trim(coalesce(p_email, v_auth_user.email, v_auth_user.raw_user_meta_data ->> 'email', '')), ''),
+    ''
+  ));
 
   select *
     into v_profile
@@ -80,7 +83,7 @@ begin
   end if;
 
   if v_email = '' then
-    raise exception 'email is required to create user profile';
+    v_email := lower('unknown+' || replace(p_auth_user_id::text, '-', '') || '@invalid.local');
   end if;
 
   v_first_name := coalesce(nullif(trim(coalesce(p_first_name, v_meta ->> 'first_name', v_meta ->> 'firstName', v_meta ->> 'name', '')), ''), 'Пользователь');
