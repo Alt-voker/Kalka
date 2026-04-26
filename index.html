@@ -1316,53 +1316,8 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
     });
   })();
 
-  window.__renderBuildDebug = function (session) {
-    var el = document.getElementById('buildDebugBody');
-    if (!el) return;
-    var s = session || window.__userSession || {};
-    var cu = s.currentUser || window.CU || {};
-    function esc(v) {
-      return String(v == null ? '' : v)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-    }
-    el.innerHTML =
-      '<div><b>current domain:</b> ' + esc((window.location && window.location.hostname) || '—') + '</div>' +
-      '<div><b>expected domain:</b> ' + esc(allowedHost) + '</div>' +
-      '<div><b>BUILD_VERSION:</b> ' + esc(window.__BUILD_VERSION__ || '—') + '</div>' +
-      '<div><b>BUILD_TIME:</b> ' + (window.__BUILD_TIME__ || '—') + '</div>' +
-      '<div><b>RPC_ONLY:</b> true</div>' +
-      '<div><b>auth config status:</b> ' + esc(window.__authConfigStatus || 'UNKNOWN') + '</div>' +
-      '<div><b>auth module ready:</b> ' + String(!!window.__authModuleReady) + '</div>' +
-      '<div><b>client ready:</b> ' + String(!!window.__authClientReady) + '</div>' +
-      '<div><b>login handler attached:</b> ' + String(!!window.__authLoginHandlerAttached) + '</div>' +
-      '<div><b>last init error:</b> ' + esc(window.__lastInitError || '—') + '</div>' +
-      '<div><b>auth_user_id:</b> ' + (cu.authUserId || cu.auth_user_id || '—') + '</div>' +
-      '<div><b>email:</b> ' + (cu.email || '—') + '</div>' +
-      '<div><b>role:</b> ' + ((s.currentUser && s.currentUser.role) || s.role || '—') + '</div>' +
-      '<div><b>rawRole:</b> ' + (s.rawRole || '—') + '</div>' +
-      '<div><b>membershipsCount:</b> ' + (typeof s.membershipsCount === 'number' ? s.membershipsCount : ((s.memberships || []).length || 0)) + '</div>' +
-      '<div><b>organizationsCount:</b> ' + (typeof s.organizationsCount === 'number' ? s.organizationsCount : ((s.organizations || []).length || 0)) + '</div>' +
-      '<div><b>activeOrganizationId:</b> ' + (s.activeOrganizationId || '—') + '</div>' +
-      '<div><b>noOrganization:</b> ' + String(!!s.noOrganization) + '</div>' +
-      '<div><b>source:</b> RPC_ONLY</div>' +
-      '<div><b>auth config status:</b> ' + esc((window.KalkaApp && window.KalkaApp.supabase && window.KalkaApp.supabase.isEnabled && window.KalkaApp.supabase.isEnabled()) ? 'OK' : 'MISSING') + '</div>' +
-      '<div><b>last auth error:</b> ' + esc(window.__lastAuthError || '—') + '</div>' +
-      '<div><b>last rpc error:</b> ' + esc(window.__lastRpcError || '—') + '</div>';
-  };
-  setTimeout(function(){ try { window.__renderBuildDebug(window.__userSession || null); } catch (e) {} }, 0);
+  window.__renderBuildDebug = function () {};
 </script>
-
-<div id="buildDebug" style="position:fixed;left:12px;bottom:12px;z-index:9999;max-width:360px;background:rgba(10,14,18,.92);border:1px solid rgba(177,184,198,.35);border-radius:12px;padding:10px 12px;color:#e9edf5;font-size:11px;line-height:1.45;backdrop-filter:blur(10px);box-shadow:0 8px 24px rgba(0,0,0,.22);">
-  <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:6px;">
-    <strong style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;">Build Debug</strong>
-    <span style="color:#7ef0a0;">RPC_ONLY</span>
-  </div>
-  <div id="buildDebugBody">Загрузка...</div>
-</div>
 
 <div class="ov" id="ov-supPriceUpload"><div class="modal wide">
   <div class="m-title" id="supPriceUploadTitle">Загрузка прайса поставщика</div>

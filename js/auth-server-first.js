@@ -961,8 +961,24 @@
         updated_at: ''
       };
     }
-    var noOrganization = (normalized.membershipsCount > 0 || normalized.activeOrganizationId) ? false : !!normalized.noOrganization;
+    var noOrganization = (normalized.membershipsCount > 0 || normalized.activeOrganizationId || memberships.length > 0) ? false : !!normalized.noOrganization;
     var role = noOrganization ? 'unassigned' : (normalized.role || (activeMembership && activeMembership.role) || 'manager');
+    if (memberships.length > 0) {
+      noOrganization = false;
+    }
+    if (!activeOrganization && memberships.length > 0 && organizations.length > 0) {
+      activeOrganization = organizations[0];
+    }
+    if (!activeOrganization && memberships.length > 0 && normalized.activeOrganizationName) {
+      activeOrganization = {
+        id: normalized.activeOrganizationId || memberships[0].organization_id || '',
+        name: normalized.activeOrganizationName,
+        type: 'organization',
+        status: 'active',
+        created_at: '',
+        updated_at: ''
+      };
+    }
     var legacyUser = buildLegacyUserFromRpcRow(row, activeOrganization, noOrganization, role);
     var legacyActiveRest = {
       id: activeOrganization ? activeOrganization.id : (normalized.activeOrganizationId || null),
