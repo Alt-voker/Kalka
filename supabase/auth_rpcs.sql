@@ -200,6 +200,7 @@ declare
   v_error_message text;
   v_memberships_count integer := 0;
   v_organizations_count integer := 0;
+  v_is_owner boolean := false;
 begin
   if auth.uid() is null then
     raise exception 'auth.uid() is required';
@@ -224,24 +225,48 @@ begin
   where om.user_profile_id = v_profile.id
     and om.status = 'active';
   v_memberships_count := coalesce(jsonb_array_length(v_memberships), 0);
+  v_is_owner := exists(
+    select 1
+    from public.organization_members om
+    where om.user_profile_id = v_profile.id
+      and om.status = 'active'
+      and om.role in ('platform_owner', 'owner')
+  );
 
-  select coalesce(jsonb_agg(
-           jsonb_build_object(
-             'id', o.id,
-             'name', o.name,
-             'type', o.type,
-             'status', o.status,
-             'created_at', o.created_at,
-             'updated_at', o.updated_at
-           )
-           order by o.created_at asc
-         ), '[]'::jsonb)
-    into v_organizations
-  from public.organization_members om
-  join public.organizations o on o.id = om.organization_id
-  where om.user_profile_id = v_profile.id
-    and om.status = 'active'
-    and o.status = 'active';
+  if v_is_owner then
+    select coalesce(jsonb_agg(
+             jsonb_build_object(
+               'id', o.id,
+               'name', o.name,
+               'type', o.type,
+               'status', o.status,
+               'created_at', o.created_at,
+               'updated_at', o.updated_at
+             )
+             order by o.created_at asc
+           ), '[]'::jsonb)
+      into v_organizations
+    from public.organizations o
+    where o.status = 'active';
+  else
+    select coalesce(jsonb_agg(
+             jsonb_build_object(
+               'id', o.id,
+               'name', o.name,
+               'type', o.type,
+               'status', o.status,
+               'created_at', o.created_at,
+               'updated_at', o.updated_at
+             )
+             order by o.created_at asc
+           ), '[]'::jsonb)
+      into v_organizations
+    from public.organization_members om
+    join public.organizations o on o.id = om.organization_id
+    where om.user_profile_id = v_profile.id
+      and om.status = 'active'
+      and o.status = 'active';
+  end if;
   v_organizations_count := coalesce(jsonb_array_length(v_organizations), 0);
 
   select om.organization_id, o.name, om.role
@@ -253,8 +278,32 @@ begin
   order by om.created_at asc
   limit 1;
 
+  if v_is_owner and v_active_org_id is null and v_organizations_count > 0 then
+    select o.id, o.name
+      into v_active_org_id, v_active_org_name
+    from public.organizations o
+    where o.status = 'active'
+    order by o.created_at asc
+    limit 1;
+    if v_role = 'unassigned' then
+      v_role := 'platform_owner';
+    end if;
+  end if;
+
   if v_memberships_count > 0 and v_organizations_count = 0 then
     v_error_message := 'Не удалось загрузить организации пользователя';
+  end if;
+
+  if v_is_owner and v_organizations_count > 0 then
+    v_error_message := null;
+  end if;
+
+  if v_is_owner and v_organizations_count > 0 and v_active_org_id is not null then
+    v_memberships_count := greatest(v_memberships_count, 1);
+  end if;
+
+  if v_is_owner and v_organizations_count > 0 then
+    v_error_message := null;
   end if;
 
   return query
@@ -270,7 +319,11 @@ begin
     v_active_org_id,
     v_active_org_name,
     coalesce(v_role, 'unassigned'),
-    case when v_memberships_count = 0 then true else false end,
+    case
+      when v_memberships_count > 0 then false
+      when v_is_owner and v_organizations_count > 0 then false
+      else true
+    end,
     v_memberships_count,
     v_organizations_count,
     v_error_message;
