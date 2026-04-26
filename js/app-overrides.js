@@ -21,6 +21,7 @@
   var loggingOut = false;
   var authBound = false;
   var restoreInFlight = false;
+  window.markPerf = window.markPerf || function () {};
   if (typeof window.__loginInProgress === 'undefined') window.__loginInProgress = false;
   if (typeof window.__restoreInProgress === 'undefined') window.__restoreInProgress = false;
   if (typeof window.__sessionReady === 'undefined') window.__sessionReady = false;
@@ -1333,6 +1334,9 @@
   }
 
   window.initUserSession = async function (authUser, opts) {
+    if (window.__authServerFirstMode && window.AuthServerFirst && typeof window.AuthServerFirst.initUserSession === 'function') {
+      return window.AuthServerFirst.initUserSession(authUser, opts);
+    }
     var options = opts || {};
     if (!authUser) {
       clearClientRuntimeState();
@@ -1656,6 +1660,12 @@
   };
 
   window.doLogin = async function () {
+    if (window.__authServerFirstMode && window.AuthServerFirst && typeof window.AuthServerFirst.startLogin === 'function') {
+      return window.AuthServerFirst.startLogin(
+        ((document.getElementById('liE') || {}).value || '').trim().toLowerCase(),
+        ((document.getElementById('liP') || {}).value || '')
+      );
+    }
     var errEl = document.getElementById('liErr');
     var email = ((document.getElementById('liE') || {}).value || '').trim().toLowerCase();
     var password = ((document.getElementById('liP') || {}).value || '');
@@ -2236,9 +2246,15 @@
 
   app.auth = {
     initUserSession: async function (authUser, opts) {
+      if (window.__authServerFirstMode && window.AuthServerFirst && typeof window.AuthServerFirst.initUserSession === 'function') {
+        return window.AuthServerFirst.initUserSession(authUser, opts);
+      }
       return window.initUserSession ? window.initUserSession(authUser, opts) : null;
     },
     restoreSession: async function () {
+      if (window.__authServerFirstMode && window.AuthServerFirst && typeof window.AuthServerFirst.restoreSession === 'function') {
+        return window.AuthServerFirst.restoreSession();
+      }
       var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
       if (!client) return false;
       if (loggingOut || window.__loginInProgress || window.__sessionReady) return false;
