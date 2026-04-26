@@ -2,15 +2,11 @@
 let ROLES={
   owner:     {label:'Владелец',     emoji:'👑',color:'#5ba3f5',dim:'rgba(200,240,80,.12)',   pages:['owner','admin','restaurants','dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-dashboard','sup-products','sup-orders','sup-analytics']},
   admin:     {label:'Правая рука владельца',emoji:'🛡️',color:'#ab7df8',dim:'rgba(171,125,248,.12)', pages:['admin','restaurants','dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products']},
-  organization_owner:{label:'Владелец организации',emoji:'🏢',color:'#7ac943',dim:'rgba(122,201,67,.12)',pages:['dashboard','restaurants','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products','sup-dashboard']},
   manager:   {label:'Управляющий',  emoji:'👔',color:'#4fc3f7',dim:'rgba(79,195,247,.12)',  pages:['dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products','restaurants']},
   chef:      {label:'Шеф-повар',    emoji:'👨‍🍳',color:'#ff7043',dim:'rgba(255,112,67,.12)',  pages:['dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products','restaurants']},
   buyer:     {label:'Закупщик',     emoji:'🛒',color:'#4caf82',dim:'rgba(76,175,130,.12)',  pages:['dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','restaurants']},
   supplier:  {label:'Поставщик',    emoji:'🏭',color:'#8a9ba8',dim:'rgba(138,155,168,.12)', pages:['sup-dashboard','sup-products','sup-orders','sup-analytics']},
   accountant:{label:'Бухгалтер',    emoji:'📊',color:'#ffd54f',dim:'rgba(255,213,79,.12)',  pages:['analytics','orders','dashboard','restaurants']},
-  warehouse: {label:'Склад',        emoji:'📦',color:'#8bc34a',dim:'rgba(139,195,74,.12)',  pages:['dashboard','orders','suppliers','restaurants']},
-  bar_manager:{label:'Бар-менеджер',emoji:'🍸',color:'#f48fb1',dim:'rgba(244,143,177,.12)', pages:['dashboard','catalog','order','orders','suppliers','techcards','restaurants']},
-  unassigned:{label:'Без организации',emoji:'🔒',color:'#9e9e9e',dim:'rgba(158,158,158,.12)', pages:['dashboard']}
 };
 const ROLE_DEFAULT_PAGES=Object.fromEntries(Object.entries(ROLES).map(function(entry){
   return [entry[0], (entry[1].pages||[]).slice()];
@@ -36,19 +32,6 @@ const PM={
   cart:           {sec:null,          ico:'', lbl:'Корзина (legacy)'},
 };
 const PT={order:'Заказ и Корзина',tender:'Тендер',owner:'Панель владельца',admin:'Управление пользователями',dashboard:'Дашборд',catalog:'Каталог товаров',cart:'Корзина',favorites:'Избранное',orders:'История заказов',suppliers:'Поставщики',analytics:'Аналитика','tender':'Тендер',techcards:'Технологические карты','chef-calc':'Калькулятор','sup-dashboard':'Панель поставщика','sup-products':'Мои товары','sup-orders':'Входящие заказы','sup-analytics':'Аналитика продаж'};
-const ACCESS_MATRIX = {
-  owner: ['*'],
-  admin: ['dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products','sup-dashboard','sup-orders','sup-analytics','restaurants','admin'],
-  organization_owner: ['dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products','sup-dashboard','restaurants'],
-  manager: ['dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products','restaurants'],
-  buyer: ['dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','restaurants'],
-  chef: ['dashboard','catalog','order','favorites','orders','suppliers','analytics','tender','techcards','chef-calc','sup-products','restaurants'],
-  bar_manager: ['dashboard','catalog','order','orders','suppliers','techcards','restaurants'],
-  accountant: ['dashboard','analytics','orders','suppliers','restaurants'],
-  warehouse: ['dashboard','orders','suppliers','restaurants'],
-  supplier: ['sup-dashboard','sup-products','sup-orders','sup-analytics'],
-  unassigned: ['dashboard']
-};
 
 // ── СЛОВАРИ ПАРСЕРА И ПОИСКА ─────────────────────────────────
 
@@ -632,29 +615,6 @@ function updPendBadge(){
 }
 function closeAllPush(){document.querySelectorAll('.push').forEach(function(p){p.remove();});}
 
-function normalizeLegacyRole(role){
-  var r = String(role || '').trim();
-  if (r === 'platform_owner') return 'owner';
-  if (r === 'organization_owner') return 'organization_owner';
-  if (r === 'bar-manager' || r === 'bar manager') return 'bar_manager';
-  return r || 'unassigned';
-}
-
-function hasAccess(page, role){
-  var normalizedRole = normalizeLegacyRole(role);
-  var pages = ACCESS_MATRIX[normalizedRole] || ACCESS_MATRIX.unassigned || ['dashboard'];
-  var allowed = pages.indexOf('*') >= 0 || pages.indexOf(page) >= 0;
-  if (!allowed && page === 'dashboard' && normalizedRole !== 'unassigned') allowed = true;
-  console.info('access check', { page: page, role: normalizedRole, allowed: allowed });
-  return allowed;
-}
-
-function getSafeRolePages(role){
-  var normalizedRole = normalizeLegacyRole(role);
-  var pages = ACCESS_MATRIX[normalizedRole] || ACCESS_MATRIX.unassigned || ['dashboard'];
-  return pages.slice();
-}
-
 function enterApp(u){
   CU=u;
   // Применить личные скрытые поставщики
@@ -675,7 +635,7 @@ function enterApp(u){
 }
 function setupUI(u){
   u = u || window.CU || {};
-  var role = normalizeLegacyRole(u.role || (window.__userSession && window.__userSession.role) || 'unassigned');
+  var role = u.role || 'buyer';
   var rd = ROLES[role] || ROLES.owner || {};
   var tc = ['owner','chef','buyer'].includes(role) ? '#000' : '#fff';
   var first = String(u.first || u.firstName || (u.name || '').split(' ')[0] || 'П').trim();
@@ -685,7 +645,7 @@ function setupUI(u){
   var av=document.getElementById('sbAva');
   if (av) {
     var bgColor = rd.color || '#5ba3f5';
-    av.style.background='linear-gradient(135deg,' + bgColor + ',' + bgColor + '88)';
+    av.style.background=`linear-gradient(135deg,${bgColor},${bgColor}88)`;
     av.style.color=tc;
     av.textContent=((first.charAt(0) || 'П') + (last.charAt(0) || '')).toUpperCase();
   }
@@ -696,26 +656,26 @@ function setupUI(u){
   const isS=role==='supplier',isAcc=role==='accountant';
   var scopedRestaurants = Array.isArray(u.memberships) ? u.memberships.slice() : [];
   var cartBtn=document.getElementById('cartBtn');
-  if (cartBtn) cartBtn.style.display=(!noOrg&&!isS&&!isAcc && hasAccess('order', role))?'flex':'none';
+  if (cartBtn) cartBtn.style.display=(!noOrg&&!isS&&!isAcc)?'flex':'none';
   var favBtn=document.getElementById('favBtn');
-  if (favBtn) favBtn.style.display=(!noOrg&&!isS&&!isAcc && hasAccess('favorites', role))?'flex':'none';
+  if (favBtn) favBtn.style.display=(!noOrg&&!isS&&!isAcc)?'flex':'none';
   var tbSearch=document.getElementById('tbSearch');
-  if (tbSearch) tbSearch.style.display=(noOrg||isS||!hasAccess('catalog', role))?'none':'flex';
+  if (tbSearch) tbSearch.style.display=(noOrg||isS)?'none':'flex';
   var restBtn=document.getElementById('restBtn');
-  if (restBtn) restBtn.style.display=(!noOrg && !isS && (hasAccess('restaurants', role) || scopedRestaurants.length>1))?'flex':'none';
+  if (restBtn) restBtn.style.display=(!noOrg && !isS && (['owner','admin','manager'].includes(role) || scopedRestaurants.length>1))?'flex':'none';
   const ta=document.getElementById('topAct');
   if(ta){
     if(noOrg)                                      {ta.textContent='⇦ Выход';            ta.onclick=()=>doLogout();}
     else if(role==='supplier')                     {ta.textContent='+ Товар';            ta.onclick=()=>openModal('addProduct');}
-    else if(['chef','manager','admin','bar_manager'].includes(role)){ta.textContent='+ Тех. карта';  ta.onclick=()=>openModal('newTC');}
+    else if(['chef','manager','admin'].includes(role)){ta.textContent='+ Тех. карта';  ta.onclick=()=>openModal('newTC');}
     else if(role==='owner')                        {ta.textContent='🛡 Панель владельца';ta.onclick=()=>goPage('owner');}
     else                                           {ta.textContent='+ Заказ';            ta.onclick=()=>openModal('newOrder');}
   }
   buildNav(u);
   renderOrgInviteBadge();
-  var rolePages = getSafeRolePages(role);
-  var firstPage=noOrg ? 'dashboard' : (rolePages.find(function(pg){ return hasAccess(pg, role); })||'dashboard');
-  if(!noOrg && !hasAccess(firstPage, role)) firstPage='dashboard';
+  var rolePages = (ROLES[role] && Array.isArray(ROLES[role].pages)) ? ROLES[role].pages : ['dash'];
+  var firstPage=noOrg ? 'dashboard' : (rolePages.find(function(pg){ return canAccessPage(u, pg); })||'dashboard');
+  if(!noOrg && !canAccessPage(u, firstPage)) firstPage='orders';
   setTimeout(function(){
     requestAnimationFrame(function(){
       goPage(firstPage);
@@ -757,12 +717,10 @@ function doLogout(){
 
 function toggleSB(){sbC=!sbC;document.getElementById('SB').classList.toggle('slim',sbC);document.getElementById('sbTog').textContent=sbC?'›':'‹';}
 function buildNav(u){
-  u = u || CU || window.CU || {};
-  var role = normalizeLegacyRole(u.role || (window.__userSession && window.__userSession.role) || 'unassigned');
   const noOrg=!!(u && (u.noOrganization || (window.__userSession && window.__userSession.noOrganization)));
-  const basePages=noOrg ? ['dashboard'] : getSafeRolePages(role);
-  const rawPages=noOrg ? ['dashboard'] : ((role==='admin'&&ownerGetSettings().adminAdvanced&&basePages.indexOf('owner')<0)?['owner'].concat(basePages):basePages);
-  const pages=rawPages.filter(function(pg){ return hasAccess(pg, role) && (pg!=='dashboard' || userCanSeeDashboard(u)); });
+  const basePages=noOrg ? ['dashboard'] : ((ROLES[u.role]||{}).pages||[]).slice();
+  const rawPages=noOrg ? ['dashboard'] : ((u.role==='admin'&&ownerGetSettings().adminAdvanced&&basePages.indexOf('owner')<0)?['owner'].concat(basePages):basePages);
+  const pages=rawPages.filter(function(pg){ return pg!=='dashboard' || userCanSeeDashboard(u); });
   let html='',lastSec=null;
   pages.forEach(pg=>{
     const m=PM[pg]||{sec:null,ico:'•',lbl:pg};
@@ -778,11 +736,7 @@ function buildNav(u){
 }
 function goPage(pg){
   if(!CU)return;
-  var role = normalizeLegacyRole(CU.role || (window.__userSession && window.__userSession.role) || 'unassigned');
-  if(!hasAccess(pg, role)){
-    toast('Недостаточно прав для доступа к разделу','err');
-    pg='dashboard';
-  }
+  if(!canAccessPage(CU, pg)){toast('🚫 Нет доступа к этому разделу','err');return;}
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.sb-item').forEach(i=>i.classList.remove('on'));
   document.getElementById('pg-'+pg)?.classList.add('on');
@@ -2740,12 +2694,12 @@ function ensureDashboardRestSelection(){
 
 function canAccessPage(u, pg){
   if(!u) return false;
-  var role = normalizeLegacyRole(u.role || (window.__userSession && window.__userSession.role) || 'unassigned');
   if(pg==='dashboard') return userCanSeeDashboard(u);
-  if(u.noOrganization || (window.__userSession && window.__userSession.noOrganization)) {
-    return pg==='dashboard';
-  }
-  return hasAccess(pg, role);
+  if(u.noOrganization || (window.__userSession && window.__userSession.noOrganization)) return false;
+  var pages=(ROLES[u.role]||{}).pages||[];
+  if(pages.indexOf(pg)>=0) return true;
+  if(u.role==='admin' && ownerGetSettings().adminAdvanced && pg==='owner') return true;
+  return false;
 }
 
 function ownerGetNotifications(){
