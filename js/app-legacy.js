@@ -3701,16 +3701,18 @@ function renderRestaurants(){
   var session = window.__userSession || {};
   var orgs = Array.isArray(session.organizations) ? session.organizations.slice() : [];
   var activeOrgId = String(session.activeOrganizationId || '').trim();
-  var db = dbGet();
-  var orgRows = orgs.length ? orgs : (db.restaurants||[]).filter(function(r){ return r.id!=='r0'; }).map(function(r){
+  var currentRole = normalizeLegacyRole((session.currentUser && session.currentUser.role) || (CU && CU.role) || 'unassigned');
+  var orgRows = orgs.map(function(org){
     return {
-      id: String(r.organizationId || r.id || '').trim(),
-      name: r.brandName || r.legalName || r.name || 'Организация',
-      type: r.type || 'organization',
-      status: r.status || 'active'
+      id: String(org.id || '').trim(),
+      name: org.name || 'Организация',
+      type: org.type || 'organization',
+      status: org.status || 'active',
+      role: org.role || currentRole
     };
   }).filter(function(item){ return !!item.id; });
-  document.getElementById('restPageSub').textContent = orgRows.length + ' организаций';
+  var sub = document.getElementById('restPageSub');
+  if(sub) sub.textContent = orgRows.length + ' организаций';
 
   if(!orgRows.length){
     el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--t3);">'
@@ -3730,7 +3732,7 @@ function renderRestaurants(){
     var switchBtn = isActive
       ? '<button class="tbBtn acc" disabled style="opacity:.8;cursor:default;">Текущая организация</button>'
       : '<button class="tbBtn" onclick="setActiveOrganization(\''+org.id+'\')" style="cursor:pointer;">Сделать активной</button>';
-    var ownerBadge = (CU && CU.role==='owner')
+    var ownerBadge = (currentRole==='owner')
       ? '<span class="badge bg" style="margin-left:10px;">Владелец видит все организации</span>'
       : '';
     return '<div class="panel" style="margin-bottom:16px;">'
@@ -3740,12 +3742,45 @@ function renderRestaurants(){
       +'<div><div style="font-size:11px;color:var(--t3);">ID</div><div style="font-size:13px;font-weight:700;">'+org.id+'</div></div>'
       +'<div><div style="font-size:11px;color:var(--t3);">Юр. лица</div><div style="font-size:13px;font-weight:700;">'+(legalNames.length?legalNames.join(' · '):'Не указаны')+'</div></div>'
       +'<div><div style="font-size:11px;color:var(--t3);">Статус</div><div style="font-size:13px;font-weight:700;">'+(org.status||'active')+'</div></div>'
+      +'<div><div style="font-size:11px;color:var(--t3);">Роль</div><div style="font-size:13px;font-weight:700;">'+(org.role||currentRole)+'</div></div>'
       +'<div style="display:flex;justify-content:flex-end;align-items:center;">'+(isActive?'<span class="badge bg">Активная</span>':'<span class="badge br">Не активная</span>')+'</div>'
       +'</div>'
       +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'+switchBtn+ownerBadge+'</div>'
       +'</div>'
       +'</div>';
   }).join('');
+}
+
+function setActiveOrganization(orgId){
+  var session = window.__userSession || {};
+  var organizations = Array.isArray(session.organizations) ? session.organizations.slice() : [];
+  var org = organizations.find(function(item){ return String(item.id || '') === String(orgId || ''); }) || null;
+  if(!org){
+    toast('Организация не найдена','err');
+    return;
+  }
+  session.activeOrganizationId = org.id;
+  session.activeOrganization = org;
+  session.noOrganization = false;
+  if(session.currentUser){
+    session.currentUser.activeOrganizationId = org.id;
+    session.currentUser.organizationId = org.id;
+    session.currentUser.company = org.name || session.currentUser.company || 'КальКа';
+  }
+  window.__userSession = session;
+  window.activeRest = {
+    id: org.id,
+    organizationId: org.id,
+    name: org.name || '',
+    kind: org.type || 'organization',
+    type: org.type || 'organization',
+    members: []
+  };
+  window.CU = session.currentUser || window.CU;
+  toast('Активная организация: ' + (org.name || org.id), 'ok');
+  if(typeof renderRestaurants === 'function') renderRestaurants();
+  if(typeof renderCart === 'function') renderCart();
+  if(typeof renderOrderSmartSuggestions === 'function') renderOrderSmartSuggestions();
 }
 
 function getRestaurantHistory(rest, days){
@@ -4569,9 +4604,14 @@ function _saveComment(si, val){
 }
 
 function getActiveRestMeta(){
-  var db=dbGet();
-  var restId=_orderRestId||(activeRest&&activeRest.id)||'';
-  return (db.restaurants||[]).find(function(r){ return r.id===restId; })||null;
+  var session=window.__userSession||{};
+  var restId=String(_orderRestId||(activeRest&&activeRest.id)||(session.activeOrganizationId)||'').trim();
+  var orgs=Array.isArray(session.organizations)?session.organizations:[];
+  var rest=(session.activeOrganization && String(session.activeOrganization.id||'')===restId)
+    ? session.activeOrganization
+    : orgs.find(function(org){ return String(org.id||'')===restId; }) || null;
+  if(!rest && activeRest && String(activeRest.id||'')===restId) rest=activeRest;
+  return rest||null;
 }
 
 function getActivePurchaseRules(){
@@ -4595,11 +4635,13 @@ function supplierRuleStatus(supName,total){
 }
 
 function getCurrentOrderRestaurantMeta(){
-  var db=dbGet();
-  var rest=(db.restaurants||[]).find(function(r){ return r.id===_orderRestId; });
-  if(!rest && activeRest && activeRest.id){
-    rest=(db.restaurants||[]).find(function(r){ return r.id===activeRest.id; });
-  }
+  var session=window.__userSession||{};
+  var restId=String(_orderRestId||(activeRest&&activeRest.id)||(session.activeOrganizationId)||'').trim();
+  var orgs=Array.isArray(session.organizations)?session.organizations:[];
+  var rest=(session.activeOrganization && String(session.activeOrganization.id||'')===restId)
+    ? session.activeOrganization
+    : orgs.find(function(org){ return String(org.id||'')===restId; }) || null;
+  if(!rest && activeRest && String(activeRest.id||'')===restId) rest=activeRest;
   return rest||null;
 }
 
