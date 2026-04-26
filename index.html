@@ -331,7 +331,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
 <div id="AUTH">
 <div class="aw">
   <div class="al"><div class="al-logo" style="font-size:28px;font-weight:900;letter-spacing:-1px;">КальКа</div><div class="al-sub">Платформа управления закупками</div></div>
-  <div class="acard">
+  <form class="acard" id="authLoginForm">
     <label class="fL">Email</label>
     <input class="fI" type="email" id="liE" placeholder="your@email.ru" onkeydown="if(event.key==='Enter')doLogin()">
     <label class="fL">Пароль</label>
@@ -344,6 +344,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
     <button class="btnA" id="loginBtn" onclick="doLogin()">Войти в систему →</button>
     <button type="button" id="authRetryBtn" onclick="doLogin()" style="display:none;width:100%;margin-top:8px;background:var(--bg3);color:var(--tx);border:1px solid var(--br2);border-radius:var(--r);padding:10px 12px;font-size:12px;font-weight:800;cursor:pointer;">Повторить вход</button>
     <button type="button" id="authResetBtn" onclick="resetAuthSessionAndReload()" style="display:none;width:100%;margin-top:8px;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:var(--r);padding:10px 12px;font-size:12px;font-weight:800;cursor:pointer;">Сбросить сессию и войти заново</button>
+    <button type="button" id="authReloadBtn" onclick="location.reload()" style="display:none;width:100%;margin-top:8px;background:var(--orD);color:var(--or);border:1px solid var(--or);border-radius:var(--r);padding:10px 12px;font-size:12px;font-weight:800;cursor:pointer;">Обновить</button>
     <div style="text-align:center;margin:14px 0 6px;font-size:11px;color:var(--t3);line-height:1.6;">
       Нет аккаунта? Зарегистрируйтесь сами и дождитесь одобрения.<br>
       После одобрения владельцем или администратором вход откроется автоматически.
@@ -357,7 +358,7 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
       <button onclick="clearCacheAndReload()" style="background:none;border:none;color:var(--t4);font-size:10px;cursor:pointer;text-decoration:underline;">Проблемы со входом? Очистить кэш</button>
     </div>
     <div class="dg hidden" id="demoG"></div>
-  </div>
+  </form>
 </div>
 </div>
 
@@ -1299,10 +1300,10 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
           'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
           'js/app-config.js?v=' + ver,
           'js/app-supabase.js?v=' + ver,
+          'js/auth-server-first.js?v=' + ver,
           'js/app-supabase-commerce.js?v=' + ver,
           'js/app-legacy.js?v=' + ver,
-          'js/app-overrides.js?v=' + ver,
-          'js/auth-server-first.js?v=' + ver
+          'js/app-overrides.js?v=' + ver
         ];
     scripts.forEach(function (src) {
       var s = document.createElement('script');
@@ -1330,6 +1331,11 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
       '<div><b>BUILD_VERSION:</b> ' + esc(window.__BUILD_VERSION__ || '—') + '</div>' +
       '<div><b>BUILD_TIME:</b> ' + (window.__BUILD_TIME__ || '—') + '</div>' +
       '<div><b>RPC_ONLY:</b> true</div>' +
+      '<div><b>auth config status:</b> ' + esc(window.__authConfigStatus || 'UNKNOWN') + '</div>' +
+      '<div><b>auth module ready:</b> ' + String(!!window.__authModuleReady) + '</div>' +
+      '<div><b>client ready:</b> ' + String(!!window.__authClientReady) + '</div>' +
+      '<div><b>login handler attached:</b> ' + String(!!window.__authLoginHandlerAttached) + '</div>' +
+      '<div><b>last init error:</b> ' + esc(window.__lastInitError || '—') + '</div>' +
       '<div><b>auth_user_id:</b> ' + (cu.authUserId || cu.auth_user_id || '—') + '</div>' +
       '<div><b>email:</b> ' + (cu.email || '—') + '</div>' +
       '<div><b>role:</b> ' + ((s.currentUser && s.currentUser.role) || s.role || '—') + '</div>' +

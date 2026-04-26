@@ -21,6 +21,13 @@
     var version = window.__BUILD_VERSION__ || String(Date.now());
     return 'https://kalka-hub.vercel.app/?v=' + encodeURIComponent(version);
   };
+  var initStarted = false;
+  var initReady = false;
+  var initError = null;
+  var bindingAttached = false;
+  window.__authModuleReady = false;
+  window.__authLoginHandlerAttached = false;
+  window.__lastInitError = null;
 
   function markPerf(name) {
     try {
@@ -72,11 +79,13 @@
     button.disabled = !!disabled;
   }
 
-  function setAuthActionButtons(retryVisible, resetVisible) {
+  function setAuthActionButtons(retryVisible, resetVisible, reloadVisible) {
     var retry = document.getElementById('authRetryBtn');
     var reset = document.getElementById('authResetBtn');
+    var reload = document.getElementById('authReloadBtn');
     if (retry) retry.style.display = retryVisible ? 'block' : 'none';
     if (reset) reset.style.display = resetVisible ? 'block' : 'none';
+    if (reload) reload.style.display = reloadVisible ? 'block' : 'none';
   }
 
   function showLoginScreen(message) {
@@ -96,6 +105,19 @@
     if (!el) return;
     el.textContent = message || '';
     el.style.color = tone === 'err' ? 'var(--rd)' : (tone === 'ok' ? 'var(--gr)' : 'var(--t3)');
+  }
+
+  function setInitError(error) {
+    initError = error || null;
+    window.__lastInitError = error ? (error.message || String(error)) : null;
+      if (error) {
+      console.error('auth init failed', errorInfo(error));
+      setAuthServiceStatus('Модуль авторизации не загрузился. Обновите страницу', 'err');
+      setAuthActionButtons(true, true, true);
+    }
+    if (typeof window.__renderBuildDebug === 'function') {
+      try { window.__renderBuildDebug(window.__userSession || null); } catch (renderError) {}
+    }
   }
 
   function setLastAuthError(error) {
@@ -130,7 +152,22 @@
   }
 
   function getClient() {
-    return app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    var direct = window.__supabase || window.supabaseClient || window.sb || window.SB || null;
+    if (direct) return direct;
+    if (app.supabase && app.supabase.getClient) {
+      try {
+        direct = app.supabase.getClient();
+      } catch (error) {
+        console.warn('supabase client init fallback failed', errorInfo(error));
+      }
+    }
+    if (direct) {
+      window.__supabase = direct;
+      window.supabaseClient = direct;
+      window.sb = direct;
+      window.SB = direct;
+    }
+    return direct;
   }
 
   function getSupabaseDiagnostics() {
@@ -159,6 +196,101 @@
       hint: error && error.hint ? error.hint : '',
       raw: error
     };
+  }
+
+  function syncAuthDebug() {
+    if (typeof window.__renderBuildDebug === 'function') {
+      try { window.__renderBuildDebug(window.__userSession || null); } catch (error) {}
+    }
+  }
+
+  function bindLoginHandlers() {
+    if (bindingAttached) return true;
+    var emailInput = document.getElementById('liE');
+    var passwordInput = document.getElementById('liP');
+    var loginButton = document.getElementById('loginBtn');
+    var authForm = document.getElementById('authLoginForm') || document.querySelector('#AUTH .acard');
+    if (!emailInput || !passwordInput || !loginButton || !authForm) {
+      console.info('login form not ready yet');
+      return false;
+    }
+    console.info('login form found');
+    console.info('login handler attached');
+    window.__authLoginHandlerAttached = true;
+    bindingAttached = true;
+    if (loginButton && loginButton.tagName === 'BUTTON') {
+      loginButton.type = 'button';
+    }
+    authForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      console.info('login clicked');
+      if (typeof window.doLogin === 'function') window.doLogin();
+    });
+    loginButton.addEventListener('click', function (event) {
+      event.preventDefault();
+      console.info('login clicked');
+      if (typeof window.doLogin === 'function') window.doLogin();
+    });
+    [emailInput, passwordInput].forEach(function (input) {
+      input.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          console.info('login clicked');
+          if (typeof window.doLogin === 'function') window.doLogin();
+        }
+      });
+    });
+    return true;
+  }
+
+  function initAuthModule() {
+    if (initStarted) return initReady;
+    initStarted = true;
+    console.info('auth module loaded');
+    try {
+      var client = getClient();
+      var diagnostics = getSupabaseDiagnostics();
+      window.__authClientReady = !!client;
+      window.__authConfigStatus = diagnostics.hasUrl && diagnostics.hasAnonKey ? 'OK' : 'FAIL';
+      if (!client) {
+        if (diagnostics.hasUrl && diagnostics.hasAnonKey) {
+          setAuthServiceStatus('Сервис авторизации временно недоступен. Обратитесь к администратору', 'err');
+        } else {
+          setAuthServiceStatus('Модуль авторизации не загрузился. Обновите страницу', 'err');
+        }
+      }
+      var ready = bindLoginHandlers();
+      initReady = !!ready;
+      window.__authModuleReady = initReady;
+      syncAuthDebug();
+      return initReady;
+    } catch (error) {
+      setInitError(error);
+      window.__authModuleReady = false;
+      return false;
+    }
+  }
+
+  function runInitWithFallback() {
+    try {
+      if (!initAuthModule()) {
+        setTimeout(function () {
+          if (!window.__authModuleReady) {
+            setAuthServiceStatus('Модуль авторизации не загрузился. Обновите страницу', 'err');
+            setAuthActionButtons(true, true, true);
+            syncAuthDebug();
+          }
+        }, 3000);
+      }
+    } catch (error) {
+      setInitError(error);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', runInitWithFallback, { once: true });
+  } else {
+    setTimeout(runInitWithFallback, 0);
   }
 
   function normalizeSessionRow(data) {
@@ -839,9 +971,14 @@
   async function startLoginFlow(email, password) {
     var client = getClient();
     if (!client) {
-      console.error('missing Supabase config', getSupabaseDiagnostics());
-      setAuthServiceStatus('Сервис авторизации временно недоступен. Обратитесь к администратору', 'err');
-      throw new Error('Сервис авторизации временно недоступен. Обратитесь к администратору');
+      var diag = getSupabaseDiagnostics();
+      console.error('missing Supabase client', diag);
+      var clientErrorMessage = diag.hasUrl && diag.hasAnonKey
+        ? 'Модуль авторизации не загрузился. Обновите страницу'
+        : 'Сервис авторизации временно недоступен. Обратитесь к администратору';
+      setAuthServiceStatus(clientErrorMessage, 'err');
+      setInitError(new Error(clientErrorMessage));
+      throw new Error(clientErrorMessage);
     }
     setAuthServiceStatus('');
     console.info('auth: signIn started');
@@ -906,7 +1043,13 @@
   async function login(email, password) {
     var client = getClient();
     if (!client) {
-      throw new Error('Сервис авторизации временно недоступен. Обратитесь к администратору');
+      var clientDiag = getSupabaseDiagnostics();
+      var initMessage = clientDiag.hasUrl && clientDiag.hasAnonKey
+        ? 'Модуль авторизации не загрузился. Обновите страницу'
+        : 'Сервис авторизации временно недоступен. Обратитесь к администратору';
+      setInitError(new Error(initMessage));
+      setAuthServiceStatus(initMessage, 'err');
+      throw new Error(initMessage);
     }
     if (window.__loginInProgress) {
       return window.__userSession || null;

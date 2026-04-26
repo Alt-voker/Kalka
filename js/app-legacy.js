@@ -547,6 +547,11 @@ function setSupplierRating(supName, value){
 function eyeT(id,btn){const e=document.getElementById(id);if(!e)return;e.type=e.type==='password'?'text':'password';btn.textContent=e.type==='password'?'👁':'🙈';}
 
 function doLogin(){
+  if(window.__authServerFirstMode && window.AuthServerFirst && typeof window.AuthServerFirst.startLogin==='function'){
+    var em=((document.getElementById('liE')||{}).value||'').trim().toLowerCase();
+    var pw=((document.getElementById('liP')||{}).value||'');
+    return window.AuthServerFirst.startLogin(em,pw);
+  }
   if(window.KalkaApp && window.KalkaApp.supabase && window.KalkaApp.supabase.isEnabled && window.KalkaApp.supabase.isEnabled()){
     var authStatus=document.getElementById('authSvcStatus');
     if(authStatus){
@@ -657,6 +662,9 @@ function setupUI(u){
   renderDemoG();
 }
 function doLogout(){
+  if(window.__authServerFirstMode && window.AuthServerFirst && typeof window.AuthServerFirst.logout==='function'){
+    return window.AuthServerFirst.logout();
+  }
   CU=null;cart=[];
   if(window._pPoll){clearInterval(window._pPoll);window._pPoll=null;}
   try{

@@ -21,9 +21,17 @@
           storageKey: 'kalka-supabase-auth'
         }
       });
+      window.__supabase = client;
+      window.supabaseClient = client;
+      window.sb = client;
+      window.SB = client;
     } catch (error) {
       console.error('Supabase init failed:', error);
       client = null;
+      window.__supabase = null;
+      window.supabaseClient = null;
+      window.sb = null;
+      window.SB = null;
     }
 
     return client;
