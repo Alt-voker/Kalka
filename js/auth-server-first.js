@@ -16,8 +16,11 @@
   var bootstrapPromises = {};
   var perfMarks = window.__perfMarks = window.__perfMarks || {};
   var currentState = window.__authState || STATE.UNAUTHENTICATED;
-  var LAST_GOOD_COMMIT = '096f893';
-  var EXPECTED_PRODUCTION_URL = 'https://kalka-hub.vercel.app/?v=096f893';
+  var LAST_GOOD_COMMIT = null;
+  var EXPECTED_PRODUCTION_URL = function () {
+    var version = window.__BUILD_VERSION__ || String(Date.now());
+    return 'https://kalka-hub.vercel.app/?v=' + encodeURIComponent(version);
+  };
 
   function markPerf(name) {
     try {
@@ -1197,7 +1200,7 @@
         window.activeRest = null;
         window.__lastAuthError = null;
         window.__lastRpcError = null;
-        window.location.href = EXPECTED_PRODUCTION_URL;
+        window.location.href = EXPECTED_PRODUCTION_URL();
       });
   };
 
