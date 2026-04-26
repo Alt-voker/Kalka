@@ -16,8 +16,8 @@
   var bootstrapPromises = {};
   var perfMarks = window.__perfMarks = window.__perfMarks || {};
   var currentState = window.__authState || STATE.UNAUTHENTICATED;
-  var LAST_GOOD_COMMIT = '0871063';
-  var EXPECTED_PRODUCTION_URL = 'https://kalka-hub.vercel.app/?v=0871063';
+  var LAST_GOOD_COMMIT = '096f893';
+  var EXPECTED_PRODUCTION_URL = 'https://kalka-hub.vercel.app/?v=096f893';
 
   function markPerf(name) {
     try {
