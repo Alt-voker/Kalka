@@ -288,93 +288,54 @@
       return Promise.resolve({ ok: false, message: msg });
     }
     setAuthServiceStatus('Проверяем соединение с Supabase Auth…', 'ok');
-    var healthUrl = diag.baseUrl + '/auth/v1/health';
     return Promise.resolve()
       .then(function () {
-        return client.auth.getSession().catch(function (error) {
-          return {
-            error: error,
-            data: null,
-            source: 'getSession'
-          };
-        });
+        return client.auth.getSession();
       })
       .then(function (sessionResponse) {
         var sessionOk = !!(sessionResponse && sessionResponse.data && sessionResponse.data.session);
-        if (sessionOk) {
-          setAuthServiceStatus('Соединение с Supabase установлено', 'ok');
-          return {
-            ok: true,
-            source: 'getSession',
-            status: 200,
-            url: 'supabase.auth.getSession()',
-            text: 'session ok'
-          };
-        }
-        return fetch(healthUrl, {
-          method: 'GET',
-          headers: {
-            apikey: diag.anonKey || '',
-            Authorization: 'Bearer ' + (diag.anonKey || '')
-          }
-        }).then(function (response) {
-          return response.text().catch(function () { return ''; }).then(function (text) {
-            var details = text;
-            var json = null;
-            try { json = text ? JSON.parse(text) : null; } catch (e) {}
-            if (response && response.ok) {
-              setAuthServiceStatus('Соединение с Supabase установлено', 'ok');
-              return {
-                ok: true,
-                source: 'health',
-                status: response.status,
-                url: healthUrl,
-                text: text,
-                json: json
-              };
-            }
-            var statusText = 'HTTP ' + String(response ? response.status : 0);
-            var msg = 'Supabase Auth вернул ошибку: ' + statusText;
-            setAuthServiceStatus(msg, 'err');
-            setLastInitError(new Error(msg));
-            return {
-              ok: false,
-              source: 'health',
-              status: response ? response.status : 0,
-              url: healthUrl,
-              text: text,
-              json: json,
-              message: msg,
-              host: diag.host
-            };
-          });
-        }).catch(function (error) {
-          var info = errorInfo(error);
-          var msg = 'Не удалось соединиться с Supabase Auth. Проверьте сеть/VPN/блокировки';
-          console.error('auth connection check failed', {
-            code: info.code,
-            status: info.status,
-            message: info.message,
-            details: info.details,
-            hint: info.hint,
-            raw: error,
-            host: diag.host,
-            source: diag.source,
-            url: healthUrl
-          });
-          setLastInitError(error);
-          setAuthServiceStatus(msg, 'err');
-          return {
-            ok: false,
-            source: 'health',
-            status: info.status || 0,
-            url: healthUrl,
-            text: info.message || '',
-            json: null,
-            message: msg,
-            host: diag.host
-          };
+        var sessionText = sessionOk
+          ? 'Соединение с Supabase установлено'
+          : 'Соединение с Supabase установлено. Сессия не найдена — выполните вход.';
+        setAuthServiceStatus(sessionText, 'ok');
+        setLastInitError(null);
+        return {
+          ok: true,
+          source: 'getSession',
+          status: 200,
+          url: 'supabase.auth.getSession()',
+          text: sessionOk ? 'session ok' : 'session missing',
+          session: sessionResponse && sessionResponse.data && sessionResponse.data.session ? sessionResponse.data.session : null,
+          host: diag.host,
+          info: 'health endpoint not required'
+        };
+      })
+      .catch(function (error) {
+        var info = errorInfo(error);
+        var msg = 'Не удалось соединиться с Supabase Auth. Проверьте сеть/VPN/блокировки';
+        console.error('auth connection check failed', {
+          code: info.code,
+          status: info.status,
+          message: info.message,
+          details: info.details,
+          hint: info.hint,
+          raw: error,
+          host: diag.host,
+          source: diag.source,
+          url: 'supabase.auth.getSession()'
         });
+        setLastInitError(error);
+        setAuthServiceStatus(msg, 'err');
+        return {
+          ok: false,
+          source: 'getSession',
+          status: info.status || 0,
+          url: 'supabase.auth.getSession()',
+          text: info.message || '',
+          json: null,
+          message: msg,
+          host: diag.host
+        };
       });
   }
 
