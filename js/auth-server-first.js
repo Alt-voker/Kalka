@@ -16,6 +16,8 @@
   var bootstrapPromises = {};
   var perfMarks = window.__perfMarks = window.__perfMarks || {};
   var currentState = window.__authState || STATE.UNAUTHENTICATED;
+  var LAST_GOOD_COMMIT = '0871063';
+  var EXPECTED_PRODUCTION_URL = 'https://kalka-hub.vercel.app/?v=0871063';
 
   function markPerf(name) {
     try {
@@ -67,6 +69,13 @@
     button.disabled = !!disabled;
   }
 
+  function setAuthActionButtons(retryVisible, resetVisible) {
+    var retry = document.getElementById('authRetryBtn');
+    var reset = document.getElementById('authResetBtn');
+    if (retry) retry.style.display = retryVisible ? 'block' : 'none';
+    if (reset) reset.style.display = resetVisible ? 'block' : 'none';
+  }
+
   function showLoginScreen(message) {
     var auth = document.getElementById('AUTH');
     var appShell = document.getElementById('APP');
@@ -86,6 +95,23 @@
     el.style.color = tone === 'err' ? 'var(--rd)' : (tone === 'ok' ? 'var(--gr)' : 'var(--t3)');
   }
 
+  function setLastAuthError(error) {
+    window.__lastAuthError = error ? (error.message || String(error)) : null;
+  }
+
+  function setLastRpcError(error, fallbackMessage) {
+    window.__lastRpcError = error ? (error.message || fallbackMessage || String(error)) : null;
+  }
+
+  function clearErrorsAndActions() {
+    setLastAuthError(null);
+    setLastRpcError(null);
+    setAuthActionButtons(false, false);
+    setAuthServiceStatus('');
+    var errEl = document.getElementById('liErr');
+    if (errEl) errEl.textContent = '';
+  }
+
   function showAppShell() {
     var auth = document.getElementById('AUTH');
     var appShell = document.getElementById('APP');
@@ -93,6 +119,11 @@
     if (auth) auth.classList.add('gone');
     if (appShell) appShell.classList.add('on');
     if (loader) loader.remove();
+  }
+
+  function normalizeErrorMessage(error) {
+    if (!error) return '';
+    return error.message || error.msg || String(error);
   }
 
   function getClient() {
@@ -400,6 +431,7 @@
         hint: errorInfo(error).hint,
         raw: error
       });
+      setLastRpcError(error, 'Не удалось загрузить профиль пользователя');
       throw error;
     });
 
@@ -448,6 +480,7 @@
         hint: errorInfo(error).hint,
         raw: error
       });
+      setLastRpcError(error, 'Не удалось создать профиль пользователя');
       throw error;
     });
 
@@ -490,6 +523,7 @@
         hint: errorInfo(error).hint,
         raw: error
       });
+      setLastRpcError(error, 'Не удалось загрузить доступы пользователя');
       throw error;
     });
 
@@ -535,6 +569,7 @@
         hint: errorInfo(error).hint,
         raw: error
       });
+      setLastRpcError(error, 'Не удалось загрузить организации пользователя');
       throw error;
     });
 
@@ -574,6 +609,7 @@
         hint: error && error.hint ? error.hint : '',
         raw: error
       });
+      setLastRpcError(error, 'Не удалось загрузить профиль пользователя');
       throw error;
     });
     if (response && response.error) {
@@ -585,6 +621,7 @@
         hint: response.error.hint || '',
         raw: response.error
       });
+      setLastRpcError(response.error, 'Не удалось загрузить профиль пользователя');
       throw response.error;
     }
     var normalized = normalizeSessionRow(response && response.data);
@@ -827,8 +864,10 @@
         var netErr = new Error('Не удалось подключиться к серверу авторизации. Проверьте интернет или попробуйте позже');
         netErr.code = info.code || 'NETWORK_ERROR';
         setAuthServiceStatus(netErr.message, 'err');
+        setLastAuthError(netErr);
         throw netErr;
       }
+      setLastAuthError(error);
       throw error;
     });
     if (response.error) {
@@ -842,6 +881,7 @@
         host: getSupabaseDiagnostics().host,
         source: getSupabaseDiagnostics().source
       });
+      setLastAuthError(response.error);
       setAuthServiceStatus('Не удалось подключиться к серверу авторизации. Проверьте интернет или попробуйте позже', 'err');
       throw response.error;
     }
@@ -873,16 +913,37 @@
       return window.__userSession;
     }
 
-    if (typeof window.clearClientRuntimeState === 'function') {
+    clearErrorsAndActions();
+    if (typeof window.cleanRuntime === 'function') {
+      window.cleanRuntime();
+    } else if (typeof window.clearClientRuntimeState === 'function') {
       window.clearClientRuntimeState();
     }
     if (typeof window.clearClientStorage === 'function') {
       try { window.clearClientStorage(); } catch (error) {}
     }
 
+    try {
+      var existingSessionResponse = await client.auth.getSession();
+      var existingSessionUser = existingSessionResponse && existingSessionResponse.data && existingSessionResponse.data.session && existingSessionResponse.data.session.user
+        ? existingSessionResponse.data.session.user
+        : null;
+      if (existingSessionUser) {
+        try {
+          await client.auth.signOut();
+        } catch (signOutError) {
+          console.warn('pre-login signOut failed', errorInfo(signOutError));
+        }
+      }
+    } catch (sessionProbeError) {
+      console.warn('pre-login session probe failed', errorInfo(sessionProbeError));
+    }
+
     window.__loginInProgress = true;
     window.__restoreInProgress = false;
     setState(STATE.SIGNING_IN);
+    setAuthServiceStatus('Авторизация выполняется через защищённый Supabase Auth');
+    setAuthActionButtons(true, true);
     try {
       var response;
       try {
@@ -922,17 +983,24 @@
       }
       if (session.noOrganization) {
         console.info('no organization mode');
+        setAuthServiceStatus('Вы вошли, но пока не добавлены ни в одну организацию', 'ok');
       }
+      setLastAuthError(null);
+      setLastRpcError(null);
+      setAuthActionButtons(false, false);
       markPerf('auth_success');
       openAppShell(session.currentUser);
       window.__sessionReady = true;
       return session;
     } catch (error) {
       setState(STATE.AUTH_ERROR, errorInfo(error));
+      setLastAuthError(error);
+      setAuthActionButtons(true, true);
       throw error;
     } finally {
       window.__loginInProgress = false;
       setLoginButtonState('Войти в систему →', false);
+      if (!window.__sessionReady) setAuthActionButtons(true, true);
     }
   }
 
@@ -983,14 +1051,19 @@
   function logout() {
     var client = getClient();
     setState(STATE.UNAUTHENTICATED);
+    setLastAuthError(null);
+    setLastRpcError(null);
+    setAuthActionButtons(false, false);
     window.__sessionReady = false;
     window.__loginInProgress = false;
     window.__restoreInProgress = false;
     try {
-      if (typeof window.clearClientRuntimeState === 'function') {
-        window.clearClientRuntimeState();
-      } else {
-        window.__userSession = null;
+        if (typeof window.cleanRuntime === 'function') {
+          window.cleanRuntime();
+        } else if (typeof window.clearClientRuntimeState === 'function') {
+          window.clearClientRuntimeState();
+        } else {
+          window.__userSession = null;
         window.CU = null;
         window.activeRest = null;
       }
@@ -1099,6 +1172,33 @@
   window.app.auth.startLogin = function (email, password) { return login(email, password); };
   window.doLogout = function () {
     return logout();
+  };
+  window.resetAuthSessionAndReload = function () {
+    var client = getClient();
+    return Promise.resolve()
+      .then(function () {
+        if (client && client.auth && client.auth.signOut) {
+          return client.auth.signOut().catch(function (error) {
+            console.warn('reset signOut failed', errorInfo(error));
+          });
+        }
+      })
+      .then(function () {
+        if (typeof window.cleanRuntime === 'function') window.cleanRuntime();
+        else if (typeof window.clearClientRuntimeState === 'function') window.clearClientRuntimeState();
+        if (typeof window.clearClientStorage === 'function') {
+          try { window.clearClientStorage(); } catch (storageError) {}
+        }
+        window.__sessionReady = false;
+        window.__loginInProgress = false;
+        window.__restoreInProgress = false;
+        window.__userSession = null;
+        window.CU = null;
+        window.activeRest = null;
+        window.__lastAuthError = null;
+        window.__lastRpcError = null;
+        window.location.href = EXPECTED_PRODUCTION_URL;
+      });
   };
 
   setTimeout(function () {

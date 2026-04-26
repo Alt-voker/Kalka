@@ -161,6 +161,7 @@
     } catch (error) {}
   }
   window.clearClientRuntimeState = clearClientRuntimeState;
+  window.cleanRuntime = clearClientRuntimeState;
 
   function clearClientStorage() {
     try {

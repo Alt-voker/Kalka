@@ -16,8 +16,8 @@
       window.performance.mark('app_start');
     }
   } catch (e) {}
-  window.__BUILD_VERSION__ = 'c839d8c';
-  window.__BUILD_TIME__ = '2026-04-26T00:00:00+03:00';
+  window.__BUILD_VERSION__ = '0871063';
+  window.__BUILD_TIME__ = '2026-04-26T18:00:00+03:00';
   window.__KALKA_SUPABASE__ = {
     url: 'https://yoppbecgrugedbewuiol.supabase.co',
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlvcHBiZWNncnVnZWRiZXd1aW9sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNDg1ODUsImV4cCI6MjA5MTcyNDU4NX0.9fTfUT0bnvpXgIoBXsnF78FujBk2oEF5T6riCnz_8a0'
@@ -342,6 +342,8 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
     <div class="aErr" id="liErr"></div>
     <div id="authSvcStatus" style="font-size:11px;min-height:16px;margin:-2px 0 8px;color:var(--t3);line-height:1.4;"></div>
     <button class="btnA" id="loginBtn" onclick="doLogin()">Войти в систему →</button>
+    <button type="button" id="authRetryBtn" onclick="doLogin()" style="display:none;width:100%;margin-top:8px;background:var(--bg3);color:var(--tx);border:1px solid var(--br2);border-radius:var(--r);padding:10px 12px;font-size:12px;font-weight:800;cursor:pointer;">Повторить вход</button>
+    <button type="button" id="authResetBtn" onclick="resetAuthSessionAndReload()" style="display:none;width:100%;margin-top:8px;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:var(--r);padding:10px 12px;font-size:12px;font-weight:800;cursor:pointer;">Сбросить сессию и войти заново</button>
     <div style="text-align:center;margin:14px 0 6px;font-size:11px;color:var(--t3);line-height:1.6;">
       Нет аккаунта? Зарегистрируйтесь сами и дождитесь одобрения.<br>
       После одобрения владельцем или администратором вход откроется автоматически.
@@ -1263,11 +1265,27 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
 
 
 <script>
-  window.__INDEX_APP_COMMIT__ = 'c839d8c';
-  window.__APP_COMMIT__ = 'c839d8c';
+  window.__INDEX_APP_COMMIT__ = '0871063';
+  window.__APP_COMMIT__ = '0871063';
   window.__CLEAN_SHELL_MODE = /(?:\\?|&)clean=1(?:&|$)/.test(location.search);
   window.__authServerFirstMode = true;
   (function () {
+    var expectedUrl = 'https://kalka-hub.vercel.app/?v=0871063';
+    var allowedHost = 'kalka-hub.vercel.app';
+    var currentHost = (window.location && window.location.hostname) || '';
+    var currentProtocol = (window.location && window.location.protocol) || '';
+    if (currentProtocol !== 'https:' || currentHost !== allowedHost) {
+      document.body.innerHTML =
+        '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#f0f2f5;font-family:Manrope,sans-serif;">' +
+          '<div style="max-width:520px;width:100%;background:#fff;border:1px solid #d1d5db;border-radius:16px;padding:28px;box-shadow:0 14px 40px rgba(0,0,0,.12);text-align:center;">' +
+            '<div style="font-size:40px;margin-bottom:10px;">⚠️</div>' +
+            '<div style="font-family:Montserrat,sans-serif;font-size:22px;font-weight:900;margin-bottom:10px;">Используйте актуальную ссылку платформы</div>' +
+            '<div style="font-size:13px;color:#4a5568;line-height:1.6;margin-bottom:18px;">Откройте только текущую production-версию, чтобы сессия и права всегда совпадали на любом устройстве.</div>' +
+            '<a href="' + expectedUrl + '" style="display:inline-block;background:#5ba3f5;color:#000;text-decoration:none;border-radius:10px;padding:11px 18px;font-weight:800;">Открыть актуальную ссылку</a>' +
+        '</div>' +
+        '</div>';
+      return;
+    }
     var ver = encodeURIComponent(window.__APP_COMMIT__ || window.__BUILD_VERSION__ || '');
     var scripts = window.__CLEAN_SHELL_MODE
       ? [
@@ -1298,11 +1316,21 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
     var s = session || window.__userSession || {};
     var cu = s.currentUser || window.CU || {};
     var mismatched = String(window.__APP_COMMIT__ || '') !== String(window.__INDEX_APP_COMMIT__ || '');
+    function esc(v) {
+      return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
     if (mismatched) {
       el.innerHTML = '<div style="color:#ff8a80;font-weight:700;margin-bottom:8px;">Обновите страницу. Загружена старая версия платформы.</div>'
         +'<button onclick="location.reload(true)" style="width:100%;margin-bottom:8px;background:#5ba3f5;color:#000;border:none;border-radius:8px;padding:8px 10px;font-weight:800;cursor:pointer;">Обновить</button>';
     } else {
       el.innerHTML =
+        '<div><b>current domain:</b> ' + esc((window.location && window.location.hostname) || '—') + '</div>' +
+        '<div><b>expected domain:</b> ' + esc(allowedHost) + '</div>' +
         '<div><b>APP_COMMIT:</b> ' + (window.__APP_COMMIT__ || '—') + '</div>' +
         '<div><b>BUILD_TIME:</b> ' + (window.__BUILD_TIME__ || '—') + '</div>' +
         '<div><b>RPC_ONLY:</b> true</div>' +
@@ -1314,7 +1342,10 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
         '<div><b>organizationsCount:</b> ' + (typeof s.organizationsCount === 'number' ? s.organizationsCount : ((s.organizations || []).length || 0)) + '</div>' +
         '<div><b>activeOrganizationId:</b> ' + (s.activeOrganizationId || '—') + '</div>' +
         '<div><b>noOrganization:</b> ' + String(!!s.noOrganization) + '</div>' +
-        '<div><b>source:</b> RPC_ONLY</div>';
+        '<div><b>source:</b> RPC_ONLY</div>' +
+        '<div><b>auth config status:</b> ' + esc((window.KalkaApp && window.KalkaApp.supabase && window.KalkaApp.supabase.isEnabled && window.KalkaApp.supabase.isEnabled()) ? 'OK' : 'MISSING') + '</div>' +
+        '<div><b>last auth error:</b> ' + esc(window.__lastAuthError || '—') + '</div>' +
+        '<div><b>last rpc error:</b> ' + esc(window.__lastRpcError || '—') + '</div>';
     }
   };
   setTimeout(function(){ try { window.__renderBuildDebug(window.__userSession || null); } catch (e) {} }, 0);

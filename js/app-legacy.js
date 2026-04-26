@@ -548,8 +548,13 @@ function eyeT(id,btn){const e=document.getElementById(id);if(!e)return;e.type=e.
 
 function doLogin(){
   if(window.KalkaApp && window.KalkaApp.supabase && window.KalkaApp.supabase.isEnabled && window.KalkaApp.supabase.isEnabled()){
+    var authStatus=document.getElementById('authSvcStatus');
+    if(authStatus){
+      authStatus.textContent='Авторизация выполняется через защищённый Supabase Auth';
+      authStatus.style.color='var(--t3)';
+    }
     var authErr=document.getElementById('liErr');
-    if(authErr) authErr.textContent='Авторизация выполняется через защищённый Supabase Auth';
+    if(authErr) authErr.textContent='';
     return;
   }
   var er=document.getElementById('liErr'); er.textContent='';
