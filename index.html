@@ -341,10 +341,12 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
     </div>
     <div class="aErr" id="liErr"></div>
     <div id="authSvcStatus" style="font-size:11px;min-height:16px;margin:-2px 0 8px;color:var(--t3);line-height:1.4;"></div>
+    <div id="authStepStatus" style="font-size:11px;min-height:16px;margin:-4px 0 8px;color:var(--t3);line-height:1.4;">config loaded</div>
     <button class="btnA" id="loginBtn" onclick="doLogin()">Войти в систему →</button>
     <button type="button" id="authRetryBtn" onclick="doLogin()" style="display:none;width:100%;margin-top:8px;background:var(--bg3);color:var(--tx);border:1px solid var(--br2);border-radius:var(--r);padding:10px 12px;font-size:12px;font-weight:800;cursor:pointer;">Повторить вход</button>
     <button type="button" id="authResetBtn" onclick="resetAuthSessionAndReload()" style="display:none;width:100%;margin-top:8px;background:var(--aD);color:var(--ac);border:1px solid var(--ac);border-radius:var(--r);padding:10px 12px;font-size:12px;font-weight:800;cursor:pointer;">Сбросить сессию и войти заново</button>
     <button type="button" id="authReloadBtn" onclick="location.reload()" style="display:none;width:100%;margin-top:8px;background:var(--orD);color:var(--or);border:1px solid var(--or);border-radius:var(--r);padding:10px 12px;font-size:12px;font-weight:800;cursor:pointer;">Обновить</button>
+    <button type="button" id="copyAuthDiagBtn" style="width:100%;margin-top:8px;background:var(--bg3);color:var(--tx);border:1px solid var(--br2);border-radius:var(--r);padding:10px 12px;font-size:12px;font-weight:800;cursor:pointer;">Скопировать диагностику</button>
     <div style="text-align:center;margin:14px 0 6px;font-size:11px;color:var(--t3);line-height:1.6;">
       Нет аккаунта? Зарегистрируйтесь сами и дождитесь одобрения.<br>
       После одобрения владельцем или администратором вход откроется автоматически.

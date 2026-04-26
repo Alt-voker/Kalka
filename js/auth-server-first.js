@@ -107,6 +107,14 @@
     el.style.color = tone === 'err' ? 'var(--rd)' : (tone === 'ok' ? 'var(--gr)' : 'var(--t3)');
   }
 
+  function setAuthStepStatus(step, tone) {
+    var el = document.getElementById('authStepStatus');
+    if (!el) return;
+    el.textContent = step || '';
+    el.style.color = tone === 'err' ? 'var(--rd)' : (tone === 'ok' ? 'var(--gr)' : 'var(--t3)');
+    window.__lastAuthStep = step || '';
+  }
+
   function setInitError(error) {
     initError = error || null;
     window.__lastInitError = error ? (error.message || String(error)) : null;
@@ -133,6 +141,7 @@
     setLastRpcError(null);
     setAuthActionButtons(false, false);
     setAuthServiceStatus('');
+    setAuthStepStatus('config loaded');
     var errEl = document.getElementById('liErr');
     if (errEl) errEl.textContent = '';
   }
@@ -204,11 +213,71 @@
     }
   }
 
+  function buildAuthDiagnostics() {
+    var diag = getSupabaseDiagnostics();
+    var client = getClient();
+    var session = window.__userSession || {};
+    var currentUser = session.currentUser || window.CU || {};
+    return [
+      'domain=' + ((window.location && window.location.hostname) || ''),
+      'build=' + (window.__BUILD_VERSION__ || ''),
+      'hasConfig=' + String(!!(diag.hasUrl && diag.hasAnonKey)),
+      'clientReady=' + String(!!client),
+      'step=' + (window.__lastAuthStep || ''),
+      'lastError=' + (window.__lastAuthError || window.__lastRpcError || window.__lastInitError || ''),
+      'authUserId=' + (currentUser.authUserId || currentUser.auth_user_id || '')
+    ].join('\n');
+  }
+
+  function buildAuthDiagnostics() {
+    var diag = getSupabaseDiagnostics();
+    var client = getClient();
+    var session = window.__userSession || {};
+    var currentUser = session.currentUser || window.CU || {};
+    return [
+      'domain=' + ((window.location && window.location.hostname) || ''),
+      'build=' + (window.__BUILD_VERSION__ || ''),
+      'hasConfig=' + String(!!(diag.hasUrl && diag.hasAnonKey)),
+      'clientReady=' + String(!!client),
+      'step=' + (window.__lastAuthStep || ''),
+      'lastError=' + (window.__lastAuthError || window.__lastRpcError || window.__lastInitError || ''),
+      'authUserId=' + (currentUser.authUserId || currentUser.auth_user_id || '')
+    ].join('\n');
+  }
+
+  function copyAuthDiagnostics() {
+    var text = buildAuthDiagnostics();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).then(function () {
+        setAuthServiceStatus('Диагностика скопирована', 'ok');
+      }).catch(function () {
+        setAuthServiceStatus('Не удалось скопировать диагностику', 'err');
+      });
+    }
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      setAuthServiceStatus('Диагностика скопирована', 'ok');
+    } catch (error) {
+      setAuthServiceStatus('Не удалось скопировать диагностику', 'err');
+    } finally {
+      document.body.removeChild(ta);
+    }
+    return Promise.resolve();
+  }
+
   function bindLoginHandlers() {
     if (bindingAttached) return true;
     var emailInput = document.getElementById('liE');
     var passwordInput = document.getElementById('liP');
     var loginButton = document.getElementById('loginBtn');
+    var diagButton = document.getElementById('copyAuthDiagBtn');
+    var resetButton = document.getElementById('authResetBtn');
     var authForm = document.getElementById('authLoginForm') || document.querySelector('#AUTH .acard');
     if (!emailInput || !passwordInput || !loginButton || !authForm) {
       console.info('login form not ready yet');
@@ -231,6 +300,20 @@
       console.info('login clicked');
       if (typeof window.doLogin === 'function') window.doLogin();
     });
+    if (diagButton) {
+      diagButton.addEventListener('click', function (event) {
+        event.preventDefault();
+        copyAuthDiagnostics();
+      });
+    }
+    if (resetButton) {
+      resetButton.addEventListener('click', function (event) {
+        event.preventDefault();
+        if (typeof window.resetAuthSessionAndReload === 'function') {
+          window.resetAuthSessionAndReload();
+        }
+      });
+    }
     [emailInput, passwordInput].forEach(function (input) {
       input.addEventListener('keydown', function (event) {
         if (event.key === 'Enter') {
@@ -258,6 +341,11 @@
         } else {
           setAuthServiceStatus('Модуль авторизации не загрузился. Обновите страницу', 'err');
         }
+      }
+      if (!window.__authClientReady) {
+        setAuthStepStatus('supabase client ready: false', 'err');
+      } else {
+        setAuthStepStatus('supabase client ready: true', 'ok');
       }
       var ready = bindLoginHandlers();
       initReady = !!ready;
@@ -982,6 +1070,7 @@
     }
     setAuthServiceStatus('');
     console.info('auth: signIn started');
+    setAuthStepStatus('auth request started', 'ok');
     markPerf('auth_start');
     var response = await withTimeout(
       client.auth.signInWithPassword({ email: email, password: password }),
@@ -1003,6 +1092,7 @@
       if (networkLike) {
         var netErr = new Error('Не удалось подключиться к серверу авторизации. Проверьте интернет или попробуйте позже');
         netErr.code = info.code || 'NETWORK_ERROR';
+        setAuthStepStatus('auth failed', 'err');
         setAuthServiceStatus(netErr.message, 'err');
         setLastAuthError(netErr);
         throw netErr;
@@ -1022,10 +1112,12 @@
         source: getSupabaseDiagnostics().source
       });
       setLastAuthError(response.error);
+      setAuthStepStatus('auth failed', 'err');
       setAuthServiceStatus('Не удалось подключиться к серверу авторизации. Проверьте интернет или попробуйте позже', 'err');
       throw response.error;
     }
     console.info('auth: signIn success');
+    setAuthStepStatus('auth success', 'ok');
     return response;
   }
 
@@ -1120,6 +1212,7 @@
       if (!authUser) {
         throw new Error('Не удалось подключиться к серверу авторизации');
       }
+      setAuthStepStatus('get_my_session started', 'ok');
       var session = await getBootstrapPromise(authUser, function () {
         setState(STATE.LOADING_PROFILE, { authUserId: authUser.id });
         return bootstrapSession(authUser);
@@ -1127,6 +1220,7 @@
       if (!session || !session.currentUser) {
         throw new Error('Не удалось загрузить профиль пользователя');
       }
+      setAuthStepStatus('get_my_session success', 'ok');
       if (session.noOrganization) {
         console.info('no organization mode');
         setAuthServiceStatus('Вы вошли, но пока не добавлены ни в одну организацию', 'ok');
@@ -1135,6 +1229,7 @@
       setLastRpcError(null);
       setAuthActionButtons(false, false);
       markPerf('auth_success');
+      setAuthStepStatus('app opened', 'ok');
       openAppShell(session.currentUser);
       window.__sessionReady = true;
       return session;
