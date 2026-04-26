@@ -3697,20 +3697,38 @@ function _parseOrderDateValue(val){
 }
 function renderRestaurants(){
   var el=document.getElementById('restGrid');
-  if(!el)return;
   var session = window.__userSession || {};
   var orgs = Array.isArray(session.organizations) ? session.organizations.slice() : [];
   var activeOrgId = String(session.activeOrganizationId || '').trim();
   var currentRole = normalizeLegacyRole((session.currentUser && session.currentUser.role) || (CU && CU.role) || 'unassigned');
+  console.info('renderRestaurants organizations count', orgs.length, 'activeOrganizationId', activeOrgId);
+  if(!el){
+    console.error('renderRestaurants: restGrid container not found');
+    return;
+  }
   var orgRows = orgs.map(function(org){
+    if(!org) return null;
+    var id = String(org.id || org.organization_id || org.organizationId || '').trim();
+    if(!id && session.activeOrganization && String(session.activeOrganization.id || '') === activeOrgId){
+      id = String(session.activeOrganization.id || '').trim();
+    }
     return {
-      id: String(org.id || '').trim(),
-      name: org.name || 'Организация',
+      id: id,
+      name: org.name || org.brandName || org.legalName || 'Организация',
       type: org.type || 'organization',
       status: org.status || 'active',
       role: org.role || currentRole
     };
   }).filter(function(item){ return !!item.id; });
+  if(!orgRows.length && session.activeOrganization && String(session.activeOrganization.id || '')){
+    orgRows = [{
+      id: String(session.activeOrganization.id || '').trim(),
+      name: session.activeOrganization.name || session.activeOrganization.brandName || 'Организация',
+      type: session.activeOrganization.type || 'organization',
+      status: session.activeOrganization.status || 'active',
+      role: currentRole
+    }];
+  }
   var sub = document.getElementById('restPageSub');
   if(sub) sub.textContent = orgRows.length + ' организаций';
 
