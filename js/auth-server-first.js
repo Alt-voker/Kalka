@@ -979,13 +979,26 @@
         updated_at: ''
       };
     }
-    var legacyUser = buildLegacyUserFromRpcRow(row, activeOrganization, noOrganization, role);
+    var legacyRole = role === 'platform_owner' ? 'owner' : role;
+    if (memberships.length > 0) {
+      noOrganization = false;
+    }
+    var legacyUser = {
+      id: normalized.profileId || profile.id || '',
+      authUserId: normalized.authUserId || authUser.id,
+      email: normalized.email || authUser.email || '',
+      name: ((normalized.firstName || profile.first_name || '') + ' ' + (normalized.lastName || profile.last_name || '')).trim() || normalized.email || authUser.email || 'Пользователь',
+      firstName: normalized.firstName || profile.first_name || '',
+      lastName: normalized.lastName || profile.last_name || '',
+      role: legacyRole,
+      status: 'active'
+    };
     var legacyActiveRest = {
       id: activeOrganization ? activeOrganization.id : (normalized.activeOrganizationId || null),
       organizationId: activeOrganization ? activeOrganization.id : (normalized.activeOrganizationId || null),
       name: normalized.activeOrganizationName || (activeOrganization && activeOrganization.name) || '',
-      kind: (activeOrganization && activeOrganization.type) || 'restaurant',
-      type: (activeOrganization && activeOrganization.type) || 'restaurant',
+      kind: 'restaurant',
+      type: 'restaurant',
       members: []
     };
     console.log('LEGACY USER', legacyUser);
@@ -1019,10 +1032,10 @@
     session.activeOrganization = activeOrganization;
     session.activeOrganizationId = activeOrganization ? activeOrganization.id : (normalized.activeOrganizationId || null);
     session.currentMembership = activeMembership;
-    session.role = role;
+    session.role = legacyRole;
     session.noOrganization = noOrganization;
-    session.permissions = noOrganization ? [] : ((window.ROLES && window.ROLES[role] && window.ROLES[role].pages) ? window.ROLES[role].pages.slice() : []);
-    session.currentUser.role = role;
+    session.permissions = noOrganization ? [] : ((window.ROLES && window.ROLES[legacyRole] && window.ROLES[legacyRole].pages) ? window.ROLES[legacyRole].pages.slice() : []);
+    session.currentUser.role = legacyRole;
     session.currentUser.noOrganization = noOrganization;
     session.currentUser.company = noOrganization ? 'КальКа' : ((activeOrganization && activeOrganization.name) || session.currentUser.company || 'КальКа');
     session.currentUser.organizationId = noOrganization ? null : session.activeOrganizationId;
@@ -1035,8 +1048,9 @@
         status: item.status
       };
     });
-    session.rawRole = row.role || role;
+    session.rawRole = row.role || legacyRole;
     session.currentUser = legacyUser;
+    session.currentUser.role = legacyRole;
     if (memberships.length) {
       console.info('session: memberships loaded');
       markPerf('memberships_loaded');
@@ -1068,7 +1082,7 @@
       noOrganizationsError.code = 'NO_ORGANIZATIONS';
       throw noOrganizationsError;
     }
-    session.role = role;
+    session.role = legacyRole;
     session.noOrganization = noOrganization;
     session.activeOrganizationId = noOrganization ? null : legacyActiveRest.organizationId;
     session.activeOrganization = noOrganization ? null : (activeOrganization || {
@@ -1083,8 +1097,9 @@
     session.currentUser.organizationId = noOrganization ? null : legacyActiveRest.organizationId;
     session.currentUser.activeOrganizationId = noOrganization ? null : legacyActiveRest.organizationId;
     session.currentUser.activeOrganizationName = noOrganization ? '' : legacyActiveRest.name;
-    window.CU = legacyUser;
-    window.activeRest = legacyActiveRest;
+    session.permissions = noOrganization ? [] : ((window.ROLES && window.ROLES[legacyRole] && window.ROLES[legacyRole].pages) ? window.ROLES[legacyRole].pages.slice() : []);
+    window.CU = session.currentUser;
+    window.activeRest = session.activeOrganization || legacyActiveRest;
     window.__userSession = session;
     applySession(session);
     console.info('session: ready');
