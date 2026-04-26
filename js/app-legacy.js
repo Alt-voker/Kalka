@@ -634,25 +634,47 @@ function enterApp(u){
   }
 }
 function setupUI(u){
-  const rd=ROLES[u.role]||{};const tc=['owner','chef','buyer'].includes(u.role)?'#000':'#fff';
-  const av=document.getElementById('sbAva');av.style.background=`linear-gradient(135deg,${rd.color},${rd.color}88)`;av.style.color=tc;av.textContent=(u.first[0]+u.last[0]).toUpperCase();
-  document.getElementById('sbName').textContent=u.first+' '+u.last;document.getElementById('sbRole').textContent=(u.noOrganization?'Доступ ограничен':u.company);
-  const noOrg=!!(u.noOrganization || (window.__userSession && window.__userSession.noOrganization));
-  const isS=u.role==='supplier',isAcc=u.role==='accountant';
-  const scopedRestaurants=getUserScopedRestaurantIds(u, dbGet());
-  document.getElementById('cartBtn').style.display=(!noOrg&&!isS&&!isAcc)?'flex':'none';
-  document.getElementById('favBtn').style.display=(!noOrg&&!isS&&!isAcc)?'flex':'none';
-  document.getElementById('tbSearch').style.display=(noOrg||isS)?'none':'flex';
-  document.getElementById('restBtn').style.display=(!noOrg && !isS && (['owner','admin','manager'].includes(u.role) || scopedRestaurants.length>1))?'flex':'none';
+  u = u || window.CU || {};
+  var role = u.role || 'buyer';
+  var rd = ROLES[role] || ROLES.owner || {};
+  var tc = ['owner','chef','buyer'].includes(role) ? '#000' : '#fff';
+  var first = String(u.first || u.firstName || (u.name || '').split(' ')[0] || 'П').trim();
+  var last = String(u.last || u.lastName || (u.name || '').split(' ')[1] || '').trim();
+  var company = u.company || (window.activeRest && window.activeRest.name) || (window.__userSession && window.__userSession.activeOrganization && window.__userSession.activeOrganization.name) || '';
+  var noOrg = !!(u.noOrganization || (window.__userSession && window.__userSession.noOrganization));
+  var av=document.getElementById('sbAva');
+  if (av) {
+    var bgColor = rd.color || '#5ba3f5';
+    av.style.background=`linear-gradient(135deg,${bgColor},${bgColor}88)`;
+    av.style.color=tc;
+    av.textContent=((first.charAt(0) || 'П') + (last.charAt(0) || '')).toUpperCase();
+  }
+  var sbName=document.getElementById('sbName');
+  if (sbName) sbName.textContent=(first+' '+last).trim() || u.email || 'Пользователь';
+  var sbRole=document.getElementById('sbRole');
+  if (sbRole) sbRole.textContent=(noOrg ? 'Доступ ограничен' : company);
+  const isS=role==='supplier',isAcc=role==='accountant';
+  var scopedRestaurants = Array.isArray(u.memberships) ? u.memberships.slice() : [];
+  var cartBtn=document.getElementById('cartBtn');
+  if (cartBtn) cartBtn.style.display=(!noOrg&&!isS&&!isAcc)?'flex':'none';
+  var favBtn=document.getElementById('favBtn');
+  if (favBtn) favBtn.style.display=(!noOrg&&!isS&&!isAcc)?'flex':'none';
+  var tbSearch=document.getElementById('tbSearch');
+  if (tbSearch) tbSearch.style.display=(noOrg||isS)?'none':'flex';
+  var restBtn=document.getElementById('restBtn');
+  if (restBtn) restBtn.style.display=(!noOrg && !isS && (['owner','admin','manager'].includes(role) || scopedRestaurants.length>1))?'flex':'none';
   const ta=document.getElementById('topAct');
-  if(noOrg)                                      {ta.textContent='⇦ Выход';            ta.onclick=()=>doLogout();}
-  else if(u.role==='supplier')                   {ta.textContent='+ Товар';            ta.onclick=()=>openModal('addProduct');}
-  else if(['chef','manager','admin'].includes(u.role)){ta.textContent='+ Тех. карта';  ta.onclick=()=>openModal('newTC');}
-  else if(u.role==='owner')                      {ta.textContent='🛡 Панель владельца';ta.onclick=()=>goPage('owner');}
-  else                                           {ta.textContent='+ Заказ';            ta.onclick=()=>openModal('newOrder');}
+  if(ta){
+    if(noOrg)                                      {ta.textContent='⇦ Выход';            ta.onclick=()=>doLogout();}
+    else if(role==='supplier')                     {ta.textContent='+ Товар';            ta.onclick=()=>openModal('addProduct');}
+    else if(['chef','manager','admin'].includes(role)){ta.textContent='+ Тех. карта';  ta.onclick=()=>openModal('newTC');}
+    else if(role==='owner')                        {ta.textContent='🛡 Панель владельца';ta.onclick=()=>goPage('owner');}
+    else                                           {ta.textContent='+ Заказ';            ta.onclick=()=>openModal('newOrder');}
+  }
   buildNav(u);
   renderOrgInviteBadge();
-  var firstPage=noOrg ? 'dashboard' : (((ROLES[u.role]||{}).pages||[]).find(function(pg){ return canAccessPage(u, pg); })||'dashboard');
+  var rolePages = (ROLES[role] && Array.isArray(ROLES[role].pages)) ? ROLES[role].pages : ['dash'];
+  var firstPage=noOrg ? 'dashboard' : (rolePages.find(function(pg){ return canAccessPage(u, pg); })||'dashboard');
   if(!noOrg && !canAccessPage(u, firstPage)) firstPage='orders';
   setTimeout(function(){
     requestAnimationFrame(function(){
