@@ -256,12 +256,78 @@
     return Promise.resolve();
   }
 
+  function mapAuthError(error) {
+    var info = errorInfo(error);
+    var message = String(info.message || '').trim() || 'Не удалось подключиться к серверу авторизации';
+    var lower = message.toLowerCase();
+    if (/invalid login credentials/i.test(message) || /invalid login credentials/i.test(lower)) {
+      return 'Неверный логин или пароль';
+    }
+    if (/email not confirmed/i.test(message) || /email not confirmed/i.test(lower)) {
+      return 'Email не подтверждён';
+    }
+    if (/failed to fetch|networkerror|connection reset|err_connection_reset/i.test(message) ||
+        /failed to fetch|networkerror|connection reset|err_connection_reset/i.test(String(error && error.raw && error.raw.message ? error.raw.message : ''))) {
+      return 'Не удалось соединиться с Supabase Auth. Проверьте сеть/VPN/блокировки';
+    }
+    if (info.status && Number(info.status) >= 500) {
+      return 'Сервер авторизации временно недоступен';
+    }
+    return message || 'Не удалось подключиться к серверу авторизации';
+  }
+
+  function checkSupabaseConnection() {
+    var client = getClient();
+    var diag = getSupabaseDiagnostics();
+    if (!client) {
+      var msg = diag.hasUrl && diag.hasAnonKey
+        ? MISSING_SUPABASE_LIB_MESSAGE
+        : 'Сервис авторизации временно недоступен. Обратитесь к администратору';
+      setAuthServiceStatus(msg, 'err');
+      setLastInitError(new Error(msg));
+      return Promise.resolve({ ok: false, message: msg });
+    }
+    setAuthServiceStatus('Проверяем соединение с Supabase Auth…', 'ok');
+    return fetch(diag.baseUrl + '/auth/v1/health', {
+      method: 'GET',
+      headers: {
+        apikey: diag.anonKey || '',
+        Authorization: 'Bearer ' + (diag.anonKey || '')
+      }
+    }).then(function (response) {
+      if (response && response.ok) {
+        setAuthServiceStatus('Supabase Auth доступен', 'ok');
+        return { ok: true, status: response.status };
+      }
+      var msg = 'Supabase Auth вернул ошибку';
+      setAuthServiceStatus(msg, 'err');
+      return { ok: false, status: response ? response.status : 0, message: msg };
+    }).catch(function (error) {
+      var info = errorInfo(error);
+      var msg = 'Не удалось соединиться с Supabase Auth. Проверьте сеть/VPN/блокировки';
+      console.error('auth connection check failed', {
+        code: info.code,
+        status: info.status,
+        message: info.message,
+        details: info.details,
+        hint: info.hint,
+        raw: error,
+        host: diag.host,
+        source: diag.source
+      });
+      setLastAuthError(error);
+      setAuthServiceStatus(msg, 'err');
+      return { ok: false, message: msg, error: error };
+    });
+  }
+
   function bindLoginHandlers() {
     if (bindingAttached) return true;
     var emailInput = document.getElementById('liE');
     var passwordInput = document.getElementById('liP');
     var loginButton = document.getElementById('loginBtn');
     var diagButton = document.getElementById('copyAuthDiagBtn');
+    var checkButton = document.getElementById('authCheckBtn');
     var resetButton = document.getElementById('authResetBtn');
     var authForm = document.getElementById('authLoginForm') || document.querySelector('#AUTH .acard');
     if (!emailInput || !passwordInput || !loginButton || !authForm) {
@@ -289,6 +355,14 @@
       diagButton.addEventListener('click', function (event) {
         event.preventDefault();
         copyAuthDiagnostics();
+      });
+    }
+    if (checkButton) {
+      checkButton.addEventListener('click', function (event) {
+        event.preventDefault();
+        if (typeof window.checkSupabaseConnection === 'function') {
+          window.checkSupabaseConnection();
+        }
       });
     }
     if (resetButton) {
@@ -1059,7 +1133,7 @@
     markPerf('auth_start');
     var response = await withTimeout(
       client.auth.signInWithPassword({ email: email, password: password }),
-      10000,
+      25000,
       'Не удалось подключиться к серверу авторизации'
     ).catch(function (error) {
       var info = errorInfo(error);
@@ -1072,18 +1146,17 @@
         host: getSupabaseDiagnostics().host,
         source: getSupabaseDiagnostics().source
       });
-      var networkLike = /failed to fetch|networkerror|connection reset|ERR_CONNECTION_RESET/i.test(String(info.message || '')) ||
-        /failed to fetch|networkerror|connection reset|ERR_CONNECTION_RESET/i.test(String(error && error.raw && error.raw.message ? error.raw.message : ''));
-      if (networkLike) {
-        var netErr = new Error('Не удалось подключиться к серверу авторизации. Проверьте интернет или попробуйте позже');
-        netErr.code = info.code || 'NETWORK_ERROR';
-        setAuthStepStatus('auth failed', 'err');
-        setAuthServiceStatus(netErr.message, 'err');
-        setLastAuthError(netErr);
-        throw netErr;
-      }
-      setLastAuthError(error);
-      throw error;
+      var mappedMessage = mapAuthError(error);
+      var mappedError = new Error(mappedMessage);
+      mappedError.code = info.code || mappedMessage;
+      mappedError.status = info.status || '';
+      mappedError.details = info.details || '';
+      mappedError.hint = info.hint || '';
+      mappedError.raw = error;
+      setAuthStepStatus('auth failed', 'err');
+      setAuthServiceStatus(mappedMessage, 'err');
+      setLastAuthError(mappedError);
+      throw mappedError;
     });
     if (response.error) {
       var responseInfo = errorInfo(response.error);
@@ -1096,10 +1169,17 @@
         host: getSupabaseDiagnostics().host,
         source: getSupabaseDiagnostics().source
       });
-      setLastAuthError(response.error);
+      var mappedResponseMessage = mapAuthError(response.error);
+      var mappedResponseError = new Error(mappedResponseMessage);
+      mappedResponseError.code = responseInfo.code || mappedResponseMessage;
+      mappedResponseError.status = responseInfo.status || '';
+      mappedResponseError.details = responseInfo.details || '';
+      mappedResponseError.hint = responseInfo.hint || '';
+      mappedResponseError.raw = response.error;
+      setLastAuthError(mappedResponseError);
       setAuthStepStatus('auth failed', 'err');
-      setAuthServiceStatus('Не удалось подключиться к серверу авторизации. Проверьте интернет или попробуйте позже', 'err');
-      throw response.error;
+      setAuthServiceStatus(mappedResponseMessage, 'err');
+      throw mappedResponseError;
     }
     console.info('auth: signIn success');
     setAuthStepStatus('auth success', 'ok');
@@ -1146,22 +1226,6 @@
       try { window.clearClientStorage(); } catch (error) {}
     }
 
-    try {
-      var existingSessionResponse = await client.auth.getSession();
-      var existingSessionUser = existingSessionResponse && existingSessionResponse.data && existingSessionResponse.data.session && existingSessionResponse.data.session.user
-        ? existingSessionResponse.data.session.user
-        : null;
-      if (existingSessionUser) {
-        try {
-          await client.auth.signOut();
-        } catch (signOutError) {
-          console.warn('pre-login signOut failed', errorInfo(signOutError));
-        }
-      }
-    } catch (sessionProbeError) {
-      console.warn('pre-login session probe failed', errorInfo(sessionProbeError));
-    }
-
     window.__loginInProgress = true;
     window.__restoreInProgress = false;
     setState(STATE.SIGNING_IN);
@@ -1172,26 +1236,7 @@
       try {
         response = await startLoginFlow(email, password);
       } catch (signInError) {
-        if (signInError && signInError.code === 'TIMEOUT') {
-          console.warn('signIn timeout, trying existing session');
-          var timeoutSession = await client.auth.getSession().catch(function (sessionError) {
-            console.error('auth: getSession after signIn timeout failed', errorInfo(sessionError));
-            return null;
-          });
-          if (timeoutSession && timeoutSession.data && timeoutSession.data.session && timeoutSession.data.session.user) {
-            response = {
-              data: {
-                session: timeoutSession.data.session,
-                user: timeoutSession.data.session.user
-              },
-              error: null
-            };
-          } else {
-            throw signInError;
-          }
-        } else {
-          throw signInError;
-        }
+        throw signInError;
       }
       var userResponse = await client.auth.getUser().catch(function (userError) {
         console.error('auth: getUser after signIn failed', errorInfo(userError));
@@ -1211,7 +1256,7 @@
         access_token_exists: accessTokenExists
       });
       if (!authUser) {
-        throw new Error('Не удалось подключиться к серверу авторизации');
+        throw new Error('Авторизация прошла, но пользовательская сессия не получена');
       }
       if (!authUser.id) {
         var sessionMissingError = new Error('Авторизация прошла, но пользовательская сессия не получена');
@@ -1375,8 +1420,10 @@
     logout: logout,
     loadUserProfile: loadUserProfile,
     loadMemberships: loadMemberships,
-    loadOrganizations: loadOrganizations
+    loadOrganizations: loadOrganizations,
+    checkSupabaseConnection: checkSupabaseConnection
   };
+  window.checkSupabaseConnection = checkSupabaseConnection;
 
   window.doLogin = function () {
     var email = ((document.getElementById('liE') || {}).value || '').trim().toLowerCase();
@@ -1393,6 +1440,21 @@
     }
     return login(email, password).catch(function (error) {
       console.error('signIn failed', errorInfo(error));
+      if (error && error.message === 'Неверный логин или пароль') {
+        if (errEl) errEl.textContent = error.message;
+        setAuthServiceStatus(error.message, 'err');
+        return null;
+      }
+      if (error && error.message === 'Email не подтверждён') {
+        if (errEl) errEl.textContent = error.message;
+        setAuthServiceStatus(error.message, 'err');
+        return null;
+      }
+      if (error && /Не удалось соединиться с Supabase Auth/i.test(error.message || '')) {
+        if (errEl) errEl.textContent = error.message;
+        setAuthServiceStatus(error.message, 'err');
+        return null;
+      }
       if (error && error.message === 'Не удалось создать профиль пользователя') {
         if (errEl) errEl.textContent = error.message;
         setAuthServiceStatus(error.message, 'err');
