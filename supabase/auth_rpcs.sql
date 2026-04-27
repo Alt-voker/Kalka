@@ -546,12 +546,12 @@ begin
    where id = v_profile.id
    returning * into v_profile;
 
-  update public.organization_members
+  update public.organization_members om
      set role = target_role,
          status = 'active',
          updated_at = now()
-   where organization_members.organization_id = target_organization_id
-     and organization_members.user_profile_id = v_profile.id
+   where om.organization_id = target_organization_id
+     and om.user_profile_id = v_profile.id
    returning * into v_membership;
 
   if not found then
@@ -571,9 +571,9 @@ begin
 
   select *
     into v_membership
-  from public.organization_members
-  where organization_members.organization_id = target_organization_id
-    and organization_members.user_profile_id = v_profile.id
+  from public.organization_members om
+  where om.organization_id = target_organization_id
+    and om.user_profile_id = v_profile.id
   limit 1;
 
   if not found then
@@ -632,12 +632,12 @@ begin
          updated_at = now()
    where id = target_user_profile_id;
 
-  update public.organization_members
+  update public.organization_members om
      set role = target_role,
          status = 'active',
          updated_at = now()
-   where organization_members.organization_id = target_organization_id
-     and organization_members.user_profile_id = target_user_profile_id
+   where om.organization_id = target_organization_id
+     and om.user_profile_id = target_user_profile_id
    returning * into v_membership;
 
   if not found then
@@ -646,9 +646,9 @@ begin
 
   select *
     into v_membership
-  from public.organization_members
-  where organization_members.organization_id = target_organization_id
-    and organization_members.user_profile_id = target_user_profile_id
+  from public.organization_members om
+  where om.organization_id = target_organization_id
+    and om.user_profile_id = target_user_profile_id
   limit 1;
 
   if not found then
@@ -688,11 +688,11 @@ begin
     raise exception 'profile and organization are required';
   end if;
 
-  update public.organization_members
+  update public.organization_members om
      set status = 'inactive',
          updated_at = now()
-   where organization_members.organization_id = target_organization_id
-     and organization_members.user_profile_id = target_user_profile_id
+   where om.organization_id = target_organization_id
+     and om.user_profile_id = target_user_profile_id
    returning * into v_membership;
 
   if not found then
