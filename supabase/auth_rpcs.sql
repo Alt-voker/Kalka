@@ -707,6 +707,60 @@ $$;
 revoke all on function public.owner_remove_user_from_organization(uuid, uuid) from public;
 grant execute on function public.owner_remove_user_from_organization(uuid, uuid) to authenticated;
 
+create or replace function public.owner_list_organization_members(
+  target_organization_id uuid
+)
+returns table (
+  membership_id uuid,
+  organization_id uuid,
+  organization_name text,
+  user_profile_id uuid,
+  auth_user_id uuid,
+  email text,
+  first_name text,
+  last_name text,
+  role text,
+  status text,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+begin
+  if not public._is_platform_owner() then
+    raise exception 'Forbidden';
+  end if;
+  if target_organization_id is null then
+    raise exception 'organization_id is required';
+  end if;
+
+  return query
+  select
+    om.id as membership_id,
+    om.organization_id,
+    o.name as organization_name,
+    om.user_profile_id,
+    up.auth_user_id,
+    up.email,
+    up.first_name,
+    up.last_name,
+    om.role,
+    om.status,
+    om.created_at,
+    om.updated_at
+  from public.organization_members om
+  join public.user_profiles up on up.id = om.user_profile_id
+  join public.organizations o on o.id = om.organization_id
+  where om.organization_id = target_organization_id
+  order by om.created_at asc;
+end;
+$$;
+
+revoke all on function public.owner_list_organization_members(uuid) from public;
+grant execute on function public.owner_list_organization_members(uuid) to authenticated;
+
 create or replace function public.handle_new_auth_user()
 returns trigger
 language plpgsql

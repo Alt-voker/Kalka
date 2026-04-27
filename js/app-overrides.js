@@ -566,6 +566,9 @@
     if (!window.__dataCache.ownerUsers || typeof window.__dataCache.ownerUsers !== 'object') {
       window.__dataCache.ownerUsers = { items: null, loading: false, error: null, promise: null, loadedAt: 0 };
     }
+    if (!window.__dataCache.organizationMembersByOrg || typeof window.__dataCache.organizationMembersByOrg !== 'object') {
+      window.__dataCache.organizationMembersByOrg = {};
+    }
     return window.__dataCache;
   }
 
@@ -779,6 +782,140 @@
     });
   };
 
+  function normalizeOrganizationMemberRow(row) {
+    if (!row) return null;
+    var firstName = String(row.first_name || '').trim();
+    var lastName = String(row.last_name || '').trim();
+    var email = String(row.email || '').trim().toLowerCase();
+    var role = String(row.role || 'manager').trim() || 'manager';
+    var status = String(row.status || 'active').trim() || 'active';
+    return {
+      membershipId: row.membership_id || row.id || '',
+      organizationId: row.organization_id || '',
+      organizationName: row.organization_name || '',
+      userProfileId: row.user_profile_id || '',
+      authUserId: row.auth_user_id || '',
+      email: email,
+      firstName: firstName,
+      lastName: lastName,
+      name: [firstName, lastName].filter(Boolean).join(' ') || email || 'Пользователь',
+      role: normalizeUiRole(role),
+      rawRole: role,
+      status: status,
+      createdAt: row.created_at || '',
+      updatedAt: row.updated_at || ''
+    };
+  }
+
+  async function rpcOwnerListOrganizationMembers(client, organizationId) {
+    console.info('supabase request start', 'owner_list_organization_members');
+    var response = await withTimeout(
+      client.rpc('owner_list_organization_members', { target_organization_id: organizationId }),
+      8000,
+      'Не удалось загрузить участников организации'
+    ).catch(function (error) {
+      console.error('rpc owner_list_organization_members failed', {
+        request: 'owner_list_organization_members',
+        organizationId: organizationId || '',
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
+      });
+      throw error;
+    });
+    if (response && response.error) {
+      console.error('rpc owner_list_organization_members failed', {
+        request: 'owner_list_organization_members',
+        organizationId: organizationId || '',
+        code: response.error.code || '',
+        message: response.error.message || '',
+        details: response.error.details || '',
+        hint: response.error.hint || '',
+        raw: response.error
+      });
+      throw response.error;
+    }
+    return Array.isArray(response && response.data) ? response.data.slice() : [];
+  }
+
+  async function loadOrganizationMembersForOrganization(organizationId) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    var orgId = String(organizationId || '').trim();
+    if (!client || !orgId) return [];
+    var cache = getDataCache();
+    var bucket = cache.organizationMembersByOrg[orgId];
+    if (bucket && Array.isArray(bucket.items)) {
+      return bucket.items.slice();
+    }
+    if (bucket && bucket.promise) {
+      return bucket.promise;
+    }
+    bucket = cache.organizationMembersByOrg[orgId] = {
+      items: null,
+      loading: true,
+      error: null,
+      promise: null,
+      loadedAt: 0
+    };
+    bucket.promise = (async function () {
+      try {
+        var rows = await rpcOwnerListOrganizationMembers(client, orgId);
+        var items = rows.map(normalizeOrganizationMemberRow).filter(Boolean);
+        var activeCount = items.filter(function (item) {
+          return String(item.status || 'active').toLowerCase() === 'active';
+        }).length;
+        bucket.items = items.slice();
+        bucket.error = null;
+        bucket.loadedAt = Date.now();
+        if (window.__userSession && Array.isArray(window.__userSession.organizations)) {
+          window.__userSession.organizations = window.__userSession.organizations.map(function (org) {
+            if (!org) return org;
+            var currentId = String(org.id || org.organization_id || org.organizationId || '').trim();
+            if (currentId !== orgId) return org;
+            return Object.assign({}, org, { membersCount: activeCount });
+          });
+          if (window.__userSession.activeOrganization && String(window.__userSession.activeOrganization.id || '').trim() === orgId) {
+            window.__userSession.activeOrganization = Object.assign({}, window.__userSession.activeOrganization, { membersCount: activeCount });
+          }
+        }
+        return items.slice();
+      } catch (error) {
+        bucket.error = {
+          code: error && error.code ? error.code : '',
+          message: error && error.message ? error.message : '',
+          details: error && error.details ? error.details : '',
+          hint: error && error.hint ? error.hint : '',
+          raw: error
+        };
+        bucket.items = [];
+        return [];
+      } finally {
+        bucket.loading = false;
+        bucket.promise = null;
+      }
+    })();
+    return bucket.promise;
+  }
+
+  async function refreshOrganizationMembersForOrganization(organizationId) {
+    var orgId = String(organizationId || '').trim();
+    if (!orgId) return [];
+    var cache = getDataCache();
+    delete cache.organizationMembersByOrg[orgId];
+    var items = await loadOrganizationMembersForOrganization(orgId);
+    if (typeof window.renderRestaurants === 'function') window.renderRestaurants();
+    if (typeof window.renderOrganizationMembersModal === 'function') window.renderOrganizationMembersModal(orgId);
+    return items;
+  }
+
+  window.ownerListOrganizationMembers = function (organizationId) {
+    return loadOrganizationMembersForOrganization(organizationId);
+  };
+  window.loadOrganizationMembersForOrganization = loadOrganizationMembersForOrganization;
+  window.refreshOrganizationMembersForOrganization = refreshOrganizationMembersForOrganization;
+
   function normalizeOwnerUserIdentity(row) {
     if (!row) return null;
     var authUserId = String(row.auth_user_id || row.authUserId || row.auth_user || row.userId || row.id || '').trim();
@@ -950,6 +1087,44 @@
       target_user_profile_id: targetUserProfileId,
       target_organization_id: targetOrganizationId,
       target_role: targetRole
+    });
+  };
+  window.ownerRemoveUserFromOrganization = function (targetUserProfileId, targetOrganizationId) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    console.info('supabase request start', 'owner_remove_user_from_organization');
+    return withTimeout(
+      client.rpc('owner_remove_user_from_organization', {
+        target_user_profile_id: targetUserProfileId,
+        target_organization_id: targetOrganizationId
+      }),
+      8000,
+      'Не удалось отключить пользователя от организации'
+    ).then(function (response) {
+      if (response && response.error) {
+        console.error('rpc owner_remove_user_from_organization failed', {
+          request: 'owner_remove_user_from_organization',
+          code: response.error.code || '',
+          message: response.error.message || '',
+          details: response.error.details || '',
+          hint: response.error.hint || '',
+          raw: response.error
+        });
+        throw response.error;
+      }
+      var row = Array.isArray(response && response.data) ? response.data[0] || null : (response && response.data) || null;
+      if (!row || !row.membership_id) throw new Error('Не удалось отключить пользователя от организации');
+      return row;
+    }).catch(function (error) {
+      console.error('rpc owner_remove_user_from_organization failed', {
+        request: 'owner_remove_user_from_organization',
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
+      });
+      throw error;
     });
   };
 
@@ -1981,6 +2156,9 @@
       if (typeof window.closeModal === 'function') window.closeModal('assignUserOrg');
       if (window.retryOwnerUsersLoad) {
         try { await window.retryOwnerUsersLoad(); } catch (ownerReloadError) {}
+      }
+      if (typeof window.refreshOrganizationMembersForOrganization === 'function') {
+        try { await window.refreshOrganizationMembersForOrganization(orgId); } catch (membersReloadError) {}
       }
       if (typeof window.renderAdmin === 'function') window.renderAdmin();
       if (typeof window.renderOwner === 'function') window.renderOwner();
