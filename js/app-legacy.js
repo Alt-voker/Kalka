@@ -3958,6 +3958,7 @@ function renderRestaurants(){
       console.info('renderRestaurants: restGrid container created');
     }
   }
+  var pageContainer = document.getElementById('pg-restaurants');
   var session = window.__userSession || {};
   var sessionOrgsRaw = Array.isArray(session.organizations) ? session.organizations.slice() : [];
   var normalizedSessionOrgs = sessionOrgsRaw.map(normalizeOrganizationForRender).filter(Boolean);
@@ -3973,6 +3974,13 @@ function renderRestaurants(){
   if (el.style && (el.style.display === 'none' || el.style.visibility === 'hidden')) {
     el.style.display = 'grid';
     el.style.visibility = 'visible';
+    el.style.opacity = '1';
+    el.style.height = 'auto';
+  }
+  if (pageContainer) {
+    pageContainer.style.display = 'block';
+    pageContainer.style.visibility = 'visible';
+    pageContainer.style.opacity = '1';
   }
 
   function renderToolbar(){
@@ -4023,6 +4031,7 @@ function renderRestaurants(){
   console.info('final orgs', finalList);
 
   var orgRows = finalList.map(normalizeOrganizationForRender).filter(Boolean);
+  console.info('restaurant cards rendered', finalList.length);
 
   if(!orgRows.length && orgFilter === 'active'){
     el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--t3);background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:18px;box-shadow:0 10px 28px rgba(15,23,42,.08);">'
@@ -4139,7 +4148,6 @@ function renderRestaurants(){
       +'</div>'
     +'</div>';
   }).join('')+'</div>';
-  console.info('restaurant cards rendered', orgRows.length);
 }
 
 function setActiveOrganization(orgId){
