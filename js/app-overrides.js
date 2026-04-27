@@ -849,11 +849,63 @@
     if (!client || !orgId) return [];
     var cache = getDataCache();
     var bucket = cache.organizationMembersByOrg[orgId];
-    if (bucket && Array.isArray(bucket.items)) {
-      return bucket.items.slice();
-    }
     if (bucket && bucket.promise) {
       return bucket.promise;
+    }
+    var now = Date.now();
+    var ttlMs = 30000;
+    var hasItems = bucket && Array.isArray(bucket.items);
+    var isFresh = hasItems && bucket.loadedAt && (now - bucket.loadedAt) < ttlMs;
+    if (hasItems && isFresh) {
+      return bucket.items.slice();
+    }
+    if (hasItems && !isFresh) {
+      bucket.promise = (async function () {
+        try {
+          var rows = await rpcOwnerListOrganizationMembers(client, orgId);
+          var items = rows.map(normalizeOrganizationMemberRow).filter(Boolean);
+          var activeCount = items.filter(function (item) {
+            return String(item.status || 'active').toLowerCase() === 'active';
+          }).length;
+          console.info('organization members loaded', { orgId: orgId, count: items.length });
+          bucket.items = items.slice();
+          bucket.error = null;
+          bucket.loadedAt = Date.now();
+          if (window.__userSession && Array.isArray(window.__userSession.organizations)) {
+            window.__userSession.organizations = window.__userSession.organizations.map(function (org) {
+              if (!org) return org;
+              var currentId = String(org.id || org.organization_id || org.organizationId || '').trim();
+              if (currentId !== orgId) return org;
+              return Object.assign({}, org, { membersCount: activeCount });
+            });
+            if (window.__userSession.activeOrganization && String(window.__userSession.activeOrganization.id || '').trim() === orgId) {
+              window.__userSession.activeOrganization = Object.assign({}, window.__userSession.activeOrganization, { membersCount: activeCount });
+            }
+          }
+          return items.slice();
+        } catch (error) {
+          bucket.error = {
+            code: error && error.code ? error.code : '',
+            message: error && error.message ? error.message : '',
+            details: error && error.details ? error.details : '',
+            hint: error && error.hint ? error.hint : '',
+            raw: error
+          };
+          console.error('rpc owner_list_organization_members failed', {
+            request: 'owner_list_organization_members',
+            organizationId: orgId,
+            code: bucket.error.code,
+            message: bucket.error.message,
+            details: bucket.error.details,
+            hint: bucket.error.hint,
+            raw: bucket.error.raw
+          });
+          return bucket.items.slice();
+        } finally {
+          bucket.promise = null;
+        }
+      })();
+      return bucket.items.slice();
     }
     bucket = cache.organizationMembersByOrg[orgId] = {
       items: null,
@@ -893,6 +945,15 @@
           hint: error && error.hint ? error.hint : '',
           raw: error
         };
+        console.error('rpc owner_list_organization_members failed', {
+          request: 'owner_list_organization_members',
+          organizationId: orgId,
+          code: bucket.error.code,
+          message: bucket.error.message,
+          details: bucket.error.details,
+          hint: bucket.error.hint,
+          raw: bucket.error.raw
+        });
         bucket.items = [];
         return [];
       } finally {

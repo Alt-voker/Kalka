@@ -831,6 +831,7 @@ declare
   v_membership public.organization_members%rowtype;
   v_org public.organizations%rowtype;
   v_actor_role text := 'unassigned';
+  v_target_role text := lower(trim(coalesce(target_role, '')));
   v_profile_found boolean := false;
   v_auth_user_id uuid := target_auth_user_id;
   v_email text := lower(coalesce(nullif(trim(target_email), ''), ''));
@@ -841,7 +842,7 @@ begin
   if target_organization_id is null then
     raise exception 'organization_id is required';
   end if;
-  if coalesce(nullif(trim(target_role), ''), '') = '' then
+  if coalesce(nullif(trim(v_target_role), ''), '') = '' then
     raise exception 'role is required';
   end if;
 
@@ -861,6 +862,9 @@ begin
   limit 1;
 
   if not public._is_platform_owner() and v_actor_role not in ('admin', 'organization_owner') then
+    raise exception 'Forbidden';
+  end if;
+  if v_target_role = 'platform_owner' and not public._is_platform_owner() then
     raise exception 'Forbidden';
   end if;
 
@@ -947,7 +951,7 @@ begin
    returning * into v_profile;
 
   update public.organization_members om
-     set role = target_role,
+     set role = v_target_role,
          status = 'active',
          updated_at = now()
    where om.organization_id = target_organization_id
@@ -963,7 +967,7 @@ begin
     ) values (
       target_organization_id,
       v_profile.id,
-      target_role,
+      v_target_role,
       'active'
     )
     returning * into v_membership;
@@ -1017,11 +1021,12 @@ as $$
 declare
   v_membership public.organization_members%rowtype;
   v_actor_role text := 'unassigned';
+  v_target_role text := lower(trim(coalesce(target_role, '')));
 begin
   if target_user_profile_id is null or target_organization_id is null then
     raise exception 'profile and organization are required';
   end if;
-  if coalesce(nullif(trim(target_role), ''), '') = '' then
+  if coalesce(nullif(trim(v_target_role), ''), '') = '' then
     raise exception 'role is required';
   end if;
 
@@ -1043,6 +1048,9 @@ begin
   if not public._is_platform_owner() and v_actor_role not in ('admin', 'organization_owner') then
     raise exception 'Forbidden';
   end if;
+  if v_target_role = 'platform_owner' and not public._is_platform_owner() then
+    raise exception 'Forbidden';
+  end if;
 
   update public.user_profiles
      set status = 'active',
@@ -1050,7 +1058,7 @@ begin
    where id = target_user_profile_id;
 
   update public.organization_members om
-     set role = target_role,
+     set role = v_target_role,
          status = 'active',
          updated_at = now()
    where om.organization_id = target_organization_id

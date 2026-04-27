@@ -4345,6 +4345,10 @@ async function renderOrganizationMembersModal(orgId){
   }
   var cache = (window.getDataCache ? window.getDataCache() : getSafeDataCache());
   var bucket = cache.organizationMembersByOrg && cache.organizationMembersByOrg[String(orgId || '')] ? cache.organizationMembersByOrg[String(orgId || '')] : null;
+  var cacheFresh = bucket && bucket.loadedAt ? (Date.now() - bucket.loadedAt) < 30000 : false;
+  if (bucket && Array.isArray(bucket.items) && !cacheFresh && typeof window.loadOrganizationMembersForOrganization === 'function' && !bucket.promise) {
+    window.loadOrganizationMembersForOrganization(orgId).catch(function () {});
+  }
   if(bucket && bucket.loading && !Array.isArray(bucket.items)){
     statusEl.textContent='Загрузка участников...';
     body.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">Загрузка участников...</div>';
@@ -4671,14 +4675,22 @@ window.submitOrganizationMemberAdd = async function () {
       }) || null;
     }
     if (!user) throw new Error('Пользователь не найден');
-    var result = await window.ownerAssignUserToOrganization({
+    var payload = {
       target_user_profile_id: user.profileId || user.user_profile_id || userProfileId,
       target_auth_user_id: user.authUserId || user.auth_user_id || '',
       target_email: user.email || '',
       target_organization_id: orgId,
       target_role: role
-    });
+    };
+    console.info('assign user payload', payload);
+    var result = await window.ownerAssignUserToOrganization(payload);
     if (!result || !result.membership_id) throw new Error('Не удалось добавить пользователя в организацию');
+    var alreadyWasMember = false;
+    if (user && Array.isArray(user.memberships)) {
+      alreadyWasMember = user.memberships.some(function (m) {
+        return String(m.organizationId || m.organization_id || '') === String(orgId || '');
+      });
+    }
     await refreshOrganizationMembersForOrganization(orgId);
     if (typeof window.loadOwnerUsers === 'function') {
       await window.loadOwnerUsers().catch(function () {});
@@ -4687,11 +4699,26 @@ window.submitOrganizationMemberAdd = async function () {
       await window.refreshOrganizationsForRestaurants('active').catch(function () {});
     }
     closeOrganizationAddMemberModal();
-    if (typeof window.toast === 'function') window.toast('Пользователь добавлен в организацию', 'ok');
+    if (typeof window.toast === 'function') window.toast(alreadyWasMember ? 'Пользователь уже состоит в организации, роль обновлена' : 'Пользователь добавлен в организацию', 'ok');
     return true;
   } catch (error) {
     console.error('submitOrganizationMemberAdd failed:', error);
-    if (typeof window.toast === 'function') window.toast(error && error.message ? error.message : 'Не удалось добавить пользователя в организацию', 'err');
+    var tech = [];
+    if (error && error.code) tech.push('code: ' + error.code);
+    if (error && error.message) tech.push('message: ' + error.message);
+    if (error && error.details) tech.push('details: ' + error.details);
+    if (error && error.hint) tech.push('hint: ' + error.hint);
+    var errText = error && error.message ? String(error.message) : '';
+    var uiMessage = 'Не удалось добавить пользователя';
+    if (/already|already exists|существует|состоит/i.test(errText)) {
+      uiMessage = 'Пользователь уже состоит в организации, роль обновлена';
+    }
+    if (typeof window.toast === 'function') window.toast(uiMessage, 'err');
+    var errEl = document.getElementById('orgMemberAddStatus');
+    if (errEl) {
+      errEl.innerHTML = '<span style="color:var(--rd);">'+_esc(uiMessage)+'</span>'
+        + (tech.length ? '<div style="margin-top:6px;font-size:11px;color:var(--t3);white-space:pre-wrap;">'+_esc(tech.join(' · '))+'</div>' : '');
+    }
     return false;
   } finally {
     setModalBusy('ov-orgMemberAdd', false);
