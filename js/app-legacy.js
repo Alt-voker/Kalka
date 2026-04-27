@@ -4097,6 +4097,52 @@ function renderRestaurants(){
   }
 }
 
+window.runOrganizationModuleSelfTest = async function () {
+  var results = [];
+  var root = document.querySelector('#pg-restaurants #orgsStableRoot');
+  var cardButtons = root ? root.querySelectorAll('[data-org-action]') : [];
+  var firstOrg = Array.isArray(window.__userSession && window.__userSession.organizations)
+    ? window.__userSession.organizations.find(function (org) { return !!(org && (org.id || org.organization_id || org.organizationId)); })
+    : null;
+  var firstOrgId = firstOrg ? String(firstOrg.id || firstOrg.organization_id || firstOrg.organizationId || '').trim() : '';
+  if (firstOrgId) {
+    try { ensureOrganizationDetailsModal(); renderOrganizationDetailsModal(firstOrgId); } catch (error) {}
+    try { ensureOrganizationEditModal(); renderOrganizationEditModal(firstOrgId); } catch (error) {}
+    try { ensureOrganizationMembersModal(); await renderOrganizationMembersModal(firstOrgId); } catch (error) {}
+    try { ensureOrganizationAddMemberModal(); await renderOrganizationAddMemberModal(firstOrgId); } catch (error) {}
+  }
+  var orgActionMap = [
+    { action: 'open', rpcName: '', requiresOrgId: true, selector: '[data-org-action="open"]', handler: 'openOrganizationDetails' },
+    { action: 'members', rpcName: 'owner_list_organization_members', requiresOrgId: true, selector: '[data-org-action="members"]', handler: 'openOrganizationMembers' },
+    { action: 'edit', rpcName: 'owner_update_organization', requiresOrgId: true, selector: '[data-org-action="edit"]', handler: 'openOrganizationEditor' },
+    { action: 'save', rpcName: 'owner_update_organization', requiresOrgId: true, selector: '#ov-orgEdit [data-org-action="save"]', handler: 'submitOrganizationForm' },
+    { action: 'archive', rpcName: 'owner_archive_organization', requiresOrgId: true, selector: '[data-org-action="archive"]', handler: 'archiveOrganizationFromCard' },
+    { action: 'restore', rpcName: 'owner_restore_organization', requiresOrgId: true, selector: '[data-org-action="restore"]', handler: 'restoreOrganizationFromCard' },
+    { action: 'delete', rpcName: 'owner_delete_organization', requiresOrgId: true, selector: '[data-org-action="delete"]', handler: 'deleteOrganizationFromCard' },
+    { action: 'switch', rpcName: '', requiresOrgId: true, selector: '[data-org-action="switch"]', handler: 'setActiveOrganization' }
+  ];
+  var memberActionMap = [
+    { action: 'add-user', rpcName: 'owner_list_users + owner_assign_user_to_organization', requiresOrgId: true, selector: '#ov-orgMembers [data-member-action="add-user"], #ov-orgMemberAdd [data-member-action="add-user"]', handler: 'submitOrganizationMemberAdd' },
+    { action: 'submit-add', rpcName: 'owner_assign_user_to_organization', requiresOrgId: true, selector: '#ov-orgMemberAdd [data-member-action="submit-add"]', handler: 'submitOrganizationMemberAdd' },
+    { action: 'change-role', rpcName: 'owner_update_user_role', requiresOrgId: true, selector: '#ov-orgMembers [data-member-action="change-role"]', handler: 'changeOrganizationMemberRole' },
+    { action: 'disconnect', rpcName: 'owner_remove_user_from_organization', requiresOrgId: true, selector: '#ov-orgMembers [data-member-action="disconnect"]', handler: 'removeOrganizationMemberFromOrganization' }
+  ];
+  orgActionMap.concat(memberActionMap).forEach(function (item) {
+    var button = document.querySelector(item.selector);
+    var handlerAttached = typeof window[item.handler] === 'function';
+    results.push({
+      action: item.action,
+      buttonFound: !!button || (item.action === 'open' ? !!cardButtons.length : false),
+      handlerAttached: handlerAttached,
+      rpcName: item.rpcName,
+      requiresOrgId: item.requiresOrgId ? 'yes' : 'no',
+      status: ((!!button || (item.action === 'open' ? !!cardButtons.length : false)) && handlerAttached) ? 'OK' : 'FAIL'
+    });
+  });
+  console.table(results);
+  return results;
+};
+
 function setActiveOrganization(orgId){
   if (window.__orgSwitchInProgress) return;
   window.__orgSwitchInProgress = true;
@@ -4268,13 +4314,13 @@ async function renderOrganizationMembersModal(orgId){
   }
   var items = Array.isArray(bucket && bucket.items) ? bucket.items.slice() : [];
   if(!items.length){
-    statusEl.innerHTML='<span>В организации пока нет участников</span> <button class="tbBtn" onclick="refreshOrganizationMembersForOrganization(\''+orgId+'\')" style="cursor:pointer;margin-left:8px;">Повторить</button> <button class="tbBtn" onclick="openOrganizationAddMemberModal(\''+String(orgId).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;margin-left:8px;">Добавить пользователя</button>';
+    statusEl.innerHTML='<span>В организации пока нет участников</span> <button class="tbBtn" data-member-action="retry-members" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;margin-left:8px;">Повторить</button> <button class="tbBtn" data-member-action="add-user" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;margin-left:8px;">Добавить пользователя</button>';
     body.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">В организации пока нет участников</div>'
-      +'<div style="margin-top:12px;display:flex;justify-content:center;"><button class="tbBtn" onclick="openOrganizationAddMemberModal(\''+String(orgId).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Добавить пользователя</button></div>';
+      +'<div style="margin-top:12px;display:flex;justify-content:center;"><button class="tbBtn" data-member-action="add-user" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Добавить пользователя</button></div>';
     return;
   }
   console.info('organization members loaded', { orgId: String(orgId || ''), count: items.length });
-  statusEl.innerHTML='<span>Всего участников: '+items.length+'</span> <button class="tbBtn" onclick="openOrganizationAddMemberModal(\''+String(orgId).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;margin-left:8px;">Добавить пользователя</button>';
+  statusEl.innerHTML='<span>Всего участников: '+items.length+'</span> <button class="tbBtn" data-member-action="add-user" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;margin-left:8px;">Добавить пользователя</button>';
   body.innerHTML=items.map(function (member) {
     var displayName = member.name || member.email || 'Пользователь';
     var roleLabel = getOrganizationRoleLabel(member.rawRole || member.role);
@@ -4312,12 +4358,54 @@ async function renderOrganizationMembersModal(orgId){
           +'</div>'
         +'</div>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">'
-          +(isReadonlyRole ? '' : '<button class="tbBtn" onclick="changeOrganizationMemberRole(\''+String(member.userProfileId || '').replace(/'/g, '\\\'')+'\', \''+String(orgId).replace(/'/g, '\\\'')+'\', document.getElementById(\'orgMemberRole-'+String(member.membershipId || member.userProfileId || member.authUserId || member.email).replace(/'/g, '\\\'')+'\').value)" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Сохранить роль</button>')
-          +'<button class="tbBtn" onclick="removeOrganizationMemberFromOrganization(\''+String(member.userProfileId || '').replace(/'/g, '\\\'')+'\', \''+String(orgId).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;">Отключить от организации</button>'
+          +(isReadonlyRole ? '' : '<button class="tbBtn" data-member-action="change-role" data-org-id="'+_esc(orgId)+'" data-user-profile-id="'+_esc(String(member.userProfileId || ''))+'" data-role-select-id="orgMemberRole-'+_esc(String(member.membershipId || member.userProfileId || member.authUserId || member.email))+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Сохранить роль</button>')
+          +'<button class="tbBtn" data-member-action="disconnect" data-org-id="'+_esc(orgId)+'" data-user-profile-id="'+_esc(String(member.userProfileId || ''))+'" style="cursor:pointer;">Отключить от организации</button>'
         +'</div>'
         +'<div style="font-size:11px;color:var(--t3);margin-top:8px;">Дата добавления: '+_esc(member.createdAt ? String(member.createdAt).slice(0, 10) : '—')+'</div>'
       +'</div>';
   }).join('');
+
+  if (!modal.__memberActionsBound) {
+    modal.addEventListener('click', function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest('[data-member-action]') : null;
+      if (!btn || !modal.contains(btn)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var action = String(btn.dataset.memberAction || '').trim();
+      var targetOrgId = String(btn.dataset.orgId || orgId || '').trim();
+      var targetUserProfileId = String(btn.dataset.userProfileId || '').trim();
+      console.info('organization action clicked', { action: action, orgId: targetOrgId });
+      try {
+        if (action === 'retry-members') {
+          refreshOrganizationMembersForOrganization(targetOrgId);
+          return;
+        }
+        if (action === 'add-user') {
+          openOrganizationAddMemberModal(targetOrgId);
+          return;
+        }
+        if (action === 'change-role') {
+          var selectId = String(btn.dataset.roleSelectId || '').trim();
+          var roleSelect = selectId ? document.getElementById(selectId) : null;
+          var role = roleSelect ? String(roleSelect.value || '').trim() : '';
+          if (typeof window.changeOrganizationMemberRole === 'function') {
+            window.changeOrganizationMemberRole(targetUserProfileId, targetOrgId, role);
+          }
+          return;
+        }
+        if (action === 'disconnect') {
+          if (typeof window.removeOrganizationMemberFromOrganization === 'function') {
+            window.removeOrganizationMemberFromOrganization(targetUserProfileId, targetOrgId);
+          }
+          return;
+        }
+      } catch (error) {
+        console.error('member action failed', { action: action, orgId: targetOrgId, error: error });
+        if (typeof window.toast === 'function') window.toast('Не удалось выполнить действие', 'err');
+      }
+    });
+    modal.__memberActionsBound = true;
+  }
 }
 window.renderOrganizationMembersModal = renderOrganizationMembersModal;
 window.openOrganizationMembersModal = function (orgId) {
@@ -4388,7 +4476,7 @@ function ensureOrganizationAddMemberModal(){
       +'<div id="orgMemberAddStatus" style="margin-top:12px;font-size:12px;color:var(--t3);"></div>'
       +'<div id="orgMemberAddBody" style="display:grid;gap:12px;margin-top:12px;"></div>'
       +'<div class="m-acts" style="margin-top:18px;">'
-        +'<button class="m-ok" onclick="submitOrganizationMemberAdd()">✅ Добавить</button>'
+        +'<button class="m-ok" data-member-action="submit-add" onclick="submitOrganizationMemberAdd()">✅ Добавить</button>'
         +'<button class="m-cancel" onclick="closeOrganizationAddMemberModal()">Отмена</button>'
       +'</div>'
     +'</div>';
@@ -4466,6 +4554,19 @@ async function renderOrganizationAddMemberModal(orgId){
       +'</select>'
     +'</label>';
   window.__orgMemberAddOrgId = String(orgId || '').trim();
+  if (!modal.__addMemberActionsBound) {
+    modal.addEventListener('click', function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest('[data-member-action="submit-add"]') : null;
+      if (!btn || !modal.contains(btn)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      console.info('organization action clicked', { action: 'submit-add', orgId: String(window.__orgMemberAddOrgId || modal.dataset.orgId || '') });
+      if (typeof window.submitOrganizationMemberAdd === 'function') {
+        window.submitOrganizationMemberAdd();
+      }
+    });
+    modal.__addMemberActionsBound = true;
+  }
 }
 
 window.openOrganizationAddMemberModal = function (orgId) {
@@ -4633,18 +4734,60 @@ function renderOrganizationDetailsModal(orgId){
       +'</div>'
     +'</div>'
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
-      +'<button class="tbBtn" onclick="setActiveOrganization(\''+String(org.id).replace(/'/g, '\\\'')+'\');closeOrganizationDetailsModal();" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
-      +(canManageMembers ? '<button class="tbBtn" onclick="openOrganizationMembers(\''+String(org.id).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;">Участники</button>' : '')
-      +(canManageMembers ? '<button class="tbBtn" onclick="openOrganizationEditor(\''+String(org.id).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;">Редактировать</button>' : '')
+      +'<button class="tbBtn" data-org-action="switch" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
+      +(canManageMembers ? '<button class="tbBtn" data-org-action="members" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;">Участники</button>' : '')
+      +(canManageMembers ? '<button class="tbBtn" data-org-action="edit" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;">Редактировать</button>' : '')
       +((['owner','admin'].indexOf(currentRole) >= 0) ? (
         String(org.status || '').toLowerCase() === 'archived'
-          ? '<button class="tbBtn" onclick="restoreOrganizationFromCard(\''+String(org.id).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;">Восстановить</button>'
-          : '<button class="tbBtn" onclick="archiveOrganizationFromCard(\''+String(org.id).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;">Архивировать</button>'
+          ? '<button class="tbBtn" data-org-action="restore" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;">Восстановить</button>'
+          : '<button class="tbBtn" data-org-action="archive" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;">Архивировать</button>'
       ) : '')
       +((currentRole === 'owner')
-        ? '<button class="tbBtn" onclick="deleteOrganizationFromCard(\''+String(org.id).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;">Удалить</button>'
+        ? '<button class="tbBtn" data-org-action="delete" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;">Удалить</button>'
         : '')
     +'</div>';
+  if (!modal.__detailsActionsBound) {
+    modal.addEventListener('click', function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest('[data-org-action]') : null;
+      if (!btn || !modal.contains(btn)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var action = String(btn.dataset.orgAction || '').trim();
+      var targetOrgId = String(btn.dataset.orgId || org.id || '').trim();
+      console.info('organization action clicked', { action: action, orgId: targetOrgId });
+      try {
+        if (action === 'switch' && typeof window.setActiveOrganization === 'function') {
+          window.setActiveOrganization(targetOrgId);
+          closeOrganizationDetailsModal();
+          return;
+        }
+        if (action === 'members' && typeof window.openOrganizationMembers === 'function') {
+          window.openOrganizationMembers(targetOrgId);
+          return;
+        }
+        if (action === 'edit' && typeof window.openOrganizationEditor === 'function') {
+          window.openOrganizationEditor(targetOrgId);
+          return;
+        }
+        if (action === 'archive' && typeof window.archiveOrganizationFromCard === 'function') {
+          window.archiveOrganizationFromCard(targetOrgId);
+          return;
+        }
+        if (action === 'restore' && typeof window.restoreOrganizationFromCard === 'function') {
+          window.restoreOrganizationFromCard(targetOrgId);
+          return;
+        }
+        if (action === 'delete' && typeof window.deleteOrganizationFromCard === 'function') {
+          window.deleteOrganizationFromCard(targetOrgId);
+          return;
+        }
+      } catch (error) {
+        console.error('organization details action failed', { action: action, orgId: targetOrgId, error: error });
+        if (typeof window.toast === 'function') window.toast('Не удалось выполнить действие', 'err');
+      }
+    });
+    modal.__detailsActionsBound = true;
+  }
 }
 window.renderOrganizationDetailsModal = renderOrganizationDetailsModal;
 
@@ -4666,7 +4809,7 @@ function ensureOrganizationEditModal(){
       +'<div id="orgEditStatus" style="margin-top:12px;font-size:12px;color:var(--t3);"></div>'
       +'<div id="orgEditBody" style="display:grid;gap:12px;margin-top:12px;"></div>'
       +'<div class="m-acts" style="margin-top:18px;">'
-        +'<button class="m-ok" onclick="submitOrganizationForm()">✅ Сохранить</button>'
+        +'<button class="m-ok" data-org-action="save" onclick="submitOrganizationForm()">✅ Сохранить</button>'
         +'<button class="m-cancel" onclick="closeOrganizationEditModal()">Отмена</button>'
       +'</div>'
     +'</div>';
@@ -4743,6 +4886,19 @@ function renderOrganizationEditModal(orgId){
     +'</label>';
   window.__orgEditOrgId = org ? String(org.id || '').trim() : '';
   window.__orgEditMode = mode;
+  if (!modal.__editActionsBound) {
+    modal.addEventListener('click', function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest('[data-org-action="save"]') : null;
+      if (!btn || !modal.contains(btn)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      console.info('organization action clicked', { action: 'save', orgId: String(window.__orgEditOrgId || modal.dataset.orgId || '') });
+      if (typeof window.submitOrganizationForm === 'function') {
+        window.submitOrganizationForm();
+      }
+    });
+    modal.__editActionsBound = true;
+  }
 }
 
 window.openOrganizationCreateModal = openOrganizationCreateModal;
