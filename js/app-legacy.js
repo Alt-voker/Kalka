@@ -3700,7 +3700,15 @@ function renderRestaurants(){
   var session = window.__userSession || {};
   var orgs = Array.isArray(session.organizations) ? session.organizations.slice() : [];
   var activeOrgId = String(session.activeOrganizationId || '').trim();
-  var currentRole = normalizeLegacyRole((session.currentUser && session.currentUser.role) || (CU && CU.role) || 'unassigned');
+  var normalizeRoleSafe =
+    window.normalizeRole ||
+    window.normalizeLegacyRole ||
+    function(role) {
+      if (!role) return 'unassigned';
+      if (role === 'platform_owner') return 'owner';
+      return role;
+    };
+  var currentRole = normalizeRoleSafe((session.currentUser && session.currentUser.role) || (CU && CU.role) || 'unassigned');
   console.info('renderRestaurants organizations count', orgs.length, 'activeOrganizationId', activeOrgId);
   if(!el){
     console.error('renderRestaurants: restGrid container not found');
