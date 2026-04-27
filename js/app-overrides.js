@@ -869,6 +869,7 @@
         var activeCount = items.filter(function (item) {
           return String(item.status || 'active').toLowerCase() === 'active';
         }).length;
+        console.info('organization members loaded', { orgId: orgId, count: items.length });
         bucket.items = items.slice();
         bucket.error = null;
         bucket.loadedAt = Date.now();

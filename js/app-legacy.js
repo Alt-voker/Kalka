@@ -3941,7 +3941,7 @@ function syncOrganizationListItemIntoSession(org) {
   }
 }
 function renderRestaurants(){
-  var pageContainer = document.getElementById('pg-restaurants');
+  var pageContainer = document.querySelector('#pg-restaurants');
   if (!pageContainer) {
     console.error('renderRestaurants: pg-restaurants container not found');
     return;
@@ -3976,7 +3976,7 @@ function renderRestaurants(){
     +'</div>'
     +'<div id="orgsStableRoot" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px;"></div>';
 
-  var root = document.getElementById('orgsStableRoot');
+  var root = pageContainer.querySelector('#orgsStableRoot');
   if (!root) {
     console.error('renderRestaurants: orgsStableRoot not found');
     return;
@@ -4026,6 +4026,9 @@ function renderRestaurants(){
     var isActive = String(normalizedOrg.id) === activeOrgId;
     var canEdit = perms.canEdit && status !== 'deleted';
     var canManageMembers = perms.canManageMembers && status !== 'deleted';
+    var canArchive = (currentRole === 'owner' || currentRole === 'admin') && status !== 'deleted' && status !== 'archived';
+    var canRestore = (currentRole === 'owner' || currentRole === 'admin') && status === 'archived';
+    var canDelete = currentRole === 'owner' && status !== 'deleted';
     return '<div class="panel" style="background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);border:1px solid rgba(148,163,184,.16);border-radius:18px;overflow:hidden;">'
       +'<div style="padding:18px;">'
         +'<div style="font-size:18px;font-weight:800;line-height:1.2;word-break:break-word;">'+_esc(normalizedOrg.name || 'Организация без названия')+'</div>'
@@ -4040,10 +4043,13 @@ function renderRestaurants(){
           +(normalizedOrg.address ? '<div><b>Адрес:</b> '+_esc(normalizedOrg.address)+'</div>' : '')
         +'</div>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">'
-          +'<button class="tbBtn" onclick="openOrganizationDetails(\''+normalizedOrg.id+'\')" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
-          +'<button class="tbBtn" onclick="openOrganizationMembers(\''+normalizedOrg.id+'\')" style="cursor:pointer;">Участники</button>'
-          +(canEdit ? '<button class="tbBtn" onclick="openOrganizationEditor(\''+normalizedOrg.id+'\')" style="cursor:pointer;">Редактировать</button>' : '')
-          +(isActive ? '<span class="badge" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);">Текущая организация</span>' : '<button class="tbBtn" onclick="setActiveOrganization(\''+normalizedOrg.id+'\')" style="cursor:pointer;">Переключиться на эту организацию</button>')
+          +'<button class="tbBtn" data-org-action="open" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
+          +'<button class="tbBtn" data-org-action="members" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Участники</button>'
+          +(canEdit ? '<button class="tbBtn" data-org-action="edit" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Редактировать</button>' : '')
+          +(isActive ? '<span class="badge" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);">Текущая организация</span>' : '<button class="tbBtn" data-org-action="switch" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Переключиться на эту организацию</button>')
+          +(canArchive ? '<button class="tbBtn" data-org-action="archive" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Архивировать</button>' : '')
+          +(canRestore ? '<button class="tbBtn" data-org-action="restore" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Восстановить</button>' : '')
+          +(canDelete ? '<button class="tbBtn" data-org-action="delete" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Удалить</button>' : '')
         +'</div>'
       +'</div>'
     +'</div>';
@@ -4051,6 +4057,44 @@ function renderRestaurants(){
 
   console.info('restaurant cards rendered', finalList.length);
   console.info('orgsStableRoot children', root.children.length);
+  console.info('organization page rendered only in #pg-restaurants');
+
+  if (!root.__orgActionsBound) {
+    root.addEventListener('click', function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest('[data-org-action]') : null;
+      if (!btn || !root.contains(btn)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var action = String(btn.dataset.orgAction || '').trim();
+      var orgId = String(btn.dataset.orgId || '').trim();
+      if (!action || !orgId) return;
+      console.info('organization action clicked', { action: action, orgId: orgId });
+      try {
+        if (action === 'open' && typeof window.openOrganizationDetails === 'function') {
+          window.openOrganizationDetails(orgId);
+        } else if (action === 'members' && typeof window.openOrganizationMembers === 'function') {
+          window.openOrganizationMembers(orgId);
+        } else if (action === 'edit' && typeof window.openOrganizationEditor === 'function') {
+          window.openOrganizationEditor(orgId);
+        } else if (action === 'archive' && typeof window.archiveOrganizationFromCard === 'function') {
+          window.archiveOrganizationFromCard(orgId);
+        } else if (action === 'restore' && typeof window.restoreOrganizationFromCard === 'function') {
+          window.restoreOrganizationFromCard(orgId);
+        } else if (action === 'delete' && typeof window.deleteOrganizationFromCard === 'function') {
+          window.deleteOrganizationFromCard(orgId);
+        } else if (action === 'switch' && typeof window.setActiveOrganization === 'function') {
+          window.setActiveOrganization(orgId);
+        } else {
+          console.error('organization action handler missing', { action: action, orgId: orgId });
+          if (typeof window.toast === 'function') window.toast('Не удалось выполнить действие', 'err');
+        }
+      } catch (error) {
+        console.error('organization action handler failed', { action: action, orgId: orgId, error: error });
+        if (typeof window.toast === 'function') window.toast('Не удалось выполнить действие', 'err');
+      }
+    });
+    root.__orgActionsBound = true;
+  }
 }
 
 function setActiveOrganization(orgId){
@@ -4207,7 +4251,18 @@ async function renderOrganizationMembersModal(orgId){
     return;
   }
   if(bucket && bucket.error){
-    statusEl.innerHTML='<span style="color:var(--rd);">Не удалось загрузить участников</span> <button class="tbBtn" onclick="refreshOrganizationMembersForOrganization(\''+orgId+'\')" style="cursor:pointer;margin-left:8px;">Повторить</button>';
+    console.error('organization members load failed', {
+      orgId: String(orgId || ''),
+      code: bucket.error.code || '',
+      message: bucket.error.message || '',
+      details: bucket.error.details || '',
+      hint: bucket.error.hint || '',
+      raw: bucket.error.raw || bucket.error
+    });
+    statusEl.innerHTML=''
+      +'<span style="color:var(--rd);">Не удалось загрузить участников</span>'
+      +'<div style="margin-top:6px;font-size:11px;color:var(--t3);white-space:pre-wrap;">'+_esc([bucket.error.message, bucket.error.details, bucket.error.hint].filter(Boolean).join(' · ') || 'Ошибка запроса участников')+'</div>'
+      +'<button class="tbBtn" onclick="refreshOrganizationMembersForOrganization(\''+String(orgId).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;margin-left:8px;margin-top:8px;">Повторить</button>';
     body.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">Не удалось загрузить участников</div>';
     return;
   }
@@ -4218,6 +4273,7 @@ async function renderOrganizationMembersModal(orgId){
       +'<div style="margin-top:12px;display:flex;justify-content:center;"><button class="tbBtn" onclick="openOrganizationAddMemberModal(\''+String(orgId).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Добавить пользователя</button></div>';
     return;
   }
+  console.info('organization members loaded', { orgId: String(orgId || ''), count: items.length });
   statusEl.innerHTML='<span>Всего участников: '+items.length+'</span> <button class="tbBtn" onclick="openOrganizationAddMemberModal(\''+String(orgId).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;margin-left:8px;">Добавить пользователя</button>';
   body.innerHTML=items.map(function (member) {
     var displayName = member.name || member.email || 'Пользователь';
