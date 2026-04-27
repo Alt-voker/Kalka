@@ -33,6 +33,32 @@ const PM={
 };
 const PT={order:'Заказ и Корзина',tender:'Тендер',owner:'Панель владельца',admin:'Управление пользователями',dashboard:'Дашборд',catalog:'Каталог товаров',cart:'Корзина',favorites:'Избранное',orders:'История заказов',suppliers:'Поставщики',analytics:'Аналитика','tender':'Тендер',techcards:'Технологические карты','chef-calc':'Калькулятор','sup-dashboard':'Панель поставщика','sup-products':'Мои товары','sup-orders':'Входящие заказы','sup-analytics':'Аналитика продаж'};
 
+function getRolePagesSafe(role){
+  var normalizeRoleSafe =
+    window.normalizeRole ||
+    window.normalizeLegacyRole ||
+    function(value) {
+      if (!value) return 'unassigned';
+      if (value === 'platform_owner') return 'owner';
+      return value;
+    };
+  var r = normalizeRoleSafe(role);
+  var fallbackPages = {
+    buyer: ['dashboard', 'restaurants', 'suppliers', 'orders', 'prices'],
+    manager: ['dashboard', 'restaurants', 'suppliers', 'orders', 'prices'],
+    organization_owner: ['dashboard', 'restaurants', 'suppliers', 'users', 'orders', 'prices'],
+    admin: ['dashboard', 'restaurants', 'suppliers', 'users', 'orders', 'prices'],
+    chef: ['dashboard', 'restaurants', 'techcards', 'products'],
+    bar_manager: ['dashboard', 'restaurants', 'suppliers', 'techcards', 'orders'],
+    accountant: ['dashboard', 'reports', 'suppliers'],
+    warehouse: ['dashboard', 'restaurants', 'stock', 'orders'],
+    unassigned: ['dashboard', 'restaurants']
+  };
+  var pages = (ROLES[r] && Array.isArray(ROLES[r].pages) && ROLES[r].pages.length) ? ROLES[r].pages.slice() : (fallbackPages[r] || fallbackPages.unassigned).slice();
+  if (r === 'owner') pages = (ROLES.owner && Array.isArray(ROLES.owner.pages) && ROLES.owner.pages.length) ? ROLES.owner.pages.slice() : Object.keys(PM);
+  return Array.from(new Set(pages.filter(Boolean)));
+}
+
 // ── СЛОВАРИ ПАРСЕРА И ПОИСКА ─────────────────────────────────
 
 var NAME_SYNONYMS = [
@@ -637,6 +663,7 @@ function setupUI(u){
   u = u || window.CU || {};
   var role = u.role || 'buyer';
   var rd = ROLES[role] || ROLES.owner || {};
+  var rolePages = getRolePagesSafe(role);
   var tc = ['owner','chef','buyer'].includes(role) ? '#000' : '#fff';
   var first = String(u.first || u.firstName || (u.name || '').split(' ')[0] || 'П').trim();
   var last = String(u.last || u.lastName || (u.name || '').split(' ')[1] || '').trim();
@@ -673,9 +700,8 @@ function setupUI(u){
   }
   buildNav(u);
   renderOrgInviteBadge();
-  var rolePages = (ROLES[role] && Array.isArray(ROLES[role].pages)) ? ROLES[role].pages : ['dash'];
   var firstPage=noOrg ? 'dashboard' : (rolePages.find(function(pg){ return canAccessPage(u, pg); })||'dashboard');
-  if(!noOrg && !canAccessPage(u, firstPage)) firstPage='orders';
+  if(!noOrg && !canAccessPage(u, firstPage)) firstPage='dashboard';
   setTimeout(function(){
     requestAnimationFrame(function(){
       goPage(firstPage);
@@ -718,7 +744,7 @@ function doLogout(){
 function toggleSB(){sbC=!sbC;document.getElementById('SB').classList.toggle('slim',sbC);document.getElementById('sbTog').textContent=sbC?'›':'‹';}
 function buildNav(u){
   const noOrg=!!(u && (u.noOrganization || (window.__userSession && window.__userSession.noOrganization)));
-  const basePages=noOrg ? ['dashboard'] : ((ROLES[u.role]||{}).pages||[]).slice();
+  const basePages=noOrg ? ['dashboard'] : getRolePagesSafe(u && u.role);
   const rawPages=noOrg ? ['dashboard'] : ((u.role==='admin'&&ownerGetSettings().adminAdvanced&&basePages.indexOf('owner')<0)?['owner'].concat(basePages):basePages);
   const pages=rawPages.filter(function(pg){ return pg!=='dashboard' || userCanSeeDashboard(u); });
   let html='',lastSec=null;
@@ -2669,8 +2695,9 @@ function declineOrgInvite(inviteId){
 
 function userCanSeeDashboard(user){
   if(!user) return false;
-  if(user.noOrganization || (window.__userSession && window.__userSession.noOrganization)) return true;
   if(user.role==='owner') return true;
+  if(user.noOrganization || (window.__userSession && window.__userSession.noOrganization)) return true;
+  if(user.role && user.role !== 'unassigned') return true;
   var access=normalizeDashboardAccess(user);
   if(!access.enabled) return false;
   if(access.scope==='all_orgs') return true;
@@ -2696,7 +2723,7 @@ function canAccessPage(u, pg){
   if(!u) return false;
   if(pg==='dashboard') return userCanSeeDashboard(u);
   if(u.noOrganization || (window.__userSession && window.__userSession.noOrganization)) return false;
-  var pages=(ROLES[u.role]||{}).pages||[];
+  var pages=getRolePagesSafe(u.role);
   if(pages.indexOf(pg)>=0) return true;
   if(u.role==='admin' && ownerGetSettings().adminAdvanced && pg==='owner') return true;
   return false;
@@ -3751,6 +3778,7 @@ function renderRestaurants(){
 
   el.innerHTML=orgRows.map(function(org){
     var isActive = String(org.id) === activeOrgId;
+    var isOrgEnabled = String(org.status || 'active') === 'active';
     var orgLegalEntities = (Array.isArray(session.legalEntities) ? session.legalEntities : []).filter(function(item){
       return String(item.organization_id||'') === String(org.id||'');
     });
@@ -3769,7 +3797,9 @@ function renderRestaurants(){
       +'<div><div style="font-size:11px;color:var(--t3);">Юр. лица</div><div style="font-size:13px;font-weight:700;">'+(legalNames.length?legalNames.join(' · '):'Не указаны')+'</div></div>'
       +'<div><div style="font-size:11px;color:var(--t3);">Статус</div><div style="font-size:13px;font-weight:700;">Статус: '+(org.status||'active')+'</div></div>'
       +'<div><div style="font-size:11px;color:var(--t3);">Роль</div><div style="font-size:13px;font-weight:700;">'+(org.role||currentRole)+'</div></div>'
-      +'<div style="display:flex;justify-content:flex-end;align-items:center;">'+(isActive?'<span class="badge bg">Активная</span>':'<span class="badge br">Не активная</span>')+'</div>'
+      +'<div style="display:flex;justify-content:flex-end;align-items:center;">'+(isOrgEnabled
+        ? '<span class="badge" style="background:var(--grD);color:var(--gr);border:1px solid var(--gr);">Активна</span>'
+        : '<span class="badge" style="background:var(--rdD);color:var(--rd);border:1px solid var(--rd);">Не активна</span>')+'</div>'
       +'</div>'
       +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'+switchBtn+ownerBadge+'</div>'
       +'</div>'
