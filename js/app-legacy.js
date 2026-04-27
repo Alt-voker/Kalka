@@ -22,7 +22,7 @@ const PM={
   favorites:      {sec:null,          ico:'', lbl:'Избранное',       badge:'fav'},
   orders:         {sec:'Кабинет',     ico:'', lbl:'История заказов'},
   suppliers:      {sec:null,          ico:'', lbl:'Поставщики'},
-  restaurants:    {sec:'Управление',  ico:'', lbl:'Ресторан/Бар'},
+  restaurants:    {sec:'Управление',  ico:'', lbl:'Организации'},
   techcards:      {sec:null,          ico:'', lbl:'Тех. карты'},
   'chef-calc':    {sec:null,          ico:'', lbl:'Калькулятор'},
   'sup-products': {sec:null,          ico:'', lbl:'Мои товары'},
@@ -1814,7 +1814,6 @@ function renderSuppliers(){
     var i=Array.isArray(sessionSuppliers) ? sessionSuppliers.findIndex(function(item){ return item.id===s.id; }) : -1;
     var ratingSummary=getSupplierRatingSummary(s.name);
     var canManageSupplier=canManageSupplierRecord(CU, s, db);
-    var orgSummary=getSupplierVisibleOrganizationsForUser(s, CU, db).map(function(rest){ return rest.name; }).join(' · ') || 'Без привязки';
     var turnover=getSupplierTurnoverSummary(s.name, visibleOrders);
     var turnoverRows=turnover.organizations.slice(0,3).map(function(row){
       return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;color:var(--t2);padding:4px 0;border-bottom:1px solid var(--br);"><span>'+row[0]+'</span><b>₽'+Math.round(row[1]).toLocaleString()+'</b></div>';
@@ -1844,7 +1843,6 @@ function renderSuppliers(){
       +'<span class="badge '+sm[s.status||'active']+'" style="margin-left:auto;">'+sl[s.status||'active']+'</span>'
       +'</div>'
       +'<div style="font-size:11px;color:var(--t3);margin-bottom:10px;">Юр. лицо: '+(s.legalName||s.name)+'</div>'
-      +'<div style="font-size:11px;color:var(--t3);margin-bottom:10px;">Организации: '+orgSummary+'</div>'
       +'<div class="sup-sg">'
       +'<div class="ss"><div class="ss-l">Рейтинг</div><div class="ss-v">'+formatSupplierRatingAverage(ratingSummary.average)+' <span style="font-size:10px;color:var(--t3);">('+ratingSummary.count+')</span></div></div>'
       +'<div class="ss"><div class="ss-l">Заказов</div><div class="ss-v">'+s.orders+'</div></div>'
@@ -1927,7 +1925,6 @@ function deleteSup(i){
   var idx=ALL_SUPS.indexOf(name);
   if(idx>=0)ALL_SUPS.splice(idx,1);
   renderSuppliers();
-  renderRestaurants();
   renderCatalog();
   savePriceData();
   toast('🗑 Поставщик «'+name+'» удалён','ok');
@@ -3401,7 +3398,6 @@ function submitSup(){
   if(ALL_SUPS.indexOf(n)<0) ALL_SUPS.push(n);
   closeSupplierModal();
   renderSuppliers();
-  renderRestaurants();
   renderCatalog();
   savePriceData();
   toast('Поставщик «'+n+'» '+(existing?'обновлён':'добавлен')+'!','ok');
@@ -4044,9 +4040,9 @@ function renderRestaurants(){
           +(normalizedOrg.address ? '<div><b>Адрес:</b> '+_esc(normalizedOrg.address)+'</div>' : '')
         +'</div>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">'
-          +'<button class="tbBtn" onclick="openOrganizationDetailsModal(\''+normalizedOrg.id+'\')" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
-          +'<button class="tbBtn" onclick="openOrganizationMembersModal(\''+normalizedOrg.id+'\')" style="cursor:pointer;">Участники</button>'
-          +(canEdit ? '<button class="tbBtn" onclick="openEditOrganizationModal(\''+normalizedOrg.id+'\')" style="cursor:pointer;">Редактировать</button>' : '')
+          +'<button class="tbBtn" onclick="openOrganizationDetails(\''+normalizedOrg.id+'\')" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
+          +'<button class="tbBtn" onclick="openOrganizationMembers(\''+normalizedOrg.id+'\')" style="cursor:pointer;">Участники</button>'
+          +(canEdit ? '<button class="tbBtn" onclick="openOrganizationEditor(\''+normalizedOrg.id+'\')" style="cursor:pointer;">Редактировать</button>' : '')
           +(isActive ? '<span class="badge" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);">Текущая организация</span>' : '<button class="tbBtn" onclick="setActiveOrganization(\''+normalizedOrg.id+'\')" style="cursor:pointer;">Переключиться на эту организацию</button>')
         +'</div>'
       +'</div>'
@@ -4062,6 +4058,7 @@ function setActiveOrganization(orgId){
   window.__orgSwitchInProgress = true;
   var session = window.__userSession || {};
   try{
+    logOrganizationAction('switch', orgId);
     var organizations = Array.isArray(session.organizations) ? session.organizations.slice() : [];
     var org = organizations.find(function(item){ return String(item.id || '') === String(orgId || ''); }) || null;
     if(!org){
@@ -4268,6 +4265,7 @@ async function renderOrganizationMembersModal(orgId){
 }
 window.renderOrganizationMembersModal = renderOrganizationMembersModal;
 window.openOrganizationMembersModal = function (orgId) {
+  logOrganizationAction('members', orgId);
   var modal = ensureOrganizationMembersModal();
   modal.dataset.orgId = String(orgId || '').trim();
   modal.classList.add('on');
@@ -4275,6 +4273,7 @@ window.openOrganizationMembersModal = function (orgId) {
 };
 window.changeOrganizationMemberRole = async function (userProfileId, orgId, role) {
   try {
+    logOrganizationAction('change-role', orgId);
     if (!userProfileId || !orgId || !role) throw new Error('Не хватает данных для изменения роли');
     if (typeof window.ownerUpdateUserRole !== 'function') throw new Error('RPC для изменения роли недоступен');
     setModalBusy('ov-orgMembers', true);
@@ -4295,6 +4294,7 @@ window.changeOrganizationMemberRole = async function (userProfileId, orgId, role
 };
 window.removeOrganizationMemberFromOrganization = async function (userProfileId, orgId) {
   try {
+    logOrganizationAction('disconnect-member', orgId);
     if (!userProfileId || !orgId) throw new Error('Не хватает данных для отключения');
     if (typeof window.ownerRemoveUserFromOrganization !== 'function') throw new Error('RPC для отключения недоступен');
     setModalBusy('ov-orgMembers', true);
@@ -4425,6 +4425,7 @@ window.submitOrganizationMemberAdd = async function () {
   var userProfileId = String((document.getElementById('orgMemberAddUser') || { value: '' }).value || '').trim();
   var role = String((document.getElementById('orgMemberAddRole') || { value: 'manager' }).value || '').trim();
   try {
+    logOrganizationAction('add-user', orgId);
     if (!orgId) throw new Error('Организация не выбрана');
     if (!userProfileId) throw new Error('Выберите пользователя');
     if (!role) throw new Error('Выберите роль');
@@ -4496,7 +4497,12 @@ function closeOrganizationDetailsModal(){
   if(el) el.classList.remove('on');
 }
 
+function logOrganizationAction(action, organizationId){
+  console.info('organization action clicked', { action: String(action || ''), organizationId: String(organizationId || '') });
+}
+
 function openOrganizationDetailsModal(orgId){
+  logOrganizationAction('open', orgId);
   var modal = ensureOrganizationDetailsModal();
   modal.dataset.orgId = String(orgId || '').trim();
   modal.classList.add('on');
@@ -4572,8 +4578,8 @@ function renderOrganizationDetailsModal(orgId){
     +'</div>'
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
       +'<button class="tbBtn" onclick="setActiveOrganization(\''+String(org.id).replace(/'/g, '\\\'')+'\');closeOrganizationDetailsModal();" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
-      +(canManageMembers ? '<button class="tbBtn" onclick="openOrganizationMembersModal(\''+String(org.id).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;">Участники</button>' : '')
-      +(canManageMembers ? '<button class="tbBtn" onclick="openEditOrganizationModal(\''+String(org.id).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;">Редактировать</button>' : '')
+      +(canManageMembers ? '<button class="tbBtn" onclick="openOrganizationMembers(\''+String(org.id).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;">Участники</button>' : '')
+      +(canManageMembers ? '<button class="tbBtn" onclick="openOrganizationEditor(\''+String(org.id).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;">Редактировать</button>' : '')
       +((['owner','admin'].indexOf(currentRole) >= 0) ? (
         String(org.status || '').toLowerCase() === 'archived'
           ? '<button class="tbBtn" onclick="restoreOrganizationFromCard(\''+String(org.id).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;">Восстановить</button>'
@@ -4626,6 +4632,7 @@ function openOrganizationCreateModal(){
 }
 
 function openEditOrganizationModal(orgId){
+  logOrganizationAction('edit', orgId);
   var modal = ensureOrganizationEditModal();
   modal.dataset.mode='edit';
   modal.dataset.orgId=String(orgId || '').trim();
@@ -4688,6 +4695,15 @@ window.closeOrganizationEditModal = closeOrganizationEditModal;
 window.openOrganizationDetailsModal = openOrganizationDetailsModal;
 window.closeOrganizationDetailsModal = closeOrganizationDetailsModal;
 window.setOrganizationListFilter = setOrganizationListFilter;
+window.openOrganizationDetails = function (orgId) {
+  return openOrganizationDetailsModal(orgId);
+};
+window.openOrganizationEditor = function (orgId) {
+  return openEditOrganizationModal(orgId);
+};
+window.openOrganizationMembers = function (orgId) {
+  return openOrganizationMembersModal(orgId);
+};
 
 function refreshOrgCachesAfterMutation(orgRow){
   if (!orgRow) return;
@@ -4729,6 +4745,7 @@ window.submitOrganizationForm = async function () {
   var statusEl=document.getElementById('orgEditStatus');
   var okBtn=modal.querySelector('.m-ok');
   try {
+    logOrganizationAction(mode === 'create' ? 'create' : 'edit', orgId);
     if (!name) throw new Error('Укажите название организации');
     if (!window.ownerCreateOrganization || !window.ownerUpdateOrganization) {
       throw new Error('RPC для организаций недоступен');
@@ -4790,6 +4807,7 @@ window.submitOrganizationForm = async function () {
 
 window.archiveOrganizationFromCard = async function (orgId) {
   try {
+    logOrganizationAction('archive', orgId);
     if (!confirm('Архивировать организацию? Пользователи больше не смогут работать в ней, но данные сохранятся.')) return false;
     var result = await window.ownerArchiveOrganization(orgId);
     if (!result || !result.id) throw new Error('Не удалось архивировать организацию');
@@ -4804,6 +4822,7 @@ window.archiveOrganizationFromCard = async function (orgId) {
 };
 window.restoreOrganizationFromCard = async function (orgId) {
   try {
+    logOrganizationAction('restore', orgId);
     var result = await window.ownerRestoreOrganization(orgId);
     if (!result || !result.id) throw new Error('Не удалось восстановить организацию');
     refreshOrgCachesAfterMutation(result);
@@ -4817,6 +4836,7 @@ window.restoreOrganizationFromCard = async function (orgId) {
 };
 window.deleteOrganizationFromCard = async function (orgId) {
   try {
+    logOrganizationAction('delete', orgId);
     if (!confirm('Удалить организацию? Она будет скрыта из платформы. Данные не будут физически удалены.')) return false;
     var result = await window.ownerDeleteOrganization(orgId);
     if (!result || !result.id) throw new Error('Не удалось удалить организацию');
