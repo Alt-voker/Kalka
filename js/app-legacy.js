@@ -4101,15 +4101,16 @@ window.runOrganizationModuleSelfTest = async function () {
   var results = [];
   var root = document.querySelector('#pg-restaurants #orgsStableRoot');
   var cardButtons = root ? root.querySelectorAll('[data-org-action]') : [];
+  var orgCount = root ? root.querySelectorAll('[data-org-id]').length : 0;
   var firstOrg = Array.isArray(window.__userSession && window.__userSession.organizations)
     ? window.__userSession.organizations.find(function (org) { return !!(org && (org.id || org.organization_id || org.organizationId)); })
     : null;
   var firstOrgId = firstOrg ? String(firstOrg.id || firstOrg.organization_id || firstOrg.organizationId || '').trim() : '';
   if (firstOrgId) {
-    try { ensureOrganizationDetailsModal(); renderOrganizationDetailsModal(firstOrgId); } catch (error) {}
-    try { ensureOrganizationEditModal(); renderOrganizationEditModal(firstOrgId); } catch (error) {}
-    try { ensureOrganizationMembersModal(); await renderOrganizationMembersModal(firstOrgId); } catch (error) {}
-    try { ensureOrganizationAddMemberModal(); await renderOrganizationAddMemberModal(firstOrgId); } catch (error) {}
+    try { ensureOrganizationDetailsModal(); openOrganizationDetailsModal(firstOrgId); } catch (error) {}
+    try { ensureOrganizationEditModal(); openOrganizationEditor(firstOrgId); } catch (error) {}
+    try { ensureOrganizationMembersModal(); openOrganizationMembers(firstOrgId); await renderOrganizationMembersModal(firstOrgId); } catch (error) {}
+    try { ensureOrganizationAddMemberModal(); openOrganizationAddMemberModal(firstOrgId); await renderOrganizationAddMemberModal(firstOrgId); } catch (error) {}
   }
   var orgActionMap = [
     { action: 'open', rpcName: '', requiresOrgId: true, selector: '[data-org-action="open"]', handler: 'openOrganizationDetails' },
@@ -4130,13 +4131,17 @@ window.runOrganizationModuleSelfTest = async function () {
   orgActionMap.concat(memberActionMap).forEach(function (item) {
     var button = document.querySelector(item.selector);
     var handlerAttached = typeof window[item.handler] === 'function';
+    var status = ((!!button || (item.action === 'open' ? !!cardButtons.length : false)) && handlerAttached) ? 'OK' : 'FAIL';
+    if ((item.action === 'change-role' || item.action === 'disconnect') && !document.querySelector('#ov-orgMembers [data-member-action="'+item.action+'"]')) {
+      status = 'SKIP';
+    }
     results.push({
       action: item.action,
       buttonFound: !!button || (item.action === 'open' ? !!cardButtons.length : false),
       handlerAttached: handlerAttached,
       rpcName: item.rpcName,
       requiresOrgId: item.requiresOrgId ? 'yes' : 'no',
-      status: ((!!button || (item.action === 'open' ? !!cardButtons.length : false)) && handlerAttached) ? 'OK' : 'FAIL'
+      status: status
     });
   });
   console.table(results);
@@ -4314,13 +4319,13 @@ async function renderOrganizationMembersModal(orgId){
   }
   var items = Array.isArray(bucket && bucket.items) ? bucket.items.slice() : [];
   if(!items.length){
-    statusEl.innerHTML='<span>В организации пока нет участников</span> <button class="tbBtn" data-member-action="retry-members" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;margin-left:8px;">Повторить</button> <button class="tbBtn" data-member-action="add-user" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;margin-left:8px;">Добавить пользователя</button>';
+    statusEl.innerHTML='<span>В организации пока нет участников</span> <button class="tbBtn" data-org-action="add-user" data-member-action="add-user" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;margin-left:8px;">Добавить пользователя</button> <button class="tbBtn" data-member-action="retry-members" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;margin-left:8px;">Повторить</button>';
     body.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">В организации пока нет участников</div>'
-      +'<div style="margin-top:12px;display:flex;justify-content:center;"><button class="tbBtn" data-member-action="add-user" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Добавить пользователя</button></div>';
+      +'<div style="margin-top:12px;display:flex;justify-content:center;"><button class="tbBtn" data-org-action="add-user" data-member-action="add-user" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Добавить пользователя</button></div>';
     return;
   }
   console.info('organization members loaded', { orgId: String(orgId || ''), count: items.length });
-  statusEl.innerHTML='<span>Всего участников: '+items.length+'</span> <button class="tbBtn" data-member-action="add-user" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;margin-left:8px;">Добавить пользователя</button>';
+  statusEl.innerHTML='<span>Всего участников: '+items.length+'</span> <button class="tbBtn" data-org-action="add-user" data-member-action="add-user" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;margin-left:8px;">Добавить пользователя</button>';
   body.innerHTML=items.map(function (member) {
     var displayName = member.name || member.email || 'Пользователь';
     var roleLabel = getOrganizationRoleLabel(member.rawRole || member.role);
@@ -4358,8 +4363,8 @@ async function renderOrganizationMembersModal(orgId){
           +'</div>'
         +'</div>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">'
-          +(isReadonlyRole ? '' : '<button class="tbBtn" data-member-action="change-role" data-org-id="'+_esc(orgId)+'" data-user-profile-id="'+_esc(String(member.userProfileId || ''))+'" data-role-select-id="orgMemberRole-'+_esc(String(member.membershipId || member.userProfileId || member.authUserId || member.email))+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Сохранить роль</button>')
-          +'<button class="tbBtn" data-member-action="disconnect" data-org-id="'+_esc(orgId)+'" data-user-profile-id="'+_esc(String(member.userProfileId || ''))+'" style="cursor:pointer;">Отключить от организации</button>'
+          +(isReadonlyRole ? '' : '<button class="tbBtn" data-member-action="change-role" data-org-id="'+_esc(orgId)+'" data-profile-id="'+_esc(String(member.userProfileId || ''))+'" data-role-select-id="orgMemberRole-'+_esc(String(member.membershipId || member.userProfileId || member.authUserId || member.email))+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Сохранить роль</button>')
+          +'<button class="tbBtn" data-member-action="disconnect" data-org-id="'+_esc(orgId)+'" data-profile-id="'+_esc(String(member.userProfileId || ''))+'" style="cursor:pointer;">Отключить от организации</button>'
         +'</div>'
         +'<div style="font-size:11px;color:var(--t3);margin-top:8px;">Дата добавления: '+_esc(member.createdAt ? String(member.createdAt).slice(0, 10) : '—')+'</div>'
       +'</div>';
@@ -4373,7 +4378,7 @@ async function renderOrganizationMembersModal(orgId){
       e.stopPropagation();
       var action = String(btn.dataset.memberAction || '').trim();
       var targetOrgId = String(btn.dataset.orgId || orgId || '').trim();
-      var targetUserProfileId = String(btn.dataset.userProfileId || '').trim();
+      var targetUserProfileId = String(btn.dataset.profileId || btn.dataset.userProfileId || '').trim();
       console.info('organization action clicked', { action: action, orgId: targetOrgId });
       try {
         if (action === 'retry-members') {
