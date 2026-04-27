@@ -3757,7 +3757,7 @@ function renderRestaurants(){
     var legalNames = orgLegalEntities.map(function(item){ return item.name || item.id; }).filter(Boolean);
     var switchBtn = isActive
       ? '<button class="tbBtn acc" disabled style="opacity:.8;cursor:default;">Текущая организация</button>'
-      : '<button class="tbBtn" onclick="setActiveOrganization(\''+org.id+'\')" style="cursor:pointer;">Сделать активной</button>';
+      : '<button class="tbBtn" onclick="setActiveOrganization(\''+org.id+'\')" style="cursor:pointer;">Переключиться на эту организацию</button>';
     var ownerBadge = (currentRole==='owner')
       ? '<span class="badge bg" style="margin-left:10px;">Владелец видит все организации</span>'
       : '';
@@ -3767,7 +3767,7 @@ function renderRestaurants(){
       +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:12px;">'
       +'<div><div style="font-size:11px;color:var(--t3);">ID</div><div style="font-size:13px;font-weight:700;">'+org.id+'</div></div>'
       +'<div><div style="font-size:11px;color:var(--t3);">Юр. лица</div><div style="font-size:13px;font-weight:700;">'+(legalNames.length?legalNames.join(' · '):'Не указаны')+'</div></div>'
-      +'<div><div style="font-size:11px;color:var(--t3);">Статус</div><div style="font-size:13px;font-weight:700;">'+(org.status||'active')+'</div></div>'
+      +'<div><div style="font-size:11px;color:var(--t3);">Статус</div><div style="font-size:13px;font-weight:700;">Статус: '+(org.status||'active')+'</div></div>'
       +'<div><div style="font-size:11px;color:var(--t3);">Роль</div><div style="font-size:13px;font-weight:700;">'+(org.role||currentRole)+'</div></div>'
       +'<div style="display:flex;justify-content:flex-end;align-items:center;">'+(isActive?'<span class="badge bg">Активная</span>':'<span class="badge br">Не активная</span>')+'</div>'
       +'</div>'
