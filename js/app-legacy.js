@@ -3804,6 +3804,37 @@ function getOrganizationMembersCountFromCache(orgId) {
   return null;
 }
 
+function getSafeDataCache() {
+  window.__dataCache = window.__dataCache && typeof window.__dataCache === 'object' ? window.__dataCache : {};
+  if (!window.__dataCache.suppliersByOrg || typeof window.__dataCache.suppliersByOrg !== 'object') {
+    window.__dataCache.suppliersByOrg = {};
+  }
+  if (!window.__dataCache.suppliersPromisesByOrg || typeof window.__dataCache.suppliersPromisesByOrg !== 'object') {
+    window.__dataCache.suppliersPromisesByOrg = {};
+  }
+  if (!window.__dataCache.suppliersErrorsByOrg || typeof window.__dataCache.suppliersErrorsByOrg !== 'object') {
+    window.__dataCache.suppliersErrorsByOrg = {};
+  }
+  if (!window.__dataCache.suppliersLoadingByOrg || typeof window.__dataCache.suppliersLoadingByOrg !== 'object') {
+    window.__dataCache.suppliersLoadingByOrg = {};
+  }
+  if (!window.__dataCache.ownerUsers || typeof window.__dataCache.ownerUsers !== 'object') {
+    window.__dataCache.ownerUsers = { items: null, loading: false, error: null, promise: null, loadedAt: 0 };
+  }
+  if (!window.__dataCache.organizationMembersByOrg || typeof window.__dataCache.organizationMembersByOrg !== 'object') {
+    window.__dataCache.organizationMembersByOrg = {};
+  }
+  if (!window.__dataCache.organizationsByFilter || typeof window.__dataCache.organizationsByFilter !== 'object') {
+    window.__dataCache.organizationsByFilter = {};
+  }
+  return window.__dataCache;
+}
+
+function getOrganizationSuppliersCountFromCache(orgId) {
+  var cache = window.__dataCache && window.__dataCache.suppliersByOrg ? window.__dataCache.suppliersByOrg[String(orgId || '')] : null;
+  return Array.isArray(cache) ? cache.length : 0;
+}
+
 function getOrganizationCurrentLabelSafe(orgId, activeOrgId) {
   return String(orgId || '') === String(activeOrgId || '') ? 'Текущая организация' : 'Переключиться на эту организацию';
 }
@@ -3812,10 +3843,14 @@ function getOrganizationActionRolePermissions(role) {
   var normalized = normalizeLegacyRoleSafe(role);
   return {
     canCreate: normalized === 'owner' || normalized === 'admin',
+    canViewDetails: true,
     canEdit: ['owner', 'admin', 'organization_owner'].indexOf(normalized) >= 0,
     canManageMembers: ['owner', 'admin', 'organization_owner'].indexOf(normalized) >= 0,
+    canAddMembers: ['owner', 'admin', 'organization_owner'].indexOf(normalized) >= 0,
+    canViewSuppliers: ['owner', 'admin', 'organization_owner', 'manager', 'buyer'].indexOf(normalized) >= 0,
     canArchive: ['owner', 'admin'].indexOf(normalized) >= 0,
-    canDelete: normalized === 'owner'
+    canDelete: normalized === 'owner',
+    canSwitch: true
   };
 }
 
@@ -3992,7 +4027,8 @@ function renderRestaurants(){
   console.info('renderRestaurants organizations before filter', sessionOrgsRaw);
   console.info('renderRestaurants active filter', orgFilter);
 
-  var bucket = window.__dataCache && window.__dataCache.organizationsByFilter ? window.__dataCache.organizationsByFilter[orgFilter] : null;
+  var cache = (window.getDataCache ? window.getDataCache() : getSafeDataCache());
+  var bucket = cache && cache.organizationsByFilter ? cache.organizationsByFilter[orgFilter] : null;
   var filtered = normalized.filter(function (org) {
     var status = String(org.status || 'active').toLowerCase();
     if (orgFilter === 'archived') return status === 'archived' || status === 'inactive';
@@ -4026,9 +4062,26 @@ function renderRestaurants(){
     var isActive = String(normalizedOrg.id) === activeOrgId;
     var canEdit = perms.canEdit && status !== 'deleted';
     var canManageMembers = perms.canManageMembers && status !== 'deleted';
+    var canAddMembers = perms.canAddMembers && status !== 'deleted';
+    var canViewSuppliers = perms.canViewSuppliers && status !== 'deleted';
     var canArchive = (currentRole === 'owner' || currentRole === 'admin') && status !== 'deleted' && status !== 'archived';
     var canRestore = (currentRole === 'owner' || currentRole === 'admin') && status === 'archived';
     var canDelete = currentRole === 'owner' && status !== 'deleted';
+    var membersCount = Number(normalizedOrg.membersCount || getOrganizationMembersCountFromCache(normalizedOrg.id) || 0) || 0;
+    var activeMembersCount = Number(normalizedOrg.activeMembersCount || 0) || 0;
+    var suppliersCount = Number(normalizedOrg.suppliersCount || getOrganizationSuppliersCountFromCache(normalizedOrg.id) || 0) || 0;
+    var currentLabel = getOrganizationCurrentLabelSafe(normalizedOrg.id, activeOrgId);
+    var disabledWhy = {
+      open: '',
+      members: canManageMembers ? '' : 'Недостаточно прав для просмотра участников',
+      add: canAddMembers ? '' : 'Недостаточно прав для добавления участников',
+      edit: canEdit ? '' : 'Недостаточно прав для редактирования',
+      suppliers: canViewSuppliers ? '' : 'Недостаточно прав для открытия поставщиков',
+      switch: '',
+      archive: canArchive ? '' : 'Недостаточно прав для архивации',
+      restore: canRestore ? '' : 'Недостаточно прав для восстановления',
+      delete: canDelete ? '' : 'Недостаточно прав для удаления'
+    };
     return '<div class="panel" style="background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);border:1px solid rgba(148,163,184,.16);border-radius:18px;overflow:hidden;">'
       +'<div style="padding:18px;">'
         +'<div style="font-size:18px;font-weight:800;line-height:1.2;word-break:break-word;">'+_esc(normalizedOrg.name || 'Организация без названия')+'</div>'
@@ -4036,20 +4089,25 @@ function renderRestaurants(){
           +'<span class="badge" style="background:#eef6ff;color:#2463eb;border:1px solid #cfe2ff;">'+getOrganizationTypeLabelSafe(normalizedOrg.type)+'</span>'
           +'<span class="badge" style="'+(status === 'active' ? 'background:var(--grD);color:var(--gr);border:1px solid var(--gr);' : 'background:#eef2f7;color:#475569;border:1px solid #cbd5e1;')+'">'+getOrganizationStatusLabelSafe(status)+'</span>'
           +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Роль: '+getOrganizationRoleLabelSafe(normalizedOrg.role || currentRole)+'</span>'
-          +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">'+(isActive ? 'Текущая организация' : 'Переключиться')+'</span>'
+          +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">'+currentLabel+'</span>'
+          +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Участники: '+membersCount+'</span>'
+          +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Поставщики: '+suppliersCount+'</span>'
         +'</div>'
         +'<div style="margin-top:10px;font-size:13px;color:var(--t2);line-height:1.5;">'
           +(normalizedOrg.city ? '<div><b>Город:</b> '+_esc(normalizedOrg.city)+'</div>' : '')
           +(normalizedOrg.address ? '<div><b>Адрес:</b> '+_esc(normalizedOrg.address)+'</div>' : '')
+          +(normalizedOrg.created_at ? '<div><b>Дата создания:</b> '+_esc(String(normalizedOrg.created_at).slice(0, 10))+'</div>' : '')
         +'</div>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">'
-          +'<button class="tbBtn" data-org-action="open" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
-          +'<button class="tbBtn" data-org-action="members" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Участники</button>'
-          +(canEdit ? '<button class="tbBtn" data-org-action="edit" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Редактировать</button>' : '')
-          +(isActive ? '<span class="badge" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);">Текущая организация</span>' : '<button class="tbBtn" data-org-action="switch" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Переключиться на эту организацию</button>')
-          +(canArchive ? '<button class="tbBtn" data-org-action="archive" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Архивировать</button>' : '')
-          +(canRestore ? '<button class="tbBtn" data-org-action="restore" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Восстановить</button>' : '')
-          +(canDelete ? '<button class="tbBtn" data-org-action="delete" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Удалить</button>' : '')
+          +'<button class="tbBtn" data-org-action="open" data-org-id="'+_esc(normalizedOrg.id)+'" '+(disabledWhy.open ? 'disabled title="'+_esc(disabledWhy.open)+'"' : '')+' style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
+          +'<button class="tbBtn" data-org-action="members" data-org-id="'+_esc(normalizedOrg.id)+'" '+(canManageMembers ? '' : 'disabled title="'+_esc(disabledWhy.members)+'"')+' style="cursor:pointer;">Участники</button>'
+          +'<button class="tbBtn" data-org-action="add-user" data-org-id="'+_esc(normalizedOrg.id)+'" '+(canAddMembers ? '' : 'disabled title="'+_esc(disabledWhy.add)+'"')+' style="cursor:pointer;">Добавить участника</button>'
+          +'<button class="tbBtn" data-org-action="edit" data-org-id="'+_esc(normalizedOrg.id)+'" '+(canEdit ? '' : 'disabled title="'+_esc(disabledWhy.edit)+'"')+' style="cursor:pointer;">Редактировать</button>'
+          +'<button class="tbBtn" data-org-action="suppliers" data-org-id="'+_esc(normalizedOrg.id)+'" '+(canViewSuppliers ? '' : 'disabled title="'+_esc(disabledWhy.suppliers)+'"')+' style="cursor:pointer;">Поставщики</button>'
+          +(isActive ? '<span class="badge" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);">Текущая организация</span>' : '<button class="tbBtn" data-org-action="switch" data-org-id="'+_esc(normalizedOrg.id)+'" '+(disabledWhy.switch ? 'disabled title="'+_esc(disabledWhy.switch)+'"' : '')+' style="cursor:pointer;">Переключиться</button>')
+          +(canArchive ? '<button class="tbBtn" data-org-action="archive" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Архивировать</button>' : (currentRole === 'owner' || currentRole === 'admin' ? '<button class="tbBtn" data-org-action="archive" data-org-id="'+_esc(normalizedOrg.id)+'" disabled title="Недостаточно прав для архивации" style="cursor:pointer;">Архивировать</button>' : ''))
+          +(canRestore ? '<button class="tbBtn" data-org-action="restore" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Восстановить</button>' : ((currentRole === 'owner' || currentRole === 'admin') && status !== 'deleted' ? '<button class="tbBtn" data-org-action="restore" data-org-id="'+_esc(normalizedOrg.id)+'" disabled title="Недоступно для текущего статуса" style="cursor:pointer;">Восстановить</button>' : ''))
+          +(canDelete ? '<button class="tbBtn" data-org-action="delete" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Удалить</button>' : (currentRole === 'owner' ? '<button class="tbBtn" data-org-action="delete" data-org-id="'+_esc(normalizedOrg.id)+'" disabled title="Недостаточно прав для удаления" style="cursor:pointer;">Удалить</button>' : ''))
         +'</div>'
       +'</div>'
     +'</div>';
@@ -4072,10 +4130,18 @@ function renderRestaurants(){
       try {
         if (action === 'open' && typeof window.openOrganizationDetails === 'function') {
           window.openOrganizationDetails(orgId);
+        } else if (action === 'add-user' && typeof window.openOrganizationAddMemberModal === 'function') {
+          window.openOrganizationAddMemberModal(orgId);
         } else if (action === 'members' && typeof window.openOrganizationMembers === 'function') {
           window.openOrganizationMembers(orgId);
         } else if (action === 'edit' && typeof window.openOrganizationEditor === 'function') {
           window.openOrganizationEditor(orgId);
+        } else if (action === 'suppliers') {
+          if (typeof window.setActiveOrganization === 'function') {
+            window.setActiveOrganization(orgId);
+          }
+          if (typeof window.goPage === 'function') window.goPage('suppliers');
+          else if (typeof window.renderSuppliers === 'function') window.renderSuppliers();
         } else if (action === 'archive' && typeof window.archiveOrganizationFromCard === 'function') {
           window.archiveOrganizationFromCard(orgId);
         } else if (action === 'restore' && typeof window.restoreOrganizationFromCard === 'function') {
@@ -4115,15 +4181,17 @@ window.runOrganizationModuleSelfTest = async function () {
   var orgActionMap = [
     { action: 'open', rpcName: '', requiresOrgId: true, selector: '[data-org-action="open"]', handler: 'openOrganizationDetails' },
     { action: 'members', rpcName: 'owner_list_organization_members', requiresOrgId: true, selector: '[data-org-action="members"]', handler: 'openOrganizationMembers' },
+    { action: 'add-user', rpcName: 'owner_list_users + owner_assign_user_to_organization', requiresOrgId: true, selector: '[data-org-action="add-user"]', handler: 'openOrganizationAddMemberModal' },
     { action: 'edit', rpcName: 'owner_update_organization', requiresOrgId: true, selector: '[data-org-action="edit"]', handler: 'openOrganizationEditor' },
     { action: 'save', rpcName: 'owner_update_organization', requiresOrgId: true, selector: '#ov-orgEdit [data-org-action="save"]', handler: 'submitOrganizationForm' },
+    { action: 'suppliers', rpcName: '', requiresOrgId: true, selector: '[data-org-action="suppliers"]', handler: 'openOrganizationSuppliers' },
     { action: 'archive', rpcName: 'owner_archive_organization', requiresOrgId: true, selector: '[data-org-action="archive"]', handler: 'archiveOrganizationFromCard' },
     { action: 'restore', rpcName: 'owner_restore_organization', requiresOrgId: true, selector: '[data-org-action="restore"]', handler: 'restoreOrganizationFromCard' },
     { action: 'delete', rpcName: 'owner_delete_organization', requiresOrgId: true, selector: '[data-org-action="delete"]', handler: 'deleteOrganizationFromCard' },
     { action: 'switch', rpcName: '', requiresOrgId: true, selector: '[data-org-action="switch"]', handler: 'setActiveOrganization' }
   ];
   var memberActionMap = [
-    { action: 'add-user', rpcName: 'owner_list_users + owner_assign_user_to_organization', requiresOrgId: true, selector: '#ov-orgMembers [data-member-action="add-user"], #ov-orgMemberAdd [data-member-action="add-user"]', handler: 'submitOrganizationMemberAdd' },
+    { action: 'add-user', rpcName: 'owner_list_users + owner_assign_user_to_organization', requiresOrgId: true, selector: '#ov-orgMembers [data-org-action="add-user"], #ov-orgMembers [data-member-action="add-user"], #ov-orgMemberAdd [data-member-action="add-user"], [data-org-action="add-user"]', handler: 'submitOrganizationMemberAdd' },
     { action: 'submit-add', rpcName: 'owner_assign_user_to_organization', requiresOrgId: true, selector: '#ov-orgMemberAdd [data-member-action="submit-add"]', handler: 'submitOrganizationMemberAdd' },
     { action: 'change-role', rpcName: 'owner_update_user_role', requiresOrgId: true, selector: '#ov-orgMembers [data-member-action="change-role"]', handler: 'changeOrganizationMemberRole' },
     { action: 'disconnect', rpcName: 'owner_remove_user_from_organization', requiresOrgId: true, selector: '#ov-orgMembers [data-member-action="disconnect"]', handler: 'removeOrganizationMemberFromOrganization' }
@@ -4275,7 +4343,7 @@ async function renderOrganizationMembersModal(orgId){
     body.innerHTML='';
     return;
   }
-  var cache = getDataCache();
+  var cache = (window.getDataCache ? window.getDataCache() : getSafeDataCache());
   var bucket = cache.organizationMembersByOrg && cache.organizationMembersByOrg[String(orgId || '')] ? cache.organizationMembersByOrg[String(orgId || '')] : null;
   if(bucket && bucket.loading && !Array.isArray(bucket.items)){
     statusEl.textContent='Загрузка участников...';
@@ -4319,13 +4387,13 @@ async function renderOrganizationMembersModal(orgId){
   }
   var items = Array.isArray(bucket && bucket.items) ? bucket.items.slice() : [];
   if(!items.length){
-    statusEl.innerHTML='<span>В организации пока нет участников</span> <button class="tbBtn" data-org-action="add-user" data-member-action="add-user" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;margin-left:8px;">Добавить пользователя</button> <button class="tbBtn" data-member-action="retry-members" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;margin-left:8px;">Повторить</button>';
+    statusEl.innerHTML='<span>В организации пока нет участников</span> <button class="tbBtn" data-org-action="add-user" data-member-action="add-user" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;margin-left:8px;">Добавить участника</button> <button class="tbBtn" data-member-action="retry-members" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;margin-left:8px;">Повторить</button>';
     body.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">В организации пока нет участников</div>'
-      +'<div style="margin-top:12px;display:flex;justify-content:center;"><button class="tbBtn" data-org-action="add-user" data-member-action="add-user" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Добавить пользователя</button></div>';
+      +'<div style="margin-top:12px;display:flex;justify-content:center;"><button class="tbBtn" data-org-action="add-user" data-member-action="add-user" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Добавить участника</button></div>';
     return;
   }
   console.info('organization members loaded', { orgId: String(orgId || ''), count: items.length });
-  statusEl.innerHTML='<span>Всего участников: '+items.length+'</span> <button class="tbBtn" data-org-action="add-user" data-member-action="add-user" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;margin-left:8px;">Добавить пользователя</button>';
+  statusEl.innerHTML='<span>Всего участников: '+items.length+'</span> <button class="tbBtn" data-org-action="add-user" data-member-action="add-user" data-org-id="'+_esc(orgId)+'" style="cursor:pointer;margin-left:8px;">Добавить участника</button>';
   body.innerHTML=items.map(function (member) {
     var displayName = member.name || member.email || 'Пользователь';
     var roleLabel = getOrganizationRoleLabel(member.rawRole || member.role);
@@ -4363,8 +4431,8 @@ async function renderOrganizationMembersModal(orgId){
           +'</div>'
         +'</div>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">'
-          +(isReadonlyRole ? '' : '<button class="tbBtn" data-member-action="change-role" data-org-id="'+_esc(orgId)+'" data-profile-id="'+_esc(String(member.userProfileId || ''))+'" data-role-select-id="orgMemberRole-'+_esc(String(member.membershipId || member.userProfileId || member.authUserId || member.email))+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Сохранить роль</button>')
-          +'<button class="tbBtn" data-member-action="disconnect" data-org-id="'+_esc(orgId)+'" data-profile-id="'+_esc(String(member.userProfileId || ''))+'" style="cursor:pointer;">Отключить от организации</button>'
+          +(isReadonlyRole ? '' : '<button class="tbBtn" data-member-action="change-role" data-org-id="'+_esc(orgId)+'" data-profile-id="'+_esc(String(member.userProfileId || ''))+'" data-role-select-id="orgMemberRole-'+_esc(String(member.membershipId || member.userProfileId || member.authUserId || member.email))+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Изменить роль</button>')
+          +'<button class="tbBtn" data-member-action="disconnect" data-org-id="'+_esc(orgId)+'" data-profile-id="'+_esc(String(member.userProfileId || ''))+'" style="cursor:pointer;">Отключить</button>'
         +'</div>'
         +'<div style="font-size:11px;color:var(--t3);margin-top:8px;">Дата добавления: '+_esc(member.createdAt ? String(member.createdAt).slice(0, 10) : '—')+'</div>'
       +'</div>';
@@ -4473,7 +4541,7 @@ function ensureOrganizationAddMemberModal(){
     +'<div class="modal" style="max-width:760px;width:min(760px,calc(100vw - 24px));">'
       +'<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'
         +'<div>'
-          +'<div class="m-title" id="orgMemberAddTitle">➕ Добавить пользователя</div>'
+          +'<div class="m-title" id="orgMemberAddTitle">➕ Добавить участника</div>'
           +'<div id="orgMemberAddMeta" style="font-size:12px;color:var(--t2);margin-top:6px;"></div>'
         +'</div>'
         +'<button class="tbBtn" onclick="closeOrganizationAddMemberModal()" style="cursor:pointer;">Закрыть</button>'
@@ -4502,14 +4570,14 @@ async function renderOrganizationAddMemberModal(orgId){
   var meta=document.getElementById('orgMemberAddMeta');
   if(!body || !statusEl) return;
   var org=getOrganizationById(orgId);
-  if(title) title.textContent='➕ Добавить пользователя · '+(org && org.name ? org.name : 'Организация без названия');
+  if(title) title.textContent='➕ Добавить участника · '+(org && org.name ? org.name : 'Организация без названия');
   if(meta) meta.textContent='Выберите пользователя из профилей Supabase и роль в организации';
   if(!orgId){
     statusEl.textContent='Организация не выбрана';
     body.innerHTML='';
     return;
   }
-  var cache = getDataCache();
+  var cache = (window.getDataCache ? window.getDataCache() : getSafeDataCache());
   var usersBucket = cache.ownerUsers || { items: null, loading: false, error: null, promise: null, loadedAt: 0 };
   if((!Array.isArray(usersBucket.items) && !usersBucket.promise) || usersBucket.loading){
     statusEl.textContent='Загрузка пользователей...';
@@ -4592,7 +4660,7 @@ window.submitOrganizationMemberAdd = async function () {
     if (!userProfileId) throw new Error('Выберите пользователя');
     if (!role) throw new Error('Выберите роль');
     setModalBusy('ov-orgMemberAdd', true);
-    var cache = getDataCache();
+    var cache = (window.getDataCache ? window.getDataCache() : getSafeDataCache());
     var user = null;
     if (cache.ownerUsers && Array.isArray(cache.ownerUsers.items)) {
       user = cache.ownerUsers.items.find(function (item) {
@@ -4738,10 +4806,14 @@ function renderOrganizationDetailsModal(orgId){
         +'<div style="font-size:14px;font-weight:700;margin-top:6px;">'+getOrganizationCurrentLabelSafe(org.id, String(window.__userSession && window.__userSession.activeOrganizationId || ''))+'</div>'
       +'</div>'
     +'</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">'
+      +'<button class="tbBtn" data-org-action="members" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Участники</button>'
+      +(canManageMembers ? '<button class="tbBtn" data-org-action="add-user" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;">Добавить участника</button>' : '<button class="tbBtn" data-org-action="add-user" data-org-id="'+_esc(String(org.id))+'" disabled title="Недостаточно прав для добавления участников" style="cursor:pointer;">Добавить участника</button>')
+      +(canManageMembers ? '<button class="tbBtn" data-org-action="edit" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;">Редактировать</button>' : '<button class="tbBtn" data-org-action="edit" data-org-id="'+_esc(String(org.id))+'" disabled title="Недостаточно прав для редактирования" style="cursor:pointer;">Редактировать</button>')
+      +'<button class="tbBtn" data-org-action="suppliers" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;">Поставщики</button>'
+    +'</div>'
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
-      +'<button class="tbBtn" data-org-action="switch" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
-      +(canManageMembers ? '<button class="tbBtn" data-org-action="members" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;">Участники</button>' : '')
-      +(canManageMembers ? '<button class="tbBtn" data-org-action="edit" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;">Редактировать</button>' : '')
+      +'<button class="tbBtn" data-org-action="switch" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Переключиться</button>'
       +((['owner','admin'].indexOf(currentRole) >= 0) ? (
         String(org.status || '').toLowerCase() === 'archived'
           ? '<button class="tbBtn" data-org-action="restore" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;">Восстановить</button>'
@@ -4766,12 +4838,24 @@ function renderOrganizationDetailsModal(orgId){
           closeOrganizationDetailsModal();
           return;
         }
+        if (action === 'add-user' && typeof window.openOrganizationAddMemberModal === 'function') {
+          window.openOrganizationAddMemberModal(targetOrgId);
+          return;
+        }
         if (action === 'members' && typeof window.openOrganizationMembers === 'function') {
           window.openOrganizationMembers(targetOrgId);
           return;
         }
         if (action === 'edit' && typeof window.openOrganizationEditor === 'function') {
           window.openOrganizationEditor(targetOrgId);
+          return;
+        }
+        if (action === 'suppliers') {
+          if (typeof window.setActiveOrganization === 'function') {
+            window.setActiveOrganization(targetOrgId);
+          }
+          if (typeof window.goPage === 'function') window.goPage('suppliers');
+          else if (typeof window.renderSuppliers === 'function') window.renderSuppliers();
           return;
         }
         if (action === 'archive' && typeof window.archiveOrganizationFromCard === 'function') {
@@ -4920,6 +5004,13 @@ window.openOrganizationEditor = function (orgId) {
 };
 window.openOrganizationMembers = function (orgId) {
   return openOrganizationMembersModal(orgId);
+};
+window.openOrganizationSuppliers = function (orgId) {
+  if (typeof window.setActiveOrganization === 'function') {
+    window.setActiveOrganization(orgId);
+  }
+  if (typeof window.goPage === 'function') window.goPage('suppliers');
+  else if (typeof window.renderSuppliers === 'function') window.renderSuppliers();
 };
 
 function refreshOrgCachesAfterMutation(orgRow){
