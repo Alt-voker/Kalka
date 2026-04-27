@@ -569,6 +569,9 @@
     if (!window.__dataCache.organizationMembersByOrg || typeof window.__dataCache.organizationMembersByOrg !== 'object') {
       window.__dataCache.organizationMembersByOrg = {};
     }
+    if (!window.__dataCache.organizationsByFilter || typeof window.__dataCache.organizationsByFilter !== 'object') {
+      window.__dataCache.organizationsByFilter = {};
+    }
     return window.__dataCache;
   }
 
@@ -907,6 +910,10 @@
     var items = await loadOrganizationMembersForOrganization(orgId);
     if (typeof window.renderRestaurants === 'function') window.renderRestaurants();
     if (typeof window.renderOrganizationMembersModal === 'function') window.renderOrganizationMembersModal(orgId);
+    var detailsModal = document.getElementById('ov-orgDetails');
+    if (detailsModal && String(detailsModal.dataset.orgId || '').trim() === orgId && typeof window.renderOrganizationDetailsModal === 'function') {
+      window.renderOrganizationDetailsModal(orgId);
+    }
     return items;
   }
 
@@ -915,6 +922,414 @@
   };
   window.loadOrganizationMembersForOrganization = loadOrganizationMembersForOrganization;
   window.refreshOrganizationMembersForOrganization = refreshOrganizationMembersForOrganization;
+
+  function normalizeOrganizationRow(row) {
+    if (!row) return null;
+    return {
+      id: row.id || '',
+      name: row.name || '',
+      type: row.type || 'restaurant',
+      status: row.status || 'active',
+      city: row.city || '',
+      address: row.address || '',
+      createdAt: row.created_at || '',
+      updatedAt: row.updated_at || '',
+      membersCount: Number(row.members_count || 0) || 0,
+      activeMembersCount: Number(row.active_members_count || 0) || 0
+    };
+  }
+
+  async function rpcOwnerListOrganizations(client, targetStatus) {
+    console.info('supabase request start', 'owner_list_organizations');
+    var response = await withTimeout(
+      client.rpc('owner_list_organizations', { target_status: targetStatus || null }),
+      8000,
+      'Не удалось загрузить организации'
+    ).catch(function (error) {
+      console.error('rpc owner_list_organizations failed', {
+        request: 'owner_list_organizations',
+        status: targetStatus || '',
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
+      });
+      throw error;
+    });
+    if (response && response.error) {
+      console.error('rpc owner_list_organizations failed', {
+        request: 'owner_list_organizations',
+        status: targetStatus || '',
+        code: response.error.code || '',
+        message: response.error.message || '',
+        details: response.error.details || '',
+        hint: response.error.hint || '',
+        raw: response.error
+      });
+      throw response.error;
+    }
+    return Array.isArray(response && response.data) ? response.data.slice() : [];
+  }
+
+  async function loadOrganizationsForRestaurants(targetStatus) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    var filter = String(targetStatus || 'active').trim() || 'active';
+    if (!client) return [];
+    var cache = getDataCache();
+    var bucket = cache.organizationsByFilter[filter];
+    if (bucket && Array.isArray(bucket.items)) {
+      return bucket.items.slice();
+    }
+    if (bucket && bucket.promise) {
+      return bucket.promise;
+    }
+    bucket = cache.organizationsByFilter[filter] = {
+      items: null,
+      loading: true,
+      error: null,
+      promise: null,
+      loadedAt: 0
+    };
+    bucket.promise = (async function () {
+      try {
+        var rows = await rpcOwnerListOrganizations(client, filter === 'all' ? null : filter);
+        var items = rows.map(normalizeOrganizationRow).filter(Boolean);
+        bucket.items = items.slice();
+        bucket.error = null;
+        bucket.loadedAt = Date.now();
+        if (filter === 'active' && window.__userSession && Array.isArray(window.__userSession.organizations)) {
+          window.__userSession.organizations = window.__userSession.organizations.map(function (org) {
+            if (!org) return org;
+            var found = items.find(function (item) {
+              return String(item.id || '') === String(org.id || '');
+            });
+            if (!found) return org;
+            return Object.assign({}, org, {
+              type: found.type || org.type,
+              status: found.status || org.status || 'active',
+              city: found.city || org.city || '',
+              address: found.address || org.address || '',
+              membersCount: found.activeMembersCount || found.membersCount || org.membersCount || 0,
+              activeMembersCount: found.activeMembersCount || org.activeMembersCount || 0
+            });
+          });
+          if (window.__userSession.activeOrganization) {
+            var activeId = String(window.__userSession.activeOrganization.id || '').trim();
+            var activeFound = items.find(function (item) { return String(item.id || '').trim() === activeId; });
+            if (activeFound) {
+              window.__userSession.activeOrganization = Object.assign({}, window.__userSession.activeOrganization, {
+                type: activeFound.type || window.__userSession.activeOrganization.type,
+                status: activeFound.status || window.__userSession.activeOrganization.status || 'active',
+                city: activeFound.city || window.__userSession.activeOrganization.city || '',
+                address: activeFound.address || window.__userSession.activeOrganization.address || '',
+              membersCount: activeFound.activeMembersCount || activeFound.membersCount || 0
+              });
+            }
+          }
+        }
+        if (typeof window.renderRestaurants === 'function' && String(window.__orgListFilter || 'active').trim() === filter) {
+          window.renderRestaurants();
+        }
+        return items.slice();
+      } catch (error) {
+        bucket.error = {
+          code: error && error.code ? error.code : '',
+          message: error && error.message ? error.message : '',
+          details: error && error.details ? error.details : '',
+          hint: error && error.hint ? error.hint : '',
+          raw: error
+        };
+        bucket.items = [];
+        if (typeof window.renderRestaurants === 'function' && String(window.__orgListFilter || 'active').trim() === filter) {
+          window.renderRestaurants();
+        }
+        return [];
+      } finally {
+        bucket.loading = false;
+        bucket.promise = null;
+      }
+    })();
+    return bucket.promise;
+  }
+
+  async function refreshOrganizationsForRestaurants(targetStatus) {
+    var filter = String(targetStatus || 'active').trim() || 'active';
+    var cache = getDataCache();
+    delete cache.organizationsByFilter[filter];
+    var items = await loadOrganizationsForRestaurants(filter);
+    if (typeof window.renderRestaurants === 'function') window.renderRestaurants();
+    return items;
+  }
+
+  window.ownerListOrganizations = function (targetStatus) {
+    return loadOrganizationsForRestaurants(targetStatus || 'active');
+  };
+  window.loadOrganizationsForRestaurants = loadOrganizationsForRestaurants;
+  window.refreshOrganizationsForRestaurants = refreshOrganizationsForRestaurants;
+
+  function normalizeOrganizationResponse(row) {
+    if (!row) return null;
+    return {
+      id: row.id || row.organization_id || '',
+      name: row.name || '',
+      type: row.type || 'restaurant',
+      status: row.status || 'active',
+      city: row.city || '',
+      address: row.address || '',
+      created_at: row.created_at || row.createdAt || '',
+      updated_at: row.updated_at || row.updatedAt || '',
+      membersCount: Number(row.members_count || row.membersCount || 0) || 0,
+      activeMembersCount: Number(row.active_members_count || row.activeMembersCount || 0) || 0
+    };
+  }
+
+  function syncOrganizationIntoSession(org) {
+    if (!org || !window.__userSession) return org;
+    window.__userSession.organizations = Array.isArray(window.__userSession.organizations) ? window.__userSession.organizations : [];
+    var idx = window.__userSession.organizations.findIndex(function (item) {
+      return String(item && item.id || '').trim() === String(org.id || '').trim();
+    });
+    var merged = {
+      id: org.id,
+      name: org.name || 'Организация',
+      type: org.type || 'restaurant',
+      status: org.status || 'active',
+      city: org.city || '',
+      address: org.address || '',
+      created_at: org.created_at || '',
+      updated_at: org.updated_at || '',
+      membersCount: org.membersCount || 0,
+      activeMembersCount: org.activeMembersCount || 0
+    };
+    if (idx >= 0) window.__userSession.organizations[idx] = Object.assign({}, window.__userSession.organizations[idx], merged);
+    else window.__userSession.organizations.push(merged);
+    if (window.__userSession.activeOrganization && String(window.__userSession.activeOrganization.id || '').trim() === String(org.id || '').trim()) {
+      window.__userSession.activeOrganization = Object.assign({}, window.__userSession.activeOrganization, merged);
+      window.activeRest = {
+        id: merged.id,
+        organizationId: merged.id,
+        name: merged.name,
+        kind: merged.type,
+        type: merged.type,
+        members: []
+      };
+    }
+    return merged;
+  }
+
+  function removeOrganizationFromSession(orgId) {
+    if (!window.__userSession || !Array.isArray(window.__userSession.organizations)) return;
+    var normalizedId = String(orgId || '').trim();
+    window.__userSession.organizations = window.__userSession.organizations.filter(function (item) {
+      return String(item && item.id || '').trim() !== normalizedId;
+    });
+    if (window.__userSession.activeOrganization && String(window.__userSession.activeOrganization.id || '').trim() === normalizedId) {
+      window.__userSession.activeOrganization = window.__userSession.organizations[0] || null;
+      window.__userSession.activeOrganizationId = window.__userSession.activeOrganization ? window.__userSession.activeOrganization.id : null;
+      if (window.__userSession.activeOrganization) {
+        window.activeRest = {
+          id: window.__userSession.activeOrganization.id,
+          organizationId: window.__userSession.activeOrganization.id,
+          name: window.__userSession.activeOrganization.name || '',
+          kind: window.__userSession.activeOrganization.type || 'organization',
+          type: window.__userSession.activeOrganization.type || 'organization',
+          members: []
+        };
+      }
+    }
+  }
+
+  async function rpcOwnerCreateOrganization(client, payload) {
+    console.info('supabase request start', 'owner_create_organization');
+    var response = await withTimeout(
+      client.rpc('owner_create_organization', payload),
+      8000,
+      'Не удалось создать организацию'
+    ).catch(function (error) {
+      console.error('rpc owner_create_organization failed', {
+        request: 'owner_create_organization',
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
+      });
+      throw error;
+    });
+    if (response && response.error) {
+      console.error('rpc owner_create_organization failed', {
+        request: 'owner_create_organization',
+        code: response.error.code || '',
+        message: response.error.message || '',
+        details: response.error.details || '',
+        hint: response.error.hint || '',
+        raw: response.error
+      });
+      throw response.error;
+    }
+    var row = Array.isArray(response && response.data) ? response.data[0] || null : (response && response.data) || null;
+    if (!row || !row.organization_id) throw new Error('Не удалось создать организацию');
+    return row;
+  }
+
+  async function rpcOwnerUpdateOrganization(client, payload) {
+    console.info('supabase request start', 'owner_update_organization');
+    var response = await withTimeout(
+      client.rpc('owner_update_organization', payload),
+      8000,
+      'Не удалось сохранить организацию'
+    ).catch(function (error) {
+      console.error('rpc owner_update_organization failed', {
+        request: 'owner_update_organization',
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
+      });
+      throw error;
+    });
+    if (response && response.error) {
+      console.error('rpc owner_update_organization failed', {
+        request: 'owner_update_organization',
+        code: response.error.code || '',
+        message: response.error.message || '',
+        details: response.error.details || '',
+        hint: response.error.hint || '',
+        raw: response.error
+      });
+      throw response.error;
+    }
+    var row = Array.isArray(response && response.data) ? response.data[0] || null : (response && response.data) || null;
+    if (!row || !row.id) throw new Error('Не удалось сохранить организацию');
+    return row;
+  }
+
+  async function rpcOwnerArchiveOrganization(client, organizationId) {
+    console.info('supabase request start', 'owner_archive_organization');
+    var response = await withTimeout(
+      client.rpc('owner_archive_organization', { target_organization_id: organizationId }),
+      8000,
+      'Не удалось архивировать организацию'
+    ).catch(function (error) {
+      console.error('rpc owner_archive_organization failed', {
+        request: 'owner_archive_organization',
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
+      });
+      throw error;
+    });
+    if (response && response.error) {
+      console.error('rpc owner_archive_organization failed', {
+        request: 'owner_archive_organization',
+        code: response.error.code || '',
+        message: response.error.message || '',
+        details: response.error.details || '',
+        hint: response.error.hint || '',
+        raw: response.error
+      });
+      throw response.error;
+    }
+    var row = Array.isArray(response && response.data) ? response.data[0] || null : (response && response.data) || null;
+    if (!row || !row.id) throw new Error('Не удалось архивировать организацию');
+    return row;
+  }
+
+  async function rpcOwnerRestoreOrganization(client, organizationId) {
+    console.info('supabase request start', 'owner_restore_organization');
+    var response = await withTimeout(
+      client.rpc('owner_restore_organization', { target_organization_id: organizationId }),
+      8000,
+      'Не удалось восстановить организацию'
+    ).catch(function (error) {
+      console.error('rpc owner_restore_organization failed', {
+        request: 'owner_restore_organization',
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
+      });
+      throw error;
+    });
+    if (response && response.error) {
+      console.error('rpc owner_restore_organization failed', {
+        request: 'owner_restore_organization',
+        code: response.error.code || '',
+        message: response.error.message || '',
+        details: response.error.details || '',
+        hint: response.error.hint || '',
+        raw: response.error
+      });
+      throw response.error;
+    }
+    var row = Array.isArray(response && response.data) ? response.data[0] || null : (response && response.data) || null;
+    if (!row || !row.id) throw new Error('Не удалось восстановить организацию');
+    return row;
+  }
+
+  async function rpcOwnerDeleteOrganization(client, organizationId) {
+    console.info('supabase request start', 'owner_delete_organization');
+    var response = await withTimeout(
+      client.rpc('owner_delete_organization', { target_organization_id: organizationId }),
+      8000,
+      'Не удалось удалить организацию'
+    ).catch(function (error) {
+      console.error('rpc owner_delete_organization failed', {
+        request: 'owner_delete_organization',
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
+      });
+      throw error;
+    });
+    if (response && response.error) {
+      console.error('rpc owner_delete_organization failed', {
+        request: 'owner_delete_organization',
+        code: response.error.code || '',
+        message: response.error.message || '',
+        details: response.error.details || '',
+        hint: response.error.hint || '',
+        raw: response.error
+      });
+      throw response.error;
+    }
+    var row = Array.isArray(response && response.data) ? response.data[0] || null : (response && response.data) || null;
+    if (!row || !row.id) throw new Error('Не удалось удалить организацию');
+    return row;
+  }
+
+  window.ownerCreateOrganization = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcOwnerCreateOrganization(client, payload || {});
+  };
+  window.ownerUpdateOrganization = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcOwnerUpdateOrganization(client, payload || {});
+  };
+  window.ownerArchiveOrganization = function (organizationId) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcOwnerArchiveOrganization(client, organizationId);
+  };
+  window.ownerRestoreOrganization = function (organizationId) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcOwnerRestoreOrganization(client, organizationId);
+  };
+  window.ownerDeleteOrganization = function (organizationId) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcOwnerDeleteOrganization(client, organizationId);
+  };
 
   function normalizeOwnerUserIdentity(row) {
     if (!row) return null;

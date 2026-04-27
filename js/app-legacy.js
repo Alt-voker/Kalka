@@ -3755,148 +3755,335 @@ function _parseOrderDateValue(val){
   var parsed=Date.parse(str);
   return isNaN(parsed)?0:parsed;
 }
-function renderRestaurants(){
-  var el=document.getElementById('restGrid');
-  var session = window.__userSession || {};
-  var orgs = Array.isArray(session.organizations) ? session.organizations.slice() : [];
-  var activeOrgId = String(session.activeOrganizationId || '').trim();
+
+function normalizeLegacyRoleSafe(role) {
   var normalizeRoleSafe =
     window.normalizeRole ||
     window.normalizeLegacyRole ||
-    function(role) {
-      if (!role) return 'unassigned';
-      if (role === 'platform_owner') return 'owner';
-      return role;
+    function(value) {
+      if (!value) return 'unassigned';
+      if (value === 'platform_owner') return 'owner';
+      return value;
     };
-  var currentRole = normalizeRoleSafe((session.currentUser && session.currentUser.role) || (CU && CU.role) || 'unassigned');
-  function getCachedMembersCount(orgId){
-    var cache = window.__dataCache && window.__dataCache.organizationMembersByOrg ? window.__dataCache.organizationMembersByOrg[String(orgId || '')] : null;
-    if (cache && Array.isArray(cache.items)) return cache.items.length;
-    return null;
+  return normalizeRoleSafe(role);
+}
+
+function getOrganizationRoleLabelSafe(role) {
+  var normalized = String(normalizeLegacyRoleSafe(role) || '').trim();
+  if (normalized === 'owner') return 'Владелец';
+  if (normalized === 'admin') return 'Администратор';
+  if (normalized === 'organization_owner') return 'Управляющий организации';
+  if (normalized === 'manager') return 'Менеджер';
+  if (normalized === 'buyer') return 'Закупщик';
+  if (normalized === 'chef') return 'Шеф-повар';
+  if (normalized === 'bar_manager') return 'Бар-менеджер';
+  if (normalized === 'accountant') return 'Бухгалтер';
+  if (normalized === 'warehouse') return 'Склад';
+  return normalized || 'Не назначена';
+}
+
+function getOrganizationTypeLabelSafe(type) {
+  var t = String(type || '').toLowerCase().trim();
+  if (t === 'restaurant' || t === 'ресторан') return 'Ресторан';
+  if (t === 'bar' || t === 'бар') return 'Бар';
+  if (t === 'cafe' || t === 'кафе' || t === 'coffee' || t === 'кофейня') return 'Кафе';
+  return 'Другое';
+}
+
+function getOrganizationStatusLabelSafe(status) {
+  var normalized = String(status || 'active').toLowerCase().trim();
+  if (normalized === 'active') return 'Активна';
+  if (normalized === 'archived') return 'В архиве';
+  if (normalized === 'deleted') return 'Удалена';
+  return 'Не активна';
+}
+
+function getOrganizationMembersCountFromCache(orgId) {
+  var cache = window.__dataCache && window.__dataCache.organizationMembersByOrg ? window.__dataCache.organizationMembersByOrg[String(orgId || '')] : null;
+  if (cache && Array.isArray(cache.items)) {
+    return cache.items.filter(function (item) {
+      return String(item.status || 'active').toLowerCase() === 'active';
+    }).length;
   }
-  function getRoleLabel(role){
-    var normalized = normalizeRoleSafe(role);
-    var map = {
-      owner: 'Владелец',
-      admin: 'Администратор',
-      organization_owner: 'Управляющий организации',
-      manager: 'Менеджер',
-      buyer: 'Закупщик'
+  return null;
+}
+
+function getOrganizationCurrentLabelSafe(orgId, activeOrgId) {
+  return String(orgId || '') === String(activeOrgId || '') ? 'Текущая организация' : 'Переключиться на эту организацию';
+}
+
+function getOrganizationActionRolePermissions(role) {
+  var normalized = normalizeLegacyRoleSafe(role);
+  return {
+    canCreate: normalized === 'owner' || normalized === 'admin',
+    canEdit: ['owner', 'admin', 'organization_owner'].indexOf(normalized) >= 0,
+    canManageMembers: ['owner', 'admin', 'organization_owner'].indexOf(normalized) >= 0,
+    canArchive: ['owner', 'admin'].indexOf(normalized) >= 0,
+    canDelete: normalized === 'owner'
+  };
+}
+
+function setOrganizationListFilter(filter){
+  window.__orgListFilter = String(filter || 'active').trim() || 'active';
+  if(typeof renderRestaurants === 'function') renderRestaurants();
+}
+
+function getOrganizationsByCurrentFilterSafe(orgFilter, currentRole) {
+  var session = window.__userSession || {};
+  var orgs = Array.isArray(session.organizations) ? session.organizations.slice() : [];
+  var filter = String(orgFilter || 'active').trim() || 'active';
+  if (filter === 'active') {
+    return orgs.filter(function (org) {
+      if (!org) return false;
+      var status = String(org.status || 'active').toLowerCase();
+      return status === 'active';
+    }).map(function (org) {
+      var membersCount = typeof org.membersCount === 'number' ? org.membersCount : getOrganizationMembersCountFromCache(org.id);
+      return Object.assign({}, org, {
+        membersCount: typeof membersCount === 'number' ? membersCount : 0,
+        activeMembersCount: typeof org.activeMembersCount === 'number' ? org.activeMembersCount : 0
+      });
+    });
+  }
+  var cache = window.__dataCache && window.__dataCache.organizationsByFilter ? window.__dataCache.organizationsByFilter[filter] : null;
+  if (cache && Array.isArray(cache.items)) return cache.items.slice();
+  if (['owner', 'admin', 'organization_owner'].indexOf(normalizeLegacyRoleSafe(currentRole)) >= 0 && typeof window.loadOrganizationsForRestaurants === 'function') {
+    window.loadOrganizationsForRestaurants(filter).catch(function () {});
+  }
+  return [];
+}
+
+function syncOrganizationListItemIntoSession(org) {
+  if (!org || !window.__userSession) return;
+  window.__userSession.organizations = Array.isArray(window.__userSession.organizations) ? window.__userSession.organizations : [];
+  var merged = {
+    id: String(org.id || '').trim(),
+    name: org.name || 'Организация без названия',
+    type: org.type || 'restaurant',
+    status: org.status || 'active',
+    city: org.city || '',
+    address: org.address || '',
+    created_at: org.created_at || org.createdAt || '',
+    updated_at: org.updated_at || org.updatedAt || '',
+    membersCount: Number(org.membersCount || 0) || 0,
+    activeMembersCount: Number(org.activeMembersCount || 0) || 0,
+    role: org.role || ''
+  };
+  var idx = window.__userSession.organizations.findIndex(function (item) {
+    return String(item && item.id || '').trim() === merged.id;
+  });
+  if (idx >= 0) {
+    window.__userSession.organizations[idx] = Object.assign({}, window.__userSession.organizations[idx], merged);
+  } else {
+    window.__userSession.organizations.push(merged);
+  }
+  if (window.__userSession.activeOrganization && String(window.__userSession.activeOrganization.id || '').trim() === merged.id) {
+    window.__userSession.activeOrganization = Object.assign({}, window.__userSession.activeOrganization, merged);
+    window.__userSession.activeOrganizationId = merged.id;
+    window.activeRest = {
+      id: merged.id,
+      organizationId: merged.id,
+      name: merged.name,
+      kind: merged.type,
+      type: merged.type,
+      members: []
     };
-    return map[normalized] || (normalized === 'unassigned' ? 'Не назначена' : normalized);
+    if (String(merged.status || 'active').toLowerCase() !== 'active') {
+      var nextActive = window.__userSession.organizations.find(function (item) {
+        return item && String(item.status || 'active').toLowerCase() === 'active';
+      }) || null;
+      if (nextActive) {
+        window.__userSession.activeOrganization = Object.assign({}, nextActive);
+        window.__userSession.activeOrganizationId = nextActive.id;
+        window.activeRest = {
+          id: nextActive.id,
+          organizationId: nextActive.id,
+          name: nextActive.name || '',
+          kind: nextActive.type || 'organization',
+          type: nextActive.type || 'organization',
+          members: []
+        };
+      }
+    }
   }
-  function getTypeLabel(type){
-    var t = String(type || '').toLowerCase().trim();
-    if (t === 'restaurant' || t === 'ресторан') return 'Ресторан';
-    if (t === 'bar' || t === 'бар') return 'Бар';
-    if (t === 'cafe' || t === 'кафе' || t === 'coffee' || t === 'кофейня') return 'Кафе';
-    return 'Другое';
-  }
-  console.info('renderRestaurants organizations count', orgs.length, 'activeOrganizationId', activeOrgId);
+}
+function renderRestaurants(){
+  var el=document.getElementById('restGrid');
+  var session = window.__userSession || {};
+  var activeOrgId = String(session.activeOrganizationId || '').trim();
+  var currentRole = normalizeLegacyRoleSafe((session.currentUser && session.currentUser.role) || (window.CU && window.CU.role) || 'unassigned');
+  var perms = getOrganizationActionRolePermissions(currentRole);
+  var orgFilter = String(window.__orgListFilter || 'active').trim() || 'active';
+  var sub = document.getElementById('restPageSub');
   if(!el){
     console.error('renderRestaurants: restGrid container not found');
     return;
   }
-  var orgRows = orgs.map(function(org){
+
+  function renderToolbar(){
+    if(!sub) return;
+    var title = 'Управление заведениями и составом команд';
+    var ownerLike = ['owner','admin','organization_owner'].indexOf(currentRole) >= 0;
+    if(!ownerLike){
+      sub.textContent = title;
+      return;
+    }
+    var filters = [
+      { key:'active', label:'Активные' },
+      { key:'archived', label:'Архив' },
+      { key:'deleted', label:'Удалённые' }
+    ];
+    sub.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">'
+      +'<span>'+title+'</span>'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
+        +filters.map(function (f) {
+          var active = orgFilter === f.key;
+          return '<button class="tbBtn" onclick="setOrganizationListFilter(\''+f.key+'\')" style="cursor:pointer;'+(active ? 'background:#5ba3f5;color:#fff;border-color:#5ba3f5;' : '')+'">'+f.label+'</button>';
+        }).join('')
+        +(perms.canCreate ? '<button class="tbBtn" onclick="openOrganizationCreateModal()" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">+ Новая организация</button>' : '')
+      +'</div></div>';
+  }
+
+  renderToolbar();
+  var visibleOrgs = getOrganizationsByCurrentFilterSafe(orgFilter, currentRole);
+  console.info('renderRestaurants organizations count', visibleOrgs.length, 'activeOrganizationId', activeOrgId, 'filter', orgFilter);
+
+  function toCardOrg(org){
     if(!org) return null;
     var id = String(org.id || org.organization_id || org.organizationId || '').trim();
-    if(!id && session.activeOrganization && String(session.activeOrganization.id || '') === activeOrgId){
-      id = String(session.activeOrganization.id || '').trim();
-    }
-    var membersCount = Array.isArray(org.members)
-      ? org.members.length
-      : (typeof org.membersCount === 'number'
-        ? org.membersCount
-        : (typeof org.usersCount === 'number' ? org.usersCount : (typeof org.users_count === 'number' ? org.users_count : null)));
+    if(!id) return null;
+    var activeCount = typeof org.activeMembersCount === 'number' ? org.activeMembersCount : getOrganizationMembersCountFromCache(id);
+    var totalMembers = typeof org.membersCount === 'number' ? org.membersCount : activeCount;
     return {
       id: id,
-      name: org.name || org.brandName || org.legalName || 'Организация',
+      name: org.name || org.brandName || org.legalName || 'Организация без названия',
       type: org.type || org.kind || 'organization',
       status: org.status || 'active',
       role: org.role || currentRole,
-      membersCount: membersCount
+      city: org.city || '',
+      address: org.address || '',
+      membersCount: typeof totalMembers === 'number' ? totalMembers : 0,
+      activeMembersCount: typeof activeCount === 'number' ? activeCount : 0,
+      createdAt: org.created_at || org.createdAt || '',
+      updatedAt: org.updated_at || org.updatedAt || ''
     };
-  }).filter(function(item){ return !!item.id; });
-  if(!orgRows.length && session.activeOrganization && String(session.activeOrganization.id || '')){
-    orgRows = [{
-      id: String(session.activeOrganization.id || '').trim(),
-      name: session.activeOrganization.name || session.activeOrganization.brandName || 'Организация',
-      type: session.activeOrganization.type || session.activeOrganization.kind || 'organization',
-      status: session.activeOrganization.status || 'active',
-      role: currentRole,
-      membersCount: Array.isArray(session.activeOrganization.members) ? session.activeOrganization.members.length : null
-    }];
   }
-  var sub = document.getElementById('restPageSub');
-  if(sub) sub.textContent = orgRows.length + ' организаций';
 
-  if(!orgRows.length){
-    el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--t3);">'
+  var orgRows = visibleOrgs.map(toCardOrg).filter(Boolean);
+  if(!orgRows.length && orgFilter === 'active'){
+    el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--t3);background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:18px;box-shadow:0 10px 28px rgba(15,23,42,.08);">'
       +'<div style="font-size:48px;margin-bottom:12px;">🏢</div>'
       +'<div style="font-size:16px;font-weight:700;margin-bottom:8px;">У вас пока нет доступных организаций</div>'
-      +'<div style="font-size:13px;margin-bottom:20px;">Обратитесь к владельцу платформы или дождитесь добавления в организацию</div>'
+      +'<div style="font-size:13px;margin-bottom:20px;">Обратитесь к владельцу платформы или создайте новую организацию</div>'
       +'</div>';
     return;
   }
 
-  el.innerHTML=orgRows.map(function(org){
+  if(!orgRows.length){
+    var bucket = window.__dataCache && window.__dataCache.organizationsByFilter ? window.__dataCache.organizationsByFilter[orgFilter] : null;
+    if(bucket && bucket.error){
+      el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:50px 20px;color:var(--t3);background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:18px;box-shadow:0 10px 28px rgba(15,23,42,.08);">'
+        +'<div style="font-size:16px;font-weight:700;margin-bottom:8px;">Не удалось загрузить организации</div>'
+        +'<div style="font-size:13px;margin-bottom:18px;">'+_esc(bucket.error.message || 'Произошла ошибка при получении списка')+'</div>'
+        +'<button class="tbBtn" onclick="refreshOrganizationsForRestaurants(\''+orgFilter+'\')" style="cursor:pointer;">Повторить</button>'
+        +'</div>';
+      return;
+    }
+    if(bucket && bucket.loading){
+      el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:50px 20px;color:var(--t3);background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:18px;box-shadow:0 10px 28px rgba(15,23,42,.08);">'
+        +'<div style="font-size:16px;font-weight:700;margin-bottom:8px;">Загрузка организаций...</div>'
+        +'<div style="font-size:13px;margin-bottom:18px;">Подождите, данные подгружаются из Supabase</div>'
+        +'<button class="tbBtn" onclick="refreshOrganizationsForRestaurants(\''+orgFilter+'\')" style="cursor:pointer;">Повторить</button>'
+        +'</div>';
+      return;
+    }
+    el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--t3);">'
+      +'<div style="font-size:48px;margin-bottom:12px;">🏢</div>'
+      +'<div style="font-size:16px;font-weight:700;margin-bottom:8px;">У вас пока нет доступных организаций</div>'
+      +'<div style="font-size:13px;margin-bottom:20px;">Обратитесь к владельцу платформы или дождитесь обновления списка</div>'
+      +'</div>';
+    return;
+  }
+
+  el.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px;">'+orgRows.map(function(org){
+    var status = String(org.status || 'active').toLowerCase();
     var isActive = String(org.id) === activeOrgId;
-    var isOrgEnabled = String(org.status || 'active') === 'active';
-    var canEditOrg = ['owner','admin','organization_owner'].indexOf(currentRole) >= 0;
-    var canArchiveOrg = ['owner','admin'].indexOf(currentRole) >= 0;
-    var canManageMembers = ['owner','admin','organization_owner'].indexOf(currentRole) >= 0;
-    var membersCount = typeof org.membersCount === 'number' ? org.membersCount : getCachedMembersCount(org.id);
-    var membersLabel = typeof membersCount === 'number' ? (membersCount + ' пользователей') : 'Данные недоступны';
-    var switchBtn = isActive
+    var isArchived = status === 'archived';
+    var isDeleted = status === 'deleted';
+    var canEdit = perms.canEdit && !isDeleted;
+    var canManageMembers = perms.canManageMembers && !isDeleted;
+    var canArchive = perms.canArchive && !isDeleted;
+    var canDelete = perms.canDelete && !isDeleted;
+    var membersLabel = getOrganizationMembersCountFromCache(org.id);
+    if (membersLabel === null) membersLabel = Number(org.activeMembersCount || org.membersCount || 0) || 0;
+    var currentBadge = isActive
       ? '<span class="badge" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);">Текущая организация</span>'
-      : '<button class="tbBtn" onclick="setActiveOrganization(\''+org.id+'\')" style="cursor:pointer;">Переключиться на эту организацию</button>';
-    return '<div class="panel" style="margin-bottom:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);border:1px solid rgba(148,163,184,.16);border-radius:18px;overflow:hidden;">'
-      +'<div class="ph" style="padding:18px 18px 0 18px;margin-bottom:12px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'
+      : (status === 'active'
+        ? '<button class="tbBtn" onclick="setActiveOrganization(\''+org.id+'\')" style="cursor:pointer;">Переключиться на эту организацию</button>'
+        : '<span class="badge" style="background:#eef2f7;color:#475569;border:1px solid #cbd5e1;">'+getOrganizationStatusLabelSafe(status)+'</span>');
+    var archiveBtn = '';
+    if (canArchive) {
+      archiveBtn = isArchived
+        ? '<button class="tbBtn" onclick="restoreOrganizationFromCard(\''+org.id+'\')" style="cursor:pointer;" title="Восстановить организацию">Восстановить</button>'
+        : '<button class="tbBtn" onclick="archiveOrganizationFromCard(\''+org.id+'\')" style="cursor:pointer;" title="Архивировать организацию">Архивировать</button>';
+    }
+    var deleteBtn = canDelete
+      ? '<button class="tbBtn" onclick="deleteOrganizationFromCard(\''+org.id+'\')" style="cursor:pointer;" title="Удалить организацию мягко">Удалить</button>'
+      : '';
+    return '<div class="panel" style="background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);border:1px solid rgba(148,163,184,.16);border-radius:18px;overflow:hidden;">'
+      +'<div class="ph" style="padding:18px 18px 0 18px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'
         +'<div style="min-width:0;">'
           +'<div class="pt" style="font-size:18px;line-height:1.2;word-break:break-word;">'+(org.name||'Организация без названия')+'</div>'
           +'<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
-            +'<span class="badge" style="background:#eef6ff;color:#2463eb;border:1px solid #cfe2ff;">'+getTypeLabel(org.type)+'</span>'
-            +'<span class="badge" style="'+(isOrgEnabled ? 'background:var(--grD);color:var(--gr);border:1px solid var(--gr);' : 'background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;')+'">'+(isOrgEnabled ? 'Активна' : 'Не активна')+'</span>'
-            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Роль: '+getRoleLabel(org.role || currentRole)+'</span>'
+            +'<span class="badge" style="background:#eef6ff;color:#2463eb;border:1px solid #cfe2ff;">'+getOrganizationTypeLabelSafe(org.type)+'</span>'
+            +'<span class="badge" style="'+(status==='active' ? 'background:var(--grD);color:var(--gr);border:1px solid var(--gr);' : 'background:#eef2f7;color:#475569;border:1px solid #cbd5e1;')+'">'+getOrganizationStatusLabelSafe(status)+'</span>'
+            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Роль: '+getOrganizationRoleLabelSafe(org.role || currentRole)+'</span>'
+            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">'+getOrganizationMembersLabelSafe(org.membersCount || 0)+'</span>'
           +'</div>'
         +'</div>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">'
-          +(isActive
-            ? '<span class="badge" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);">Текущая организация</span>'
-            : '<button class="tbBtn" onclick="setActiveOrganization(\''+org.id+'\')" style="cursor:pointer;">Переключиться на эту организацию</button>')
-          +(canEditOrg ? '<button class="tbBtn" onclick="openEditOrganizationModal && openEditOrganizationModal(\''+org.id+'\')" style="cursor:pointer;">Редактировать</button>' : '')
-          +(canArchiveOrg ? '<button class="tbBtn" disabled style="cursor:not-allowed;opacity:.55;">Архивировать</button>' : '')
+          +currentBadge
+          +'<button class="tbBtn" onclick="openOrganizationDetailsModal(\''+org.id+'\')" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
+          +(canManageMembers ? '<button class="tbBtn" onclick="openOrganizationMembersModal(\''+org.id+'\')" style="cursor:pointer;">Участники</button>' : '')
+          +(canEdit ? '<button class="tbBtn" onclick="openEditOrganizationModal(\''+org.id+'\')" style="cursor:pointer;">Редактировать</button>' : '')
+          +(canArchive ? archiveBtn : '')
+          +(canDelete ? deleteBtn : '')
         +'</div>'
       +'</div>'
       +'<div class="pb" style="padding:0 18px 18px 18px;">'
         +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px;">'
           +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;">'
             +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;">Статус</div>'
-            +'<div style="margin-top:6px;font-size:14px;font-weight:700;">'+(isOrgEnabled ? 'Активна' : 'Не активна')+'</div>'
+            +'<div style="margin-top:6px;font-size:14px;font-weight:700;">'+getOrganizationStatusLabelSafe(status)+'</div>'
           +'</div>'
           +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;">'
-            +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;">Пользователи</div>'
-            +'<div style="margin-top:6px;font-size:14px;font-weight:700;">'+membersLabel+'</div>'
+            +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;">Участники</div>'
+            +'<div style="margin-top:6px;font-size:14px;font-weight:700;">'+getOrganizationMembersLabelSafe(org.membersCount || 0)+'</div>'
           +'</div>'
           +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;">'
             +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;">Тип</div>'
-            +'<div style="margin-top:6px;font-size:14px;font-weight:700;">'+getTypeLabel(org.type)+'</div>'
+            +'<div style="margin-top:6px;font-size:14px;font-weight:700;">'+getOrganizationTypeLabelSafe(org.type)+'</div>'
           +'</div>'
           +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;">'
             +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;">Режим</div>'
             +'<div style="margin-top:6px;font-size:14px;font-weight:700;">'+(isActive ? 'Текущая организация' : 'Доступна для переключения')+'</div>'
           +'</div>'
         +'</div>'
-        +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
-          +'<button class="tbBtn" onclick="setActiveOrganization(\''+org.id+'\')" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
-          +switchBtn
+        +'<div style="font-size:13px;color:var(--t2);line-height:1.5;">'
+          +(org.city ? '<div><b>Город:</b> '+_esc(org.city)+'</div>' : '')
+          +(org.address ? '<div><b>Адрес:</b> '+_esc(org.address)+'</div>' : '')
+        +'</div>'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">'
+          +'<button class="tbBtn" onclick="openOrganizationDetailsModal(\''+org.id+'\')" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
+          +currentBadge
           +(canManageMembers ? '<button class="tbBtn" onclick="openOrganizationMembersModal(\''+org.id+'\')" style="cursor:pointer;">Участники</button>' : '')
-          +(canEditOrg ? '<button class="tbBtn" onclick="openEditOrganizationModal && openEditOrganizationModal(\''+org.id+'\')" style="cursor:pointer;">Редактировать</button>' : '')
-          +(canArchiveOrg ? '<button class="tbBtn" disabled style="cursor:not-allowed;opacity:.55;">Архивировать</button>' : '')
+          +(canEdit ? '<button class="tbBtn" onclick="openEditOrganizationModal(\''+org.id+'\')" style="cursor:pointer;">Редактировать</button>' : '')
+          +(canArchive ? archiveBtn : '')
+          +(canDelete ? deleteBtn : '')
         +'</div>'
       +'</div>'
-      +'</div>';
-  }).join('');
+    +'</div>';
+  }).join('')+'</div>';
 }
 
 function setActiveOrganization(orgId){
@@ -4036,21 +4223,23 @@ async function renderOrganizationMembersModal(orgId){
     return;
   }
   if(bucket && bucket.error){
-    statusEl.innerHTML='<span style="color:var(--rd);">Не удалось загрузить участников организации</span> <button class="tbBtn" onclick="refreshOrganizationMembersForOrganization(\''+orgId+'\')" style="cursor:pointer;margin-left:8px;">Повторить</button>';
-    body.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">Не удалось загрузить участников организации</div>';
+    statusEl.innerHTML='<span style="color:var(--rd);">Не удалось загрузить участников</span> <button class="tbBtn" onclick="refreshOrganizationMembersForOrganization(\''+orgId+'\')" style="cursor:pointer;margin-left:8px;">Повторить</button>';
+    body.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">Не удалось загрузить участников</div>';
     return;
   }
   var items = Array.isArray(bucket && bucket.items) ? bucket.items.slice() : [];
   if(!items.length){
-    statusEl.innerHTML='<span>Участников пока нет</span> <button class="tbBtn" onclick="refreshOrganizationMembersForOrganization(\''+orgId+'\')" style="cursor:pointer;margin-left:8px;">Повторить</button>';
-    body.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">Пока никто не добавлен в эту организацию</div>';
+    statusEl.innerHTML='<span>В организации пока нет участников</span> <button class="tbBtn" onclick="refreshOrganizationMembersForOrganization(\''+orgId+'\')" style="cursor:pointer;margin-left:8px;">Повторить</button> <button class="tbBtn" onclick="openOrganizationAddMemberModal(\''+String(orgId).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;margin-left:8px;">Добавить пользователя</button>';
+    body.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">В организации пока нет участников</div>'
+      +'<div style="margin-top:12px;display:flex;justify-content:center;"><button class="tbBtn" onclick="openOrganizationAddMemberModal(\''+String(orgId).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Добавить пользователя</button></div>';
     return;
   }
-  statusEl.textContent='Всего участников: '+items.length;
+  statusEl.innerHTML='<span>Всего участников: '+items.length+'</span> <button class="tbBtn" onclick="openOrganizationAddMemberModal(\''+String(orgId).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;margin-left:8px;">Добавить пользователя</button>';
   body.innerHTML=items.map(function (member) {
     var displayName = member.name || member.email || 'Пользователь';
     var roleLabel = getOrganizationRoleLabel(member.rawRole || member.role);
     var statusText = String(member.status || 'active').toLowerCase() === 'active' ? 'Активен' : 'Не активен';
+    var isReadonlyRole = String(member.rawRole || member.role || '').toLowerCase() === 'platform_owner' || String(member.rawRole || member.role || '').toLowerCase() === 'owner';
     var statusStyle = String(member.status || 'active').toLowerCase() === 'active'
       ? 'background:var(--grD);color:var(--gr);border:1px solid var(--gr);'
       : 'background:#eef2f7;color:#475569;border:1px solid #cbd5e1;';
@@ -4066,8 +4255,11 @@ async function renderOrganizationMembersModal(orgId){
             +'</div>'
           +'</div>'
           +'<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">'
-            +'<select class="fS" id="orgMemberRole-'+_esc(member.membershipId || member.userProfileId || member.authUserId || member.email)+'" style="margin:0;min-width:180px;">'
-              +'<option value="platform_owner" '+(String(member.rawRole || member.role) === 'platform_owner' || String(member.rawRole || member.role) === 'owner' ? 'selected' : '')+'>Владелец</option>'
+            +(isReadonlyRole
+              ? '<span class="badge" style="background:#eef6ff;color:#2463eb;border:1px solid #cfe2ff;">Роль владельца платформы</span>'
+              : ''
+            )
+            +(isReadonlyRole ? '' : '<select class="fS" id="orgMemberRole-'+_esc(member.membershipId || member.userProfileId || member.authUserId || member.email)+'" style="margin:0;min-width:180px;">'
               +'<option value="admin" '+(String(member.rawRole || member.role) === 'admin' ? 'selected' : '')+'>Администратор</option>'
               +'<option value="organization_owner" '+(String(member.rawRole || member.role) === 'organization_owner' ? 'selected' : '')+'>Управляющий организации</option>'
               +'<option value="manager" '+(String(member.rawRole || member.role) === 'manager' ? 'selected' : '')+'>Менеджер</option>'
@@ -4076,13 +4268,14 @@ async function renderOrganizationMembersModal(orgId){
               +'<option value="bar_manager" '+(String(member.rawRole || member.role) === 'bar_manager' ? 'selected' : '')+'>Бар-менеджер</option>'
               +'<option value="accountant" '+(String(member.rawRole || member.role) === 'accountant' ? 'selected' : '')+'>Бухгалтер</option>'
               +'<option value="warehouse" '+(String(member.rawRole || member.role) === 'warehouse' ? 'selected' : '')+'>Склад</option>'
-            +'</select>'
+            +'</select>')
           +'</div>'
         +'</div>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">'
-          +'<button class="tbBtn" onclick="changeOrganizationMemberRole(\''+String(member.userProfileId || '').replace(/'/g, '\\\'')+'\', \''+String(orgId).replace(/'/g, '\\\'')+'\', document.getElementById(\'orgMemberRole-'+String(member.membershipId || member.userProfileId || member.authUserId || member.email).replace(/'/g, '\\\'')+'\').value)" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Сохранить роль</button>'
+          +(isReadonlyRole ? '' : '<button class="tbBtn" onclick="changeOrganizationMemberRole(\''+String(member.userProfileId || '').replace(/'/g, '\\\'')+'\', \''+String(orgId).replace(/'/g, '\\\'')+'\', document.getElementById(\'orgMemberRole-'+String(member.membershipId || member.userProfileId || member.authUserId || member.email).replace(/'/g, '\\\'')+'\').value)" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Сохранить роль</button>')
           +'<button class="tbBtn" onclick="removeOrganizationMemberFromOrganization(\''+String(member.userProfileId || '').replace(/'/g, '\\\'')+'\', \''+String(orgId).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;">Отключить от организации</button>'
         +'</div>'
+        +'<div style="font-size:11px;color:var(--t3);margin-top:8px;">Дата добавления: '+_esc(member.createdAt ? String(member.createdAt).slice(0, 10) : '—')+'</div>'
       +'</div>';
   }).join('');
 }
@@ -4122,6 +4315,521 @@ window.removeOrganizationMemberFromOrganization = async function (userProfileId,
   } catch (error) {
     console.error('removeOrganizationMemberFromOrganization failed:', error);
     if (typeof window.toast === 'function') window.toast(error && error.message ? error.message : 'Не удалось отключить пользователя', 'err');
+    return false;
+  }
+};
+
+function ensureOrganizationAddMemberModal(){
+  var el=document.getElementById('ov-orgMemberAdd');
+  if(el) return el;
+  el=document.createElement('div');
+  el.className='ov';
+  el.id='ov-orgMemberAdd';
+  el.innerHTML=''
+    +'<div class="modal" style="max-width:760px;width:min(760px,calc(100vw - 24px));">'
+      +'<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'
+        +'<div>'
+          +'<div class="m-title" id="orgMemberAddTitle">➕ Добавить пользователя</div>'
+          +'<div id="orgMemberAddMeta" style="font-size:12px;color:var(--t2);margin-top:6px;"></div>'
+        +'</div>'
+        +'<button class="tbBtn" onclick="closeOrganizationAddMemberModal()" style="cursor:pointer;">Закрыть</button>'
+      +'</div>'
+      +'<div id="orgMemberAddStatus" style="margin-top:12px;font-size:12px;color:var(--t3);"></div>'
+      +'<div id="orgMemberAddBody" style="display:grid;gap:12px;margin-top:12px;"></div>'
+      +'<div class="m-acts" style="margin-top:18px;">'
+        +'<button class="m-ok" onclick="submitOrganizationMemberAdd()">✅ Добавить</button>'
+        +'<button class="m-cancel" onclick="closeOrganizationAddMemberModal()">Отмена</button>'
+      +'</div>'
+    +'</div>';
+  document.body.appendChild(el);
+  return el;
+}
+
+function closeOrganizationAddMemberModal(){
+  var el=document.getElementById('ov-orgMemberAdd');
+  if(el) el.classList.remove('on');
+}
+
+async function renderOrganizationAddMemberModal(orgId){
+  var modal=ensureOrganizationAddMemberModal();
+  var statusEl=document.getElementById('orgMemberAddStatus');
+  var body=document.getElementById('orgMemberAddBody');
+  var title=document.getElementById('orgMemberAddTitle');
+  var meta=document.getElementById('orgMemberAddMeta');
+  if(!body || !statusEl) return;
+  var org=getOrganizationById(orgId);
+  if(title) title.textContent='➕ Добавить пользователя · '+(org && org.name ? org.name : 'Организация без названия');
+  if(meta) meta.textContent='Выберите пользователя из профилей Supabase и роль в организации';
+  if(!orgId){
+    statusEl.textContent='Организация не выбрана';
+    body.innerHTML='';
+    return;
+  }
+  var cache = getDataCache();
+  var usersBucket = cache.ownerUsers || { items: null, loading: false, error: null, promise: null, loadedAt: 0 };
+  if((!Array.isArray(usersBucket.items) && !usersBucket.promise) || usersBucket.loading){
+    statusEl.textContent='Загрузка пользователей...';
+    body.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">Загрузка пользователей...</div>';
+    if(typeof window.loadOwnerUsers === 'function'){
+      window.loadOwnerUsers().then(function(){ renderOrganizationAddMemberModal(orgId); }).catch(function(){ renderOrganizationAddMemberModal(orgId); });
+    }
+    return;
+  }
+  if(usersBucket.error){
+    statusEl.innerHTML='<span style="color:var(--rd);">Не удалось загрузить пользователей</span> <button class="tbBtn" onclick="window.loadOwnerUsers().then(function(){ renderOrganizationAddMemberModal(\''+String(orgId).replace(/'/g, '\\\'')+'\'); }).catch(function(){});" style="cursor:pointer;margin-left:8px;">Повторить</button>';
+    body.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">Не удалось загрузить пользователей</div>';
+    return;
+  }
+  var users = Array.isArray(usersBucket.items) ? usersBucket.items.slice() : [];
+  if(!users.length){
+    statusEl.innerHTML='<span>Пользователи не найдены</span> <button class="tbBtn" onclick="window.loadOwnerUsers().then(function(){ renderOrganizationAddMemberModal(\''+String(orgId).replace(/'/g, '\\\'')+'\'); }).catch(function(){});" style="cursor:pointer;margin-left:8px;">Повторить</button>';
+    body.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">Пользователи не найдены</div>';
+    return;
+  }
+  var roleOptions = [
+    { value:'admin', label:'Администратор' },
+    { value:'organization_owner', label:'Управляющий организации' },
+    { value:'manager', label:'Менеджер' },
+    { value:'buyer', label:'Закупщик' },
+    { value:'chef', label:'Шеф-повар' },
+    { value:'bar_manager', label:'Бар-менеджер' },
+    { value:'accountant', label:'Бухгалтер' },
+    { value:'warehouse', label:'Склад' }
+  ];
+  body.innerHTML=''
+    +'<label style="display:grid;gap:6px;">'
+      +'<span style="font-size:12px;color:var(--t2);">Пользователь</span>'
+      +'<select id="orgMemberAddUser" class="fS" style="margin:0;">'
+        +'<option value="">Выберите пользователя</option>'
+        +users.map(function(user){
+          var label = (user.first || user.first_name || '') + ' ' + (user.last || user.last_name || '');
+          label = label.trim() || user.email || 'Пользователь';
+          return '<option value="'+_esc(user.profileId || user.profile_id || user.id || user.auth_user_id || user.authUserId || '')+'">'+_esc(label + (user.email ? ' · ' + user.email : ''))+'</option>';
+        }).join('')
+      +'</select>'
+    +'</label>'
+    +'<label style="display:grid;gap:6px;">'
+      +'<span style="font-size:12px;color:var(--t2);">Роль</span>'
+      +'<select id="orgMemberAddRole" class="fS" style="margin:0;">'
+        +roleOptions.map(function(opt){ return '<option value="'+opt.value+'">'+opt.label+'</option>'; }).join('')
+      +'</select>'
+    +'</label>';
+  window.__orgMemberAddOrgId = String(orgId || '').trim();
+}
+
+window.openOrganizationAddMemberModal = function (orgId) {
+  var modal = ensureOrganizationAddMemberModal();
+  modal.dataset.orgId = String(orgId || '').trim();
+  modal.classList.add('on');
+  renderOrganizationAddMemberModal(orgId);
+};
+window.closeOrganizationAddMemberModal = closeOrganizationAddMemberModal;
+
+window.submitOrganizationMemberAdd = async function () {
+  var orgId = String(window.__orgMemberAddOrgId || (document.getElementById('ov-orgMemberAdd') && document.getElementById('ov-orgMemberAdd').dataset.orgId) || '').trim();
+  var userProfileId = String((document.getElementById('orgMemberAddUser') || { value: '' }).value || '').trim();
+  var role = String((document.getElementById('orgMemberAddRole') || { value: 'manager' }).value || '').trim();
+  try {
+    if (!orgId) throw new Error('Организация не выбрана');
+    if (!userProfileId) throw new Error('Выберите пользователя');
+    if (!role) throw new Error('Выберите роль');
+    var cache = getDataCache();
+    var user = null;
+    if (cache.ownerUsers && Array.isArray(cache.ownerUsers.items)) {
+      user = cache.ownerUsers.items.find(function (item) {
+        var profileId = String(item.profileId || item.user_profile_id || '').trim();
+        var authUserId = String(item.authUserId || item.auth_user_id || '').trim();
+        var id = String(item.id || '').trim();
+        return profileId === userProfileId || authUserId === userProfileId || id === userProfileId;
+      }) || null;
+    }
+    if (!user) throw new Error('Пользователь не найден');
+    var result = await window.ownerAssignUserToOrganization({
+      target_user_profile_id: user.profileId || user.user_profile_id || userProfileId,
+      target_auth_user_id: user.authUserId || user.auth_user_id || '',
+      target_email: user.email || '',
+      target_organization_id: orgId,
+      target_role: role
+    });
+    if (!result || !result.membership_id) throw new Error('Не удалось добавить пользователя в организацию');
+    await refreshOrganizationMembersForOrganization(orgId);
+    if (typeof window.loadOwnerUsers === 'function') {
+      await window.loadOwnerUsers().catch(function () {});
+    }
+    if (typeof window.refreshOrganizationsForRestaurants === 'function') {
+      await window.refreshOrganizationsForRestaurants('active').catch(function () {});
+    }
+    closeOrganizationAddMemberModal();
+    if (typeof window.toast === 'function') window.toast('Пользователь добавлен в организацию', 'ok');
+    return true;
+  } catch (error) {
+    console.error('submitOrganizationMemberAdd failed:', error);
+    if (typeof window.toast === 'function') window.toast(error && error.message ? error.message : 'Не удалось добавить пользователя в организацию', 'err');
+    return false;
+  }
+};
+
+function ensureOrganizationDetailsModal(){
+  var el=document.getElementById('ov-orgDetails');
+  if(el) return el;
+  el=document.createElement('div');
+  el.className='ov';
+  el.id='ov-orgDetails';
+  el.innerHTML=''
+    +'<div class="modal xl" style="max-width:960px;width:min(960px,calc(100vw - 24px));">'
+      +'<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'
+        +'<div>'
+          +'<div class="m-title" id="orgDetailsTitle">🏢 Организация</div>'
+          +'<div id="orgDetailsMeta" style="font-size:12px;color:var(--t2);margin-top:6px;"></div>'
+        +'</div>'
+        +'<button class="tbBtn" onclick="closeOrganizationDetailsModal()" style="cursor:pointer;">Закрыть</button>'
+      +'</div>'
+      +'<div id="orgDetailsBody" style="display:grid;gap:12px;margin-top:14px;"></div>'
+      +'<div class="m-acts" style="margin-top:18px;">'
+        +'<button class="m-cancel" onclick="closeOrganizationDetailsModal()">Закрыть</button>'
+      +'</div>'
+    +'</div>';
+  document.body.appendChild(el);
+  return el;
+}
+
+function closeOrganizationDetailsModal(){
+  var el=document.getElementById('ov-orgDetails');
+  if(el) el.classList.remove('on');
+}
+
+function openOrganizationDetailsModal(orgId){
+  var modal = ensureOrganizationDetailsModal();
+  modal.dataset.orgId = String(orgId || '').trim();
+  modal.classList.add('on');
+  renderOrganizationDetailsModal(orgId);
+}
+
+function renderOrganizationDetailsModal(orgId){
+  var body=document.getElementById('orgDetailsBody');
+  var title=document.getElementById('orgDetailsTitle');
+  var meta=document.getElementById('orgDetailsMeta');
+  if(!body) return;
+  var org=getOrganizationById(orgId);
+  if(!org){
+    body.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">Организация не найдена</div>';
+    return;
+  }
+  var suppliersCount = 0;
+  var suppliersBucket = window.__dataCache && window.__dataCache.suppliersByOrg ? window.__dataCache.suppliersByOrg[String(orgId || '')] : null;
+  if (Array.isArray(suppliersBucket)) suppliersCount = suppliersBucket.length;
+  var membersBucket = getOrganizationMembersBucket(orgId);
+  var activeMembersCount = membersBucket && Array.isArray(membersBucket.items) ? membersBucket.items.filter(function (item) {
+    return String(item.status || 'active').toLowerCase() === 'active';
+  }).length : Number(org.activeMembersCount || 0) || 0;
+  var membersCount = Number(org.membersCount || 0) || (membersBucket && Array.isArray(membersBucket.items) ? membersBucket.items.length : activeMembersCount) || 0;
+  var currentRole = normalizeLegacyRoleSafe((window.CU && window.CU.role) || (window.__userSession && window.__userSession.currentUser && window.__userSession.currentUser.role) || 'unassigned');
+  var canManageMembers = ['owner','admin','organization_owner'].indexOf(currentRole) >= 0;
+  if(title) title.textContent='🏢 '+(org.name || 'Организация без названия');
+  if(meta) meta.textContent='Статус: '+getOrganizationStatusLabelSafe(org.status || 'active')+' · Роль: '+getOrganizationRoleLabelSafe(org.role || (window.CU && window.CU.role));
+  body.innerHTML=''
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">'
+      +'<div style="background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:14px 16px;box-shadow:0 8px 20px rgba(15,23,42,.06);">'
+        +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;">Название</div>'
+        +'<div style="font-size:15px;font-weight:800;margin-top:6px;">'+_esc(org.name || 'Организация без названия')+'</div>'
+      +'</div>'
+      +'<div style="background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:14px 16px;box-shadow:0 8px 20px rgba(15,23,42,.06);">'
+        +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;">Тип</div>'
+        +'<div style="font-size:15px;font-weight:800;margin-top:6px;">'+getOrganizationTypeLabelSafe(org.type)+'</div>'
+      +'</div>'
+      +'<div style="background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:14px 16px;box-shadow:0 8px 20px rgba(15,23,42,.06);">'
+        +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;">Статус</div>'
+        +'<div style="font-size:15px;font-weight:800;margin-top:6px;">'+getOrganizationStatusLabelSafe(org.status || 'active')+'</div>'
+      +'</div>'
+      +'<div style="background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:14px 16px;box-shadow:0 8px 20px rgba(15,23,42,.06);">'
+        +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;">Участники</div>'
+        +'<div style="font-size:15px;font-weight:800;margin-top:6px;">'+getOrganizationMembersLabelSafe(membersCount)+'</div>'
+      +'</div>'
+      +'<div style="background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:14px 16px;box-shadow:0 8px 20px rgba(15,23,42,.06);">'
+        +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;">Поставщики</div>'
+        +'<div style="font-size:15px;font-weight:800;margin-top:6px;">'+Number(suppliersCount || 0)+'</div>'
+      +'</div>'
+      +'<div style="background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:14px 16px;box-shadow:0 8px 20px rgba(15,23,42,.06);">'
+        +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;">Активные участники</div>'
+        +'<div style="font-size:15px;font-weight:800;margin-top:6px;">'+Number(activeMembersCount || 0)+'</div>'
+      +'</div>'
+    +'</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">'
+      +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:14px 16px;">'
+        +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;">Город</div>'
+        +'<div style="font-size:14px;font-weight:700;margin-top:6px;">'+_esc(org.city || '—')+'</div>'
+      +'</div>'
+      +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:14px 16px;">'
+        +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;">Адрес</div>'
+        +'<div style="font-size:14px;font-weight:700;margin-top:6px;">'+_esc(org.address || '—')+'</div>'
+      +'</div>'
+      +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:14px 16px;">'
+        +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;">Дата создания</div>'
+        +'<div style="font-size:14px;font-weight:700;margin-top:6px;">'+_esc(org.createdAt ? String(org.createdAt).slice(0, 10) : (org.created_at ? String(org.created_at).slice(0, 10) : '—'))+'</div>'
+      +'</div>'
+      +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:14px 16px;">'
+        +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;">Рабочий контекст</div>'
+        +'<div style="font-size:14px;font-weight:700;margin-top:6px;">'+getOrganizationCurrentLabelSafe(org.id, String(window.__userSession && window.__userSession.activeOrganizationId || ''))+'</div>'
+      +'</div>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+      +'<button class="tbBtn" onclick="setActiveOrganization(\''+String(org.id).replace(/'/g, '\\\'')+'\');closeOrganizationDetailsModal();" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
+      +(canManageMembers ? '<button class="tbBtn" onclick="openOrganizationMembersModal(\''+String(org.id).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;">Участники</button>' : '')
+      +(canManageMembers ? '<button class="tbBtn" onclick="openEditOrganizationModal(\''+String(org.id).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;">Редактировать</button>' : '')
+      +((['owner','admin'].indexOf(currentRole) >= 0) ? (
+        String(org.status || '').toLowerCase() === 'archived'
+          ? '<button class="tbBtn" onclick="restoreOrganizationFromCard(\''+String(org.id).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;">Восстановить</button>'
+          : '<button class="tbBtn" onclick="archiveOrganizationFromCard(\''+String(org.id).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;">Архивировать</button>'
+      ) : '')
+      +((currentRole === 'owner')
+        ? '<button class="tbBtn" onclick="deleteOrganizationFromCard(\''+String(org.id).replace(/'/g, '\\\'')+'\')" style="cursor:pointer;">Удалить</button>'
+        : '')
+    +'</div>';
+}
+window.renderOrganizationDetailsModal = renderOrganizationDetailsModal;
+
+function ensureOrganizationEditModal(){
+  var el=document.getElementById('ov-orgEdit');
+  if(el) return el;
+  el=document.createElement('div');
+  el.className='ov';
+  el.id='ov-orgEdit';
+  el.innerHTML=''
+    +'<div class="modal" style="max-width:760px;width:min(760px,calc(100vw - 24px));">'
+      +'<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'
+        +'<div>'
+          +'<div class="m-title" id="orgEditTitle">✏️ Организация</div>'
+          +'<div id="orgEditMeta" style="font-size:12px;color:var(--t2);margin-top:6px;"></div>'
+        +'</div>'
+        +'<button class="tbBtn" onclick="closeOrganizationEditModal()" style="cursor:pointer;">Закрыть</button>'
+      +'</div>'
+      +'<div id="orgEditStatus" style="margin-top:12px;font-size:12px;color:var(--t3);"></div>'
+      +'<div id="orgEditBody" style="display:grid;gap:12px;margin-top:12px;"></div>'
+      +'<div class="m-acts" style="margin-top:18px;">'
+        +'<button class="m-ok" onclick="submitOrganizationForm()">✅ Сохранить</button>'
+        +'<button class="m-cancel" onclick="closeOrganizationEditModal()">Отмена</button>'
+      +'</div>'
+    +'</div>';
+  document.body.appendChild(el);
+  return el;
+}
+
+function closeOrganizationEditModal(){
+  var el=document.getElementById('ov-orgEdit');
+  if(el) el.classList.remove('on');
+}
+
+function openOrganizationCreateModal(){
+  var modal = ensureOrganizationEditModal();
+  modal.dataset.mode='create';
+  delete modal.dataset.orgId;
+  modal.classList.add('on');
+  renderOrganizationEditModal(null);
+}
+
+function openEditOrganizationModal(orgId){
+  var modal = ensureOrganizationEditModal();
+  modal.dataset.mode='edit';
+  modal.dataset.orgId=String(orgId || '').trim();
+  modal.classList.add('on');
+  renderOrganizationEditModal(orgId);
+}
+
+function renderOrganizationEditModal(orgId){
+  var body=document.getElementById('orgEditBody');
+  var title=document.getElementById('orgEditTitle');
+  var meta=document.getElementById('orgEditMeta');
+  var statusEl=document.getElementById('orgEditStatus');
+  if(!body || !title || !meta) return;
+  var modal=document.getElementById('ov-orgEdit');
+  var mode=modal && modal.dataset.mode === 'create' ? 'create' : 'edit';
+  var org = mode === 'edit' ? getOrganizationById(orgId) : null;
+  title.textContent = mode === 'create' ? '➕ Новая организация' : '✏️ Редактировать организацию';
+  meta.textContent = mode === 'create' ? 'Создание новой организации в Supabase' : 'Изменение данных организации';
+  if(statusEl) statusEl.textContent = '';
+  body.innerHTML=''
+    +'<label style="display:grid;gap:6px;">'
+      +'<span style="font-size:12px;color:var(--t2);">Название</span>'
+      +'<input id="orgFormName" class="fS" value="'+_esc((org && org.name) || '')+'" placeholder="Название организации">'
+    +'</label>'
+    +'<label style="display:grid;gap:6px;">'
+      +'<span style="font-size:12px;color:var(--t2);">Тип</span>'
+      +'<select id="orgFormType" class="fS" style="margin:0;">'
+        +['restaurant','bar','cafe','other'].map(function(type){
+          var label = type === 'restaurant' ? 'ресторан' : type === 'bar' ? 'бар' : type === 'cafe' ? 'кафе' : 'другое';
+          var selected = String((org && org.type) || 'restaurant').toLowerCase() === type;
+          return '<option value="'+type+'" '+(selected ? 'selected' : '')+'>'+label+'</option>';
+        }).join('')
+      +'</select>'
+    +'</label>'
+    +'<label style="display:grid;gap:6px;">'
+      +'<span style="font-size:12px;color:var(--t2);">Статус</span>'
+      +'<select id="orgFormStatus" class="fS" style="margin:0;">'
+        +['active','inactive','archived'].map(function(status){
+          var labels = {active:'active',inactive:'inactive',archived:'archived'};
+          var selected = String((org && org.status) || 'active').toLowerCase() === status;
+          return '<option value="'+status+'" '+(selected ? 'selected' : '')+'>'+labels[status]+'</option>';
+        }).join('')
+      +'</select>'
+    +'</label>'
+    +'<label style="display:grid;gap:6px;">'
+      +'<span style="font-size:12px;color:var(--t2);">Город</span>'
+      +'<input id="orgFormCity" class="fS" value="'+_esc((org && org.city) || '')+'" placeholder="Город">'
+    +'</label>'
+    +'<label style="display:grid;gap:6px;">'
+      +'<span style="font-size:12px;color:var(--t2);">Адрес</span>'
+      +'<input id="orgFormAddress" class="fS" value="'+_esc((org && org.address) || '')+'" placeholder="Адрес">'
+    +'</label>';
+  window.__orgEditOrgId = org ? String(org.id || '').trim() : '';
+  window.__orgEditMode = mode;
+}
+
+window.openOrganizationCreateModal = openOrganizationCreateModal;
+window.openEditOrganizationModal = openEditOrganizationModal;
+window.closeOrganizationEditModal = closeOrganizationEditModal;
+window.openOrganizationDetailsModal = openOrganizationDetailsModal;
+window.closeOrganizationDetailsModal = closeOrganizationDetailsModal;
+window.setOrganizationListFilter = setOrganizationListFilter;
+
+function refreshOrgCachesAfterMutation(orgRow){
+  if (!orgRow) return;
+  var normalized = {
+    id: String(orgRow.id || orgRow.organization_id || '').trim(),
+    name: orgRow.name || '',
+    type: orgRow.type || 'restaurant',
+    status: orgRow.status || 'active',
+    city: orgRow.city || '',
+    address: orgRow.address || '',
+    created_at: orgRow.created_at || orgRow.createdAt || '',
+    updated_at: orgRow.updated_at || orgRow.updatedAt || '',
+    membersCount: Number(orgRow.members_count || orgRow.membersCount || 0) || 0,
+    activeMembersCount: Number(orgRow.active_members_count || orgRow.activeMembersCount || 0) || 0
+  };
+  syncOrganizationListItemIntoSession(normalized);
+  if (typeof window.refreshOrganizationsForRestaurants === 'function') {
+    window.refreshOrganizationsForRestaurants('active').catch(function () {});
+    window.refreshOrganizationsForRestaurants('archived').catch(function () {});
+    window.refreshOrganizationsForRestaurants('deleted').catch(function () {});
+  }
+  var detailsModal = document.getElementById('ov-orgDetails');
+  if (detailsModal && String(detailsModal.dataset.orgId || '').trim() === normalized.id && typeof renderOrganizationDetailsModal === 'function') {
+    renderOrganizationDetailsModal(normalized.id);
+  }
+  if (typeof renderRestaurants === 'function') renderRestaurants();
+}
+
+window.submitOrganizationForm = async function () {
+  var modal=document.getElementById('ov-orgEdit');
+  if(!modal) return false;
+  var mode=modal.dataset.mode === 'create' ? 'create' : 'edit';
+  var orgId = String(window.__orgEditOrgId || modal.dataset.orgId || '').trim();
+  var name = String((document.getElementById('orgFormName') || { value: '' }).value || '').trim();
+  var type = String((document.getElementById('orgFormType') || { value: 'restaurant' }).value || 'restaurant').trim();
+  var status = String((document.getElementById('orgFormStatus') || { value: 'active' }).value || 'active').trim();
+  var city = String((document.getElementById('orgFormCity') || { value: '' }).value || '').trim();
+  var address = String((document.getElementById('orgFormAddress') || { value: '' }).value || '').trim();
+  var statusEl=document.getElementById('orgEditStatus');
+  var okBtn=modal.querySelector('.m-ok');
+  try {
+    if (!name) throw new Error('Укажите название организации');
+    if (!window.ownerCreateOrganization || !window.ownerUpdateOrganization) {
+      throw new Error('RPC для организаций недоступен');
+    }
+    if (okBtn) { okBtn.disabled = true; okBtn.textContent = 'Сохраняем...'; }
+    if (statusEl) statusEl.textContent = 'Сохранение...';
+    var result = null;
+    if (mode === 'create') {
+      result = await window.ownerCreateOrganization({
+        target_name: name,
+        target_type: type,
+        target_city: city,
+        target_address: address
+      });
+    } else {
+      if (!orgId) throw new Error('Организация не выбрана');
+      result = await window.ownerUpdateOrganization({
+        target_organization_id: orgId,
+        target_name: name,
+        target_type: type,
+        target_status: status,
+        target_city: city,
+        target_address: address
+      });
+    }
+    if (!result || !result.id) throw new Error('Не удалось сохранить организацию');
+    var confirmation = await window.ownerListOrganizations(status === 'deleted' ? 'deleted' : (status === 'archived' ? 'archived' : 'active')).catch(function () { return []; });
+    var confirmRow = Array.isArray(confirmation) ? confirmation.find(function (item) { return String(item.id || '') === String(result.id || ''); }) : null;
+    if (!confirmRow) {
+      confirmRow = {
+        id: result.id,
+        name: result.name || name,
+        type: result.type || type,
+        status: result.status || status,
+        city: result.city || city,
+        address: result.address || address,
+        membersCount: result.members_count || result.membersCount || 0,
+        activeMembersCount: result.active_members_count || result.activeMembersCount || 0
+      };
+    }
+    refreshOrgCachesAfterMutation(confirmRow);
+    if (mode === 'create' && typeof window.setActiveOrganization === 'function') {
+      try {
+        window.setActiveOrganization(result.id);
+      } catch (switchError) {}
+    }
+    closeOrganizationEditModal();
+    if (typeof window.toast === 'function') window.toast(mode === 'create' ? 'Организация создана' : 'Организация сохранена', 'ok');
+    return true;
+  } catch (error) {
+    console.error('submitOrganizationForm failed:', error);
+    if (statusEl) statusEl.textContent = error && error.message ? error.message : 'Не удалось сохранить организацию';
+    if (typeof window.toast === 'function') window.toast(error && error.message ? error.message : 'Не удалось сохранить организацию', 'err');
+    return false;
+  } finally {
+    if (okBtn) { okBtn.disabled = false; okBtn.textContent = '✅ Сохранить'; }
+  }
+};
+
+window.archiveOrganizationFromCard = async function (orgId) {
+  try {
+    if (!confirm('Архивировать организацию? Пользователи больше не смогут работать в ней, но данные сохранятся.')) return false;
+    var result = await window.ownerArchiveOrganization(orgId);
+    if (!result || !result.id) throw new Error('Не удалось архивировать организацию');
+    refreshOrgCachesAfterMutation(result);
+    return true;
+  } catch (error) {
+    console.error('archiveOrganizationFromCard failed:', error);
+    if (typeof window.toast === 'function') window.toast('Не удалось архивировать организацию', 'err');
+    return false;
+  }
+};
+window.restoreOrganizationFromCard = async function (orgId) {
+  try {
+    var result = await window.ownerRestoreOrganization(orgId);
+    if (!result || !result.id) throw new Error('Не удалось восстановить организацию');
+    refreshOrgCachesAfterMutation(result);
+    return true;
+  } catch (error) {
+    console.error('restoreOrganizationFromCard failed:', error);
+    if (typeof window.toast === 'function') window.toast('Не удалось восстановить организацию', 'err');
+    return false;
+  }
+};
+window.deleteOrganizationFromCard = async function (orgId) {
+  try {
+    if (!confirm('Удалить организацию? Она будет скрыта из платформы. Данные не будут физически удалены.')) return false;
+    var result = await window.ownerDeleteOrganization(orgId);
+    if (!result || !result.id) throw new Error('Не удалось удалить организацию');
+    removeOrganizationFromSession(orgId);
+    if (typeof window.refreshOrganizationsForRestaurants === 'function') {
+      await window.refreshOrganizationsForRestaurants('deleted').catch(function () {});
+      await window.refreshOrganizationsForRestaurants('active').catch(function () {});
+    }
+    if (typeof renderRestaurants === 'function') renderRestaurants();
+    return true;
+  } catch (error) {
+    console.error('deleteOrganizationFromCard failed:', error);
+    if (typeof window.toast === 'function') window.toast('Не удалось удалить организацию', 'err');
     return false;
   }
 };

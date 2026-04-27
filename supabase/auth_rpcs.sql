@@ -114,6 +114,10 @@ $$;
 
 revoke all on function public._ensure_user_profile_from_identity(uuid, text, text, text, text, text) from public;
 
+alter table public.organizations add column if not exists city text not null default '';
+alter table public.organizations add column if not exists address text not null default '';
+alter table public.organizations add column if not exists deleted_at timestamptz;
+
 create or replace function public.ensure_user_profile()
 returns table (
   profile_id uuid,
@@ -353,7 +357,16 @@ set search_path = public, auth
 as $$
 begin
   if not public._is_platform_owner() then
-    raise exception 'Forbidden';
+    perform 1
+    from public.organization_members om
+    join public.user_profiles up on up.id = om.user_profile_id
+    where up.auth_user_id = auth.uid()
+      and om.status = 'active'
+      and om.role in ('admin', 'organization_owner')
+    limit 1;
+    if not found then
+      raise exception 'Forbidden';
+    end if;
   end if;
 
   return query
@@ -420,6 +433,376 @@ $$;
 revoke all on function public.owner_list_users() from public;
 grant execute on function public.owner_list_users() to authenticated;
 
+create or replace function public.owner_create_organization(
+  target_name text,
+  target_type text,
+  target_city text,
+  target_address text
+)
+returns table (
+  organization_id uuid,
+  name text,
+  type text,
+  status text,
+  city text,
+  address text,
+  created_at timestamptz,
+  updated_at timestamptz,
+  membership_id uuid,
+  user_profile_id uuid,
+  role text,
+  membership_status text
+)
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_org public.organizations%rowtype;
+  v_profile public.user_profiles%rowtype;
+  v_role text := 'organization_owner';
+  v_actor_role text := 'unassigned';
+  v_membership_id uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'auth.uid() is required';
+  end if;
+
+  select coalesce(om.role, 'unassigned')
+    into v_actor_role
+  from public.organization_members om
+  join public.user_profiles up on up.id = om.user_profile_id
+  where up.auth_user_id = auth.uid()
+    and om.status = 'active'
+  order by case om.role
+    when 'platform_owner' then 0
+    when 'owner' then 0
+    when 'admin' then 1
+    when 'organization_owner' then 2
+    else 99 end
+  limit 1;
+
+  if not public._is_platform_owner() and v_actor_role not in ('admin', 'organization_owner') then
+    raise exception 'Forbidden';
+  end if;
+
+  v_profile := public._ensure_user_profile_from_identity(auth.uid(), null, null, null, null, 'active');
+  if public._is_platform_owner() then
+    v_role := 'platform_owner';
+  end if;
+
+  insert into public.organizations (
+    name,
+    type,
+    status,
+    city,
+    address
+  ) values (
+    coalesce(nullif(trim(target_name), ''), 'Новая организация'),
+    coalesce(nullif(trim(target_type), ''), 'restaurant'),
+    'active',
+    coalesce(nullif(trim(target_city), ''), ''),
+    coalesce(nullif(trim(target_address), ''), '')
+  )
+  returning * into v_org;
+
+  insert into public.organization_members (
+    organization_id,
+    user_profile_id,
+    role,
+    status
+  ) values (
+    v_org.id,
+    v_profile.id,
+    v_role,
+    'active'
+  ) returning id into v_membership_id;
+
+  return query
+  select
+    v_org.id,
+    v_org.name,
+    v_org.type,
+    v_org.status,
+    v_org.city,
+    v_org.address,
+    v_org.created_at,
+    v_org.updated_at,
+    v_membership_id,
+    v_profile.id,
+    v_role,
+    'active';
+end;
+$$;
+
+revoke all on function public.owner_create_organization(text, text, text, text) from public;
+grant execute on function public.owner_create_organization(text, text, text, text) to authenticated;
+
+create or replace function public.owner_list_organizations(
+  target_status text default null
+)
+returns table (
+  id uuid,
+  name text,
+  type text,
+  status text,
+  city text,
+  address text,
+  created_at timestamptz,
+  updated_at timestamptz,
+  members_count integer,
+  active_members_count integer
+)
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_is_owner boolean := public._is_platform_owner();
+  v_role text := 'unassigned';
+begin
+  if auth.uid() is null then
+    raise exception 'auth.uid() is required';
+  end if;
+
+  if not v_is_owner then
+    select coalesce(om.role, 'unassigned')
+      into v_role
+    from public.organization_members om
+    join public.user_profiles up on up.id = om.user_profile_id
+    where up.auth_user_id = auth.uid()
+      and om.status = 'active'
+    order by case om.role
+      when 'admin' then 1
+      when 'organization_owner' then 2
+      when 'manager' then 3
+      when 'buyer' then 4
+      when 'chef' then 5
+      when 'bar_manager' then 6
+      when 'accountant' then 7
+      when 'warehouse' then 8
+      else 99 end
+    limit 1;
+  end if;
+
+  return query
+  select
+    o.id,
+    o.name,
+    o.type,
+    o.status,
+    coalesce(o.city, '') as city,
+    coalesce(o.address, '') as address,
+    o.created_at,
+    o.updated_at,
+    count(distinct om.id)::integer as members_count,
+    count(distinct case when om.status = 'active' then om.id end)::integer as active_members_count
+  from public.organizations o
+  left join public.organization_members om on om.organization_id = o.id
+  where (
+    v_is_owner
+    or exists (
+      select 1
+      from public.organization_members my_om
+      join public.user_profiles up on up.id = my_om.user_profile_id
+      where up.auth_user_id = auth.uid()
+        and my_om.organization_id = o.id
+        and my_om.status = 'active'
+    )
+    or (v_role = 'organization_owner' and public.current_user_can_access_organization(o.id))
+    or (v_role = 'admin' and public.current_user_can_access_organization(o.id))
+  )
+    and (target_status is null or lower(o.status) = lower(target_status))
+  group by o.id
+  order by o.created_at asc;
+end;
+$$;
+
+revoke all on function public.owner_list_organizations(text) from public;
+grant execute on function public.owner_list_organizations(text) to authenticated;
+
+create or replace function public.owner_update_organization(
+  target_organization_id uuid,
+  target_name text,
+  target_type text,
+  target_status text,
+  target_city text,
+  target_address text
+)
+returns table (
+  id uuid,
+  name text,
+  type text,
+  status text,
+  city text,
+  address text,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_org public.organizations%rowtype;
+  v_role text := 'unassigned';
+begin
+  if target_organization_id is null then
+    raise exception 'organization_id is required';
+  end if;
+  if auth.uid() is null then
+    raise exception 'auth.uid() is required';
+  end if;
+
+  select coalesce(om.role, 'unassigned')
+    into v_role
+  from public.organization_members om
+  join public.user_profiles up on up.id = om.user_profile_id
+  where up.auth_user_id = auth.uid()
+    and om.organization_id = target_organization_id
+    and om.status = 'active'
+  order by case om.role
+    when 'platform_owner' then 0
+    when 'owner' then 0
+    when 'admin' then 1
+    when 'organization_owner' then 2
+    else 99 end
+  limit 1;
+
+  if not public._is_platform_owner() and v_role not in ('admin', 'organization_owner') then
+    raise exception 'Forbidden';
+  end if;
+
+update public.organizations o
+     set name = coalesce(nullif(trim(target_name), ''), o.name),
+         type = coalesce(nullif(trim(target_type), ''), o.type),
+         status = coalesce(nullif(trim(target_status), ''), o.status),
+         city = coalesce(nullif(trim(target_city), ''), o.city),
+         address = coalesce(nullif(trim(target_address), ''), o.address),
+         deleted_at = case
+           when lower(coalesce(target_status, '')) = 'deleted' then now()
+           when lower(coalesce(target_status, '')) = 'active' then null
+           when lower(coalesce(target_status, '')) = 'archived' then null
+           else o.deleted_at
+         end,
+         updated_at = now()
+   where o.id = target_organization_id
+   returning * into v_org;
+
+  if not found then
+    raise exception 'organization not found';
+  end if;
+
+  return query
+  select v_org.id, v_org.name, v_org.type, v_org.status, coalesce(v_org.city, ''), coalesce(v_org.address, ''), v_org.created_at, v_org.updated_at;
+end;
+$$;
+
+revoke all on function public.owner_update_organization(uuid, text, text, text, text, text) from public;
+grant execute on function public.owner_update_organization(uuid, text, text, text, text, text) to authenticated;
+
+create or replace function public.owner_archive_organization(
+  target_organization_id uuid
+)
+returns table (
+  id uuid,
+  name text,
+  type text,
+  status text,
+  city text,
+  address text,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+begin
+  if not public._is_platform_owner() then
+    raise exception 'Forbidden';
+  end if;
+  return query
+  select * from public.owner_update_organization(
+    target_organization_id,
+    null,
+    null,
+    'archived',
+    null,
+    null
+  );
+end;
+$$;
+
+revoke all on function public.owner_archive_organization(uuid) from public;
+grant execute on function public.owner_archive_organization(uuid) to authenticated;
+
+create or replace function public.owner_restore_organization(
+  target_organization_id uuid
+)
+returns table (
+  id uuid,
+  name text,
+  type text,
+  status text,
+  city text,
+  address text,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+begin
+  return query
+  select * from public.owner_update_organization(
+    target_organization_id,
+    null,
+    null,
+    'active',
+    null,
+    null
+  );
+end;
+$$;
+
+revoke all on function public.owner_restore_organization(uuid) from public;
+grant execute on function public.owner_restore_organization(uuid) to authenticated;
+
+create or replace function public.owner_delete_organization(
+  target_organization_id uuid
+)
+returns table (
+  id uuid,
+  name text,
+  type text,
+  status text,
+  city text,
+  address text,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+begin
+  return query
+  select * from public.owner_update_organization(
+    target_organization_id,
+    null,
+    null,
+    'deleted',
+    null,
+    null
+  );
+end;
+$$;
+
+revoke all on function public.owner_delete_organization(uuid) from public;
+grant execute on function public.owner_delete_organization(uuid) to authenticated;
+
 create or replace function public.owner_assign_user_to_organization(
   target_user_profile_id uuid,
   target_auth_user_id uuid,
@@ -447,6 +830,7 @@ declare
   v_profile public.user_profiles%rowtype;
   v_membership public.organization_members%rowtype;
   v_org public.organizations%rowtype;
+  v_actor_role text := 'unassigned';
   v_profile_found boolean := false;
   v_auth_user_id uuid := target_auth_user_id;
   v_email text := lower(coalesce(nullif(trim(target_email), ''), ''));
@@ -454,14 +838,30 @@ declare
   v_last_name text := '';
   v_status text := 'active';
 begin
-  if not public._is_platform_owner() then
-    raise exception 'Forbidden';
-  end if;
   if target_organization_id is null then
     raise exception 'organization_id is required';
   end if;
   if coalesce(nullif(trim(target_role), ''), '') = '' then
     raise exception 'role is required';
+  end if;
+
+  select coalesce(om.role, 'unassigned')
+    into v_actor_role
+  from public.organization_members om
+  join public.user_profiles up on up.id = om.user_profile_id
+  where up.auth_user_id = auth.uid()
+    and om.organization_id = target_organization_id
+    and om.status = 'active'
+  order by case om.role
+    when 'platform_owner' then 0
+    when 'owner' then 0
+    when 'admin' then 1
+    when 'organization_owner' then 2
+    else 99 end
+  limit 1;
+
+  if not public._is_platform_owner() and v_actor_role not in ('admin', 'organization_owner') then
+    raise exception 'Forbidden';
   end if;
 
   select o.* into v_org
@@ -616,15 +1016,32 @@ set search_path = public, auth
 as $$
 declare
   v_membership public.organization_members%rowtype;
+  v_actor_role text := 'unassigned';
 begin
-  if not public._is_platform_owner() then
-    raise exception 'Forbidden';
-  end if;
   if target_user_profile_id is null or target_organization_id is null then
     raise exception 'profile and organization are required';
   end if;
   if coalesce(nullif(trim(target_role), ''), '') = '' then
     raise exception 'role is required';
+  end if;
+
+  select coalesce(om.role, 'unassigned')
+    into v_actor_role
+  from public.organization_members om
+  join public.user_profiles up on up.id = om.user_profile_id
+  where up.auth_user_id = auth.uid()
+    and om.organization_id = target_organization_id
+    and om.status = 'active'
+  order by case om.role
+    when 'platform_owner' then 0
+    when 'owner' then 0
+    when 'admin' then 1
+    when 'organization_owner' then 2
+    else 99 end
+  limit 1;
+
+  if not public._is_platform_owner() and v_actor_role not in ('admin', 'organization_owner') then
+    raise exception 'Forbidden';
   end if;
 
   update public.user_profiles
@@ -680,12 +1097,29 @@ set search_path = public, auth
 as $$
 declare
   v_membership public.organization_members%rowtype;
+  v_actor_role text := 'unassigned';
 begin
-  if not public._is_platform_owner() then
-    raise exception 'Forbidden';
-  end if;
   if target_user_profile_id is null or target_organization_id is null then
     raise exception 'profile and organization are required';
+  end if;
+
+  select coalesce(om.role, 'unassigned')
+    into v_actor_role
+  from public.organization_members om
+  join public.user_profiles up on up.id = om.user_profile_id
+  where up.auth_user_id = auth.uid()
+    and om.organization_id = target_organization_id
+    and om.status = 'active'
+  order by case om.role
+    when 'platform_owner' then 0
+    when 'owner' then 0
+    when 'admin' then 1
+    when 'organization_owner' then 2
+    else 99 end
+  limit 1;
+
+  if not public._is_platform_owner() and v_actor_role not in ('admin', 'organization_owner') then
+    raise exception 'Forbidden';
   end if;
 
   update public.organization_members om
@@ -729,11 +1163,22 @@ security definer
 set search_path = public, auth
 as $$
 begin
-  if not public._is_platform_owner() then
-    raise exception 'Forbidden';
-  end if;
   if target_organization_id is null then
     raise exception 'organization_id is required';
+  end if;
+
+  if not public._is_platform_owner() then
+    perform 1
+    from public.organization_members om
+    join public.user_profiles up on up.id = om.user_profile_id
+    where up.auth_user_id = auth.uid()
+      and om.organization_id = target_organization_id
+      and om.status = 'active'
+      and om.role in ('admin', 'organization_owner')
+    limit 1;
+    if not found then
+      raise exception 'Forbidden';
+    end if;
   end if;
 
   return query
