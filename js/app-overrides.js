@@ -975,7 +975,13 @@
   async function loadOrganizationsForRestaurants(targetStatus) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     var filter = String(targetStatus || 'active').trim() || 'active';
-    if (!client) return [];
+    if (!client) {
+      var clientlessFallback = [];
+      if (filter === 'active' && window.__userSession && Array.isArray(window.__userSession.organizations)) {
+        clientlessFallback = window.__userSession.organizations.slice();
+      }
+      return clientlessFallback;
+    }
     var cache = getDataCache();
     var bucket = cache.organizationsByFilter[filter];
     if (bucket && Array.isArray(bucket.items)) {
@@ -995,6 +1001,23 @@
       try {
         var rows = await rpcOwnerListOrganizations(client, filter === 'all' ? null : filter);
         var items = rows.map(normalizeOrganizationRow).filter(Boolean);
+        if (!items.length && filter === 'active' && window.__userSession && Array.isArray(window.__userSession.organizations)) {
+          items = window.__userSession.organizations.map(function (org) {
+            if (!org) return org;
+            return normalizeOrganizationRow({
+              id: org.id,
+              name: org.name,
+              type: org.type,
+              status: org.status,
+              city: org.city,
+              address: org.address,
+              created_at: org.created_at || org.createdAt || '',
+              updated_at: org.updated_at || org.updatedAt || '',
+              members_count: org.membersCount || 0,
+              active_members_count: org.activeMembersCount || 0
+            });
+          }).filter(Boolean);
+        }
         bucket.items = items.slice();
         bucket.error = null;
         bucket.loadedAt = Date.now();
@@ -1040,7 +1063,23 @@
           hint: error && error.hint ? error.hint : '',
           raw: error
         };
-        bucket.items = [];
+        bucket.items = (filter === 'active' && window.__userSession && Array.isArray(window.__userSession.organizations))
+          ? window.__userSession.organizations.map(function (org) {
+              if (!org) return org;
+              return normalizeOrganizationRow({
+                id: org.id,
+                name: org.name,
+                type: org.type,
+                status: org.status,
+                city: org.city,
+                address: org.address,
+                created_at: org.created_at || org.createdAt || '',
+                updated_at: org.updated_at || org.updatedAt || '',
+                members_count: org.membersCount || 0,
+                active_members_count: org.activeMembersCount || 0
+              });
+            }).filter(Boolean)
+          : [];
         if (typeof window.renderRestaurants === 'function' && String(window.__orgListFilter || 'active').trim() === filter) {
           window.renderRestaurants();
         }
