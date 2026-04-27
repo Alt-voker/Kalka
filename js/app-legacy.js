@@ -4102,6 +4102,22 @@ function getOrganizationMembersBucket(orgId){
   var cache = window.__dataCache && window.__dataCache.organizationMembersByOrg ? window.__dataCache.organizationMembersByOrg[String(orgId || '')] : null;
   return cache || null;
 }
+function setModalBusy(modalId, busy){
+  var modal = document.getElementById(modalId);
+  if (!modal) return;
+  modal.classList.toggle('busy', !!busy);
+  var controls = modal.querySelectorAll('button, select, input');
+  controls.forEach(function (el) {
+    if (!el) return;
+    if (busy) {
+      if (el.dataset.prevDisabled === undefined) el.dataset.prevDisabled = el.disabled ? '1' : '0';
+      el.disabled = true;
+    } else if (el.dataset.prevDisabled !== undefined) {
+      el.disabled = el.dataset.prevDisabled === '1';
+      delete el.dataset.prevDisabled;
+    }
+  });
+}
 function getOrganizationById(orgId){
   var session = window.__userSession || {};
   var organizations = Array.isArray(session.organizations) ? session.organizations : [];
@@ -4261,32 +4277,40 @@ window.changeOrganizationMemberRole = async function (userProfileId, orgId, role
   try {
     if (!userProfileId || !orgId || !role) throw new Error('Не хватает данных для изменения роли');
     if (typeof window.ownerUpdateUserRole !== 'function') throw new Error('RPC для изменения роли недоступен');
+    setModalBusy('ov-orgMembers', true);
     var result = await window.ownerUpdateUserRole(userProfileId, orgId, role);
     if (!result || !result.membership_id) throw new Error('Не удалось сохранить роль пользователя');
     if (typeof window.refreshOrganizationMembersForOrganization === 'function') {
       await window.refreshOrganizationMembersForOrganization(orgId);
     }
+    if (typeof window.toast === 'function') window.toast('Роль пользователя обновлена', 'ok');
     return true;
   } catch (error) {
     console.error('changeOrganizationMemberRole failed:', error);
     if (typeof window.toast === 'function') window.toast(error && error.message ? error.message : 'Не удалось сохранить роль пользователя', 'err');
     return false;
+  } finally {
+    setModalBusy('ov-orgMembers', false);
   }
 };
 window.removeOrganizationMemberFromOrganization = async function (userProfileId, orgId) {
   try {
     if (!userProfileId || !orgId) throw new Error('Не хватает данных для отключения');
     if (typeof window.ownerRemoveUserFromOrganization !== 'function') throw new Error('RPC для отключения недоступен');
+    setModalBusy('ov-orgMembers', true);
     var result = await window.ownerRemoveUserFromOrganization(userProfileId, orgId);
     if (!result || !result.membership_id) throw new Error('Не удалось отключить пользователя от организации');
     if (typeof window.refreshOrganizationMembersForOrganization === 'function') {
       await window.refreshOrganizationMembersForOrganization(orgId);
     }
+    if (typeof window.toast === 'function') window.toast('Пользователь отключён от организации', 'ok');
     return true;
   } catch (error) {
     console.error('removeOrganizationMemberFromOrganization failed:', error);
     if (typeof window.toast === 'function') window.toast(error && error.message ? error.message : 'Не удалось отключить пользователя', 'err');
     return false;
+  } finally {
+    setModalBusy('ov-orgMembers', false);
   }
 };
 
@@ -4404,6 +4428,7 @@ window.submitOrganizationMemberAdd = async function () {
     if (!orgId) throw new Error('Организация не выбрана');
     if (!userProfileId) throw new Error('Выберите пользователя');
     if (!role) throw new Error('Выберите роль');
+    setModalBusy('ov-orgMemberAdd', true);
     var cache = getDataCache();
     var user = null;
     if (cache.ownerUsers && Array.isArray(cache.ownerUsers.items)) {
@@ -4437,6 +4462,8 @@ window.submitOrganizationMemberAdd = async function () {
     console.error('submitOrganizationMemberAdd failed:', error);
     if (typeof window.toast === 'function') window.toast(error && error.message ? error.message : 'Не удалось добавить пользователя в организацию', 'err');
     return false;
+  } finally {
+    setModalBusy('ov-orgMemberAdd', false);
   }
 };
 
@@ -4767,6 +4794,7 @@ window.archiveOrganizationFromCard = async function (orgId) {
     var result = await window.ownerArchiveOrganization(orgId);
     if (!result || !result.id) throw new Error('Не удалось архивировать организацию');
     refreshOrgCachesAfterMutation(result);
+    if (typeof window.toast === 'function') window.toast('Организация архивирована', 'ok');
     return true;
   } catch (error) {
     console.error('archiveOrganizationFromCard failed:', error);
@@ -4779,6 +4807,7 @@ window.restoreOrganizationFromCard = async function (orgId) {
     var result = await window.ownerRestoreOrganization(orgId);
     if (!result || !result.id) throw new Error('Не удалось восстановить организацию');
     refreshOrgCachesAfterMutation(result);
+    if (typeof window.toast === 'function') window.toast('Организация восстановлена', 'ok');
     return true;
   } catch (error) {
     console.error('restoreOrganizationFromCard failed:', error);
@@ -4797,6 +4826,7 @@ window.deleteOrganizationFromCard = async function (orgId) {
       await window.refreshOrganizationsForRestaurants('active').catch(function () {});
     }
     if (typeof renderRestaurants === 'function') renderRestaurants();
+    if (typeof window.toast === 'function') window.toast('Организация скрыта из платформы', 'ok');
     return true;
   } catch (error) {
     console.error('deleteOrganizationFromCard failed:', error);
