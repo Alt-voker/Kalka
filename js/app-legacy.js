@@ -3828,16 +3828,53 @@ function setOrganizationListFilter(filter){
   if(typeof renderRestaurants === 'function') renderRestaurants();
 }
 
+function normalizeOrganizationForRender(org) {
+  if (!org) return null;
+  var id = String(org.id || org.organization_id || org.organizationId || '').trim();
+  if (!id) return null;
+  return {
+    id: id,
+    name: org.name || org.organization_name || org.brandName || org.legalName || 'Организация без названия',
+    status: String(org.status || 'active').trim().toLowerCase() || 'active',
+    type: org.type || org.kind || 'restaurant',
+    role: org.role || '',
+    city: org.city || '',
+    address: org.address || '',
+    created_at: org.created_at || org.createdAt || '',
+    updated_at: org.updated_at || org.updatedAt || '',
+    membersCount: Number(org.membersCount || org.members_count || 0) || 0,
+    activeMembersCount: Number(org.activeMembersCount || org.active_members_count || 0) || 0
+  };
+}
+
+function filterOrganizationsForTab(orgs, orgFilter) {
+  var filter = String(orgFilter || 'active').trim().toLowerCase() || 'active';
+  var normalized = Array.isArray(orgs) ? orgs.map(normalizeOrganizationForRender).filter(Boolean) : [];
+  if (!normalized.length) return [];
+  if (filter === 'archived') {
+    return normalized.filter(function (org) {
+      var status = String(org.status || 'active').toLowerCase();
+      return status === 'archived' || status === 'inactive';
+    });
+  }
+  if (filter === 'deleted') {
+    return normalized.filter(function (org) {
+      return String(org.status || 'active').toLowerCase() === 'deleted';
+    });
+  }
+  if (filter === 'all') return normalized.slice();
+  return normalized.filter(function (org) {
+    return String(org.status || 'active').toLowerCase() === 'active';
+  });
+}
+
 function getOrganizationsByCurrentFilterSafe(orgFilter, currentRole) {
   var session = window.__userSession || {};
   var orgs = Array.isArray(session.organizations) ? session.organizations.slice() : [];
   var filter = String(orgFilter || 'active').trim() || 'active';
-  if (filter === 'active') {
-    return orgs.filter(function (org) {
-      if (!org) return false;
-      var status = String(org.status || 'active').toLowerCase();
-      return status === 'active';
-    }).map(function (org) {
+  var sessionFiltered = filterOrganizationsForTab(orgs, filter);
+  if (sessionFiltered.length) {
+    return sessionFiltered.map(function (org) {
       var membersCount = typeof org.membersCount === 'number' ? org.membersCount : getOrganizationMembersCountFromCache(org.id);
       return Object.assign({}, org, {
         membersCount: typeof membersCount === 'number' ? membersCount : 0,
@@ -3910,10 +3947,12 @@ function syncOrganizationListItemIntoSession(org) {
 function renderRestaurants(){
   var el=document.getElementById('restGrid');
   var session = window.__userSession || {};
+  var sessionOrgsRaw = Array.isArray(session.organizations) ? session.organizations.slice() : [];
+  var normalizedSessionOrgs = sessionOrgsRaw.map(normalizeOrganizationForRender).filter(Boolean);
   var activeOrgId = String(session.activeOrganizationId || '').trim();
   var currentRole = normalizeLegacyRoleSafe((session.currentUser && session.currentUser.role) || (window.CU && window.CU.role) || 'unassigned');
   var perms = getOrganizationActionRolePermissions(currentRole);
-  var orgFilter = String(window.__orgListFilter || 'active').trim() || 'active';
+  var orgFilter = String(window.__orgListFilter || 'active').trim().toLowerCase() || 'active';
   var sub = document.getElementById('restPageSub');
   if(!el){
     console.error('renderRestaurants: restGrid container not found');
@@ -3945,31 +3984,24 @@ function renderRestaurants(){
   }
 
   renderToolbar();
+  console.info('renderRestaurants window.__userSession.organizations', sessionOrgsRaw);
+  console.info('renderRestaurants organizations before filter', sessionOrgsRaw);
+  console.info('renderRestaurants active filter', orgFilter);
+  var bucket = window.__dataCache && window.__dataCache.organizationsByFilter ? window.__dataCache.organizationsByFilter[orgFilter] : null;
   var visibleOrgs = getOrganizationsByCurrentFilterSafe(orgFilter, currentRole);
-  console.info('renderRestaurants organizations count', visibleOrgs.length, 'activeOrganizationId', activeOrgId, 'filter', orgFilter);
+  if ((!Array.isArray(visibleOrgs) || !visibleOrgs.length) && sessionOrgsRaw.length) {
+    visibleOrgs = filterOrganizationsForTab(sessionOrgsRaw, orgFilter);
+  }
+  console.info('renderRestaurants organizations after filter', visibleOrgs);
+  console.info('renderRestaurants current tab/status filter', orgFilter);
 
-  function toCardOrg(org){
-    if(!org) return null;
-    var id = String(org.id || org.organization_id || org.organizationId || '').trim();
-    if(!id) return null;
-    var activeCount = typeof org.activeMembersCount === 'number' ? org.activeMembersCount : getOrganizationMembersCountFromCache(id);
-    var totalMembers = typeof org.membersCount === 'number' ? org.membersCount : activeCount;
-    return {
-      id: id,
-      name: org.name || org.brandName || org.legalName || 'Организация без названия',
-      type: org.type || org.kind || 'organization',
-      status: org.status || 'active',
-      role: org.role || currentRole,
-      city: org.city || '',
-      address: org.address || '',
-      membersCount: typeof totalMembers === 'number' ? totalMembers : 0,
-      activeMembersCount: typeof activeCount === 'number' ? activeCount : 0,
-      createdAt: org.created_at || org.createdAt || '',
-      updatedAt: org.updated_at || org.updatedAt || ''
-    };
+  var orgRows = (Array.isArray(visibleOrgs) ? visibleOrgs : []).map(normalizeOrganizationForRender).filter(Boolean);
+  if (!orgRows.length && sessionOrgsRaw.length && orgFilter === 'active') {
+    orgRows = normalizedSessionOrgs.filter(function (org) {
+      return String(org.status || 'active').toLowerCase() === 'active';
+    });
   }
 
-  var orgRows = visibleOrgs.map(toCardOrg).filter(Boolean);
   if(!orgRows.length && orgFilter === 'active'){
     el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--t3);background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:18px;box-shadow:0 10px 28px rgba(15,23,42,.08);">'
       +'<div style="font-size:48px;margin-bottom:12px;">🏢</div>'
@@ -3980,7 +4012,6 @@ function renderRestaurants(){
   }
 
   if(!orgRows.length){
-    var bucket = window.__dataCache && window.__dataCache.organizationsByFilter ? window.__dataCache.organizationsByFilter[orgFilter] : null;
     if(bucket && bucket.error){
       el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:50px 20px;color:var(--t3);background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:18px;box-shadow:0 10px 28px rgba(15,23,42,.08);">'
         +'<div style="font-size:16px;font-weight:700;margin-bottom:8px;">Не удалось загрузить организации</div>'
@@ -4006,46 +4037,48 @@ function renderRestaurants(){
   }
 
   el.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px;">'+orgRows.map(function(org){
-    var status = String(org.status || 'active').toLowerCase();
-    var isActive = String(org.id) === activeOrgId;
+    var normalizedOrg = normalizeOrganizationForRender(org) || org;
+    var status = String(normalizedOrg.status || 'active').toLowerCase();
+    if (!status || status === 'undefined') status = 'active';
+    var isActive = String(normalizedOrg.id) === activeOrgId;
     var isArchived = status === 'archived';
     var isDeleted = status === 'deleted';
     var canEdit = perms.canEdit && !isDeleted;
     var canManageMembers = perms.canManageMembers && !isDeleted;
     var canArchive = perms.canArchive && !isDeleted;
     var canDelete = perms.canDelete && !isDeleted;
-    var membersLabel = getOrganizationMembersCountFromCache(org.id);
-    if (membersLabel === null) membersLabel = Number(org.activeMembersCount || org.membersCount || 0) || 0;
+    var membersLabel = getOrganizationMembersCountFromCache(normalizedOrg.id);
+    if (membersLabel === null) membersLabel = Number(normalizedOrg.activeMembersCount || normalizedOrg.membersCount || 0) || 0;
     var currentBadge = isActive
       ? '<span class="badge" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);">Текущая организация</span>'
       : (status === 'active'
-        ? '<button class="tbBtn" onclick="setActiveOrganization(\''+org.id+'\')" style="cursor:pointer;">Переключиться на эту организацию</button>'
+        ? '<button class="tbBtn" onclick="setActiveOrganization(\''+normalizedOrg.id+'\')" style="cursor:pointer;">Переключиться на эту организацию</button>'
         : '<span class="badge" style="background:#eef2f7;color:#475569;border:1px solid #cbd5e1;">'+getOrganizationStatusLabelSafe(status)+'</span>');
     var archiveBtn = '';
     if (canArchive) {
       archiveBtn = isArchived
-        ? '<button class="tbBtn" onclick="restoreOrganizationFromCard(\''+org.id+'\')" style="cursor:pointer;" title="Восстановить организацию">Восстановить</button>'
-        : '<button class="tbBtn" onclick="archiveOrganizationFromCard(\''+org.id+'\')" style="cursor:pointer;" title="Архивировать организацию">Архивировать</button>';
+        ? '<button class="tbBtn" onclick="restoreOrganizationFromCard(\''+normalizedOrg.id+'\')" style="cursor:pointer;" title="Восстановить организацию">Восстановить</button>'
+        : '<button class="tbBtn" onclick="archiveOrganizationFromCard(\''+normalizedOrg.id+'\')" style="cursor:pointer;" title="Архивировать организацию">Архивировать</button>';
     }
     var deleteBtn = canDelete
-      ? '<button class="tbBtn" onclick="deleteOrganizationFromCard(\''+org.id+'\')" style="cursor:pointer;" title="Удалить организацию мягко">Удалить</button>'
+      ? '<button class="tbBtn" onclick="deleteOrganizationFromCard(\''+normalizedOrg.id+'\')" style="cursor:pointer;" title="Удалить организацию мягко">Удалить</button>'
       : '';
     return '<div class="panel" style="background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);border:1px solid rgba(148,163,184,.16);border-radius:18px;overflow:hidden;">'
       +'<div class="ph" style="padding:18px 18px 0 18px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'
         +'<div style="min-width:0;">'
-          +'<div class="pt" style="font-size:18px;line-height:1.2;word-break:break-word;">'+(org.name||'Организация без названия')+'</div>'
+          +'<div class="pt" style="font-size:18px;line-height:1.2;word-break:break-word;">'+(normalizedOrg.name||'Организация без названия')+'</div>'
           +'<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
-            +'<span class="badge" style="background:#eef6ff;color:#2463eb;border:1px solid #cfe2ff;">'+getOrganizationTypeLabelSafe(org.type)+'</span>'
+            +'<span class="badge" style="background:#eef6ff;color:#2463eb;border:1px solid #cfe2ff;">'+getOrganizationTypeLabelSafe(normalizedOrg.type)+'</span>'
             +'<span class="badge" style="'+(status==='active' ? 'background:var(--grD);color:var(--gr);border:1px solid var(--gr);' : 'background:#eef2f7;color:#475569;border:1px solid #cbd5e1;')+'">'+getOrganizationStatusLabelSafe(status)+'</span>'
-            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Роль: '+getOrganizationRoleLabelSafe(org.role || currentRole)+'</span>'
-            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">'+getOrganizationMembersLabelSafe(org.membersCount || 0)+'</span>'
+            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Роль: '+getOrganizationRoleLabelSafe(normalizedOrg.role || currentRole)+'</span>'
+            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">'+getOrganizationMembersLabelSafe(normalizedOrg.membersCount || 0)+'</span>'
           +'</div>'
         +'</div>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">'
           +currentBadge
-          +'<button class="tbBtn" onclick="openOrganizationDetailsModal(\''+org.id+'\')" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
-          +(canManageMembers ? '<button class="tbBtn" onclick="openOrganizationMembersModal(\''+org.id+'\')" style="cursor:pointer;">Участники</button>' : '')
-          +(canEdit ? '<button class="tbBtn" onclick="openEditOrganizationModal(\''+org.id+'\')" style="cursor:pointer;">Редактировать</button>' : '')
+          +'<button class="tbBtn" onclick="openOrganizationDetailsModal(\''+normalizedOrg.id+'\')" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
+          +(canManageMembers ? '<button class="tbBtn" onclick="openOrganizationMembersModal(\''+normalizedOrg.id+'\')" style="cursor:pointer;">Участники</button>' : '')
+          +(canEdit ? '<button class="tbBtn" onclick="openEditOrganizationModal(\''+normalizedOrg.id+'\')" style="cursor:pointer;">Редактировать</button>' : '')
           +(canArchive ? archiveBtn : '')
           +(canDelete ? deleteBtn : '')
         +'</div>'
@@ -4058,11 +4091,11 @@ function renderRestaurants(){
           +'</div>'
           +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;">'
             +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;">Участники</div>'
-            +'<div style="margin-top:6px;font-size:14px;font-weight:700;">'+getOrganizationMembersLabelSafe(org.membersCount || 0)+'</div>'
+            +'<div style="margin-top:6px;font-size:14px;font-weight:700;">'+getOrganizationMembersLabelSafe(normalizedOrg.membersCount || 0)+'</div>'
           +'</div>'
           +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;">'
             +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;">Тип</div>'
-            +'<div style="margin-top:6px;font-size:14px;font-weight:700;">'+getOrganizationTypeLabelSafe(org.type)+'</div>'
+            +'<div style="margin-top:6px;font-size:14px;font-weight:700;">'+getOrganizationTypeLabelSafe(normalizedOrg.type)+'</div>'
           +'</div>'
           +'<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;">'
             +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.04em;">Режим</div>'
@@ -4070,14 +4103,14 @@ function renderRestaurants(){
           +'</div>'
         +'</div>'
         +'<div style="font-size:13px;color:var(--t2);line-height:1.5;">'
-          +(org.city ? '<div><b>Город:</b> '+_esc(org.city)+'</div>' : '')
-          +(org.address ? '<div><b>Адрес:</b> '+_esc(org.address)+'</div>' : '')
+          +(normalizedOrg.city ? '<div><b>Город:</b> '+_esc(normalizedOrg.city)+'</div>' : '')
+          +(normalizedOrg.address ? '<div><b>Адрес:</b> '+_esc(normalizedOrg.address)+'</div>' : '')
         +'</div>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">'
-          +'<button class="tbBtn" onclick="openOrganizationDetailsModal(\''+org.id+'\')" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
+          +'<button class="tbBtn" onclick="openOrganizationDetailsModal(\''+normalizedOrg.id+'\')" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
           +currentBadge
-          +(canManageMembers ? '<button class="tbBtn" onclick="openOrganizationMembersModal(\''+org.id+'\')" style="cursor:pointer;">Участники</button>' : '')
-          +(canEdit ? '<button class="tbBtn" onclick="openEditOrganizationModal(\''+org.id+'\')" style="cursor:pointer;">Редактировать</button>' : '')
+          +(canManageMembers ? '<button class="tbBtn" onclick="openOrganizationMembersModal(\''+normalizedOrg.id+'\')" style="cursor:pointer;">Участники</button>' : '')
+          +(canEdit ? '<button class="tbBtn" onclick="openEditOrganizationModal(\''+normalizedOrg.id+'\')" style="cursor:pointer;">Редактировать</button>' : '')
           +(canArchive ? archiveBtn : '')
           +(canDelete ? deleteBtn : '')
         +'</div>'
