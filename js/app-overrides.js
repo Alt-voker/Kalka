@@ -1862,7 +1862,29 @@
     if (emailInput) emailInput.value = user.email || '';
     var orgSelect = document.getElementById('auo-org');
     if (orgSelect) {
-      var organizations = (window.__userSession && Array.isArray(window.__userSession.organizations)) ? window.__userSession.organizations : [];
+      var sessionOrganizations = (window.__userSession && Array.isArray(window.__userSession.organizations)) ? window.__userSession.organizations.slice() : [];
+      var fallbackOrganizations = [];
+      if (window.__userSession && window.__userSession.activeOrganization) fallbackOrganizations.push(window.__userSession.activeOrganization);
+      if (window.activeRest && window.activeRest.id && window.activeRest.id !== 'r0') {
+        fallbackOrganizations.push({
+          id: window.activeRest.organizationId || window.activeRest.id,
+          name: window.activeRest.name || 'Организация',
+          type: window.activeRest.type || window.activeRest.kind || 'organization',
+          status: window.activeRest.status || 'active'
+        });
+      }
+      var organizations = sessionOrganizations.concat(fallbackOrganizations).reduce(function (acc, org) {
+        if (!org) return acc;
+        var orgId = String(org.id || org.organization_id || org.organizationId || '').trim();
+        if (!orgId || acc.some(function (item) { return String(item.id || '') === orgId; })) return acc;
+        acc.push({
+          id: orgId,
+          name: org.name || org.brandName || org.legalName || 'Организация',
+          type: org.type || org.kind || 'organization',
+          status: org.status || 'active'
+        });
+        return acc;
+      }, []);
       orgSelect.innerHTML = '<option value="">Выберите организацию</option>' + organizations.map(function (org) {
         return '<option value="' + org.id + '">' + (org.name || 'Организация') + '</option>';
       }).join('');
