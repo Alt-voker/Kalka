@@ -3988,19 +3988,25 @@ function renderRestaurants(){
   console.info('renderRestaurants organizations before filter', sessionOrgsRaw);
   console.info('renderRestaurants active filter', orgFilter);
   var bucket = window.__dataCache && window.__dataCache.organizationsByFilter ? window.__dataCache.organizationsByFilter[orgFilter] : null;
-  var visibleOrgs = getOrganizationsByCurrentFilterSafe(orgFilter, currentRole);
-  if ((!Array.isArray(visibleOrgs) || !visibleOrgs.length) && sessionOrgsRaw.length) {
-    visibleOrgs = filterOrganizationsForTab(sessionOrgsRaw, orgFilter);
+  var normalized = normalizedSessionOrgs.slice();
+  var filtered = normalized.filter(function (org) {
+    var status = String(org.status || 'active').toLowerCase();
+    if (orgFilter === 'archived') return status === 'archived' || status === 'inactive';
+    if (orgFilter === 'deleted') return status === 'deleted';
+    if (orgFilter === 'all') return true;
+    return status === 'active';
+  });
+  var finalList = filtered.length > 0 ? filtered : normalized;
+  if (!finalList.length && bucket && Array.isArray(bucket.items) && bucket.items.length) {
+    finalList = bucket.items.map(normalizeOrganizationForRender).filter(Boolean);
   }
-  console.info('renderRestaurants organizations after filter', visibleOrgs);
+  console.info('renderRestaurants organizations after filter', filtered);
   console.info('renderRestaurants current tab/status filter', orgFilter);
+  console.info('normalized orgs', normalized);
+  console.info('filtered orgs', filtered);
+  console.info('final orgs', finalList);
 
-  var orgRows = (Array.isArray(visibleOrgs) ? visibleOrgs : []).map(normalizeOrganizationForRender).filter(Boolean);
-  if (!orgRows.length && sessionOrgsRaw.length && orgFilter === 'active') {
-    orgRows = normalizedSessionOrgs.filter(function (org) {
-      return String(org.status || 'active').toLowerCase() === 'active';
-    });
-  }
+  var orgRows = finalList.map(normalizeOrganizationForRender).filter(Boolean);
 
   if(!orgRows.length && orgFilter === 'active'){
     el.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--t3);background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:18px;box-shadow:0 10px 28px rgba(15,23,42,.08);">'
