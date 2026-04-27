@@ -4178,7 +4178,7 @@ function saveRestRules(){
 }
 
 // Переопределяем submitRest с поддержкой редактирования
-function submitRest(){
+async function submitRest(){
   var n=(document.getElementById('ar-n')||{value:''}).value.trim();
   if(!n){toast('Укажите название','err');return;}
   var brandName=(document.getElementById('ar-brand')||{value:''}).value.trim()||n;
@@ -4205,6 +4205,14 @@ function submitRest(){
   var db=dbGet();
   var modal=document.getElementById('ov-addRest');
   var editId=modal&&modal.dataset.editId;
+  var client = window.__supabase || window.supabaseClient || window.sb || window.SB;
+  var session = window.__userSession || {};
+  var currentRole = (session.currentUser && session.currentUser.role) || (CU && CU.role) || 'unassigned';
+  var normalizeRoleSafe = window.normalizeRole || window.normalizeLegacyRole || function(role) {
+    if (!role) return 'unassigned';
+    if (role === 'platform_owner') return 'owner';
+    return role;
+  };
 
   if(editId){
     // Редактирование
@@ -4234,30 +4242,118 @@ function submitRest(){
     toast('✅ «'+n+'» обновлён!','ok');
   } else {
     // Создание нового
-    var newRest={
-      id:'r'+Date.now(),
-      name:n,
-      emoji:(document.getElementById('ar-em')||{value:'🍽️'}).value||'🍽️',
-      type:(document.getElementById('ar-t')||{value:'Ресторан'}).value,
-      city:(document.getElementById('ar-city')||{value:''}).value.trim(),
-      brandName:brandName,
-      addr:(document.getElementById('ar-addr')||{value:''}).value.trim(),
-      legalName:legalName,
-      legalEntities:legalEntities.slice(),
-      assignedLegalEntities:assignedLegalEntities.slice(),
-      responsibles:responsibles,
-      deliveryZone:deliveryZone,
-      receivingSchedule:receivingSchedule,
-      zones:zones,
-      orderTemplates:[],
-      purchaseRules:{},
-      members:[]
-    };
-    db.restaurants.push(newRest);
-    dbSet(db);
-    closeModal('addRest');
-    toast('✅ «'+n+'» добавлен!','ok');
-    logAudit(auditActor(), 'Создал заведение «'+n+'»','Рестораны');
+    if(!client){
+      console.error('submitRest create failed: supabase client missing');
+      toast('Сервис авторизации временно недоступен. Обратитесь к администратору','err');
+      return;
+    }
+    try {
+      if(!session || !session.currentUser){
+        throw new Error('Не удалось определить текущего пользователя');
+      }
+      var authUserId = String(session.currentUser.authUserId || session.authUserId || '').trim();
+      if(!authUserId){
+        throw new Error('Не удалось определить auth_user_id текущего пользователя');
+      }
+      var profileResponse = await client.from('user_profiles').select('id, auth_user_id, email').eq('auth_user_id', authUserId).maybeSingle();
+      if(profileResponse.error || !profileResponse.data){
+        throw profileResponse.error || new Error('Не удалось найти профиль пользователя');
+      }
+      var profileId = profileResponse.data.id;
+      var organizationPayload = {
+        name: n,
+        type: (document.getElementById('ar-t')||{value:'Ресторан'}).value || 'restaurant',
+        status: 'active'
+      };
+      var organizationInsert = await client.from('organizations').insert(organizationPayload).select('id, name, type, status, created_at, updated_at').single();
+      if(organizationInsert.error || !organizationInsert.data){
+        throw organizationInsert.error || new Error('Не удалось создать организацию');
+      }
+      var createdOrganization = organizationInsert.data;
+      var memberRole = normalizeRoleSafe(currentRole) === 'owner' ? 'platform_owner' : 'organization_owner';
+      var membershipInsert = await client.from('organization_members').insert({
+        organization_id: createdOrganization.id,
+        user_profile_id: profileId,
+        role: memberRole,
+        status: 'active'
+      }).select('id, organization_id, user_profile_id, role, status').single();
+      if(membershipInsert.error || !membershipInsert.data){
+        throw membershipInsert.error || new Error('Не удалось добавить пользователя в организацию');
+      }
+      var confirmOrganization = await client.from('organizations').select('id, name, type, status').eq('id', createdOrganization.id).maybeSingle();
+      if(confirmOrganization.error || !confirmOrganization.data){
+        throw confirmOrganization.error || new Error('Контрольный select организации не удался');
+      }
+      if(window.AuthServerFirst && typeof window.AuthServerFirst.initUserSession === 'function'){
+        var refreshed = await window.AuthServerFirst.initUserSession({ id: authUserId }, { forceReload: true });
+        if(refreshed){
+          refreshed.activeOrganizationId = createdOrganization.id;
+          refreshed.activeOrganization = {
+            id: createdOrganization.id,
+            name: createdOrganization.name || n,
+            type: createdOrganization.type || 'restaurant',
+            status: createdOrganization.status || 'active'
+          };
+          refreshed.noOrganization = false;
+          if(refreshed.currentUser){
+            refreshed.currentUser.activeOrganizationId = createdOrganization.id;
+            refreshed.currentUser.organizationId = createdOrganization.id;
+            refreshed.currentUser.company = createdOrganization.name || n;
+          }
+          window.__userSession = refreshed;
+          window.CU = refreshed.currentUser || window.CU;
+          window.activeRest = {
+            id: createdOrganization.id,
+            organizationId: createdOrganization.id,
+            name: createdOrganization.name || n,
+            kind: createdOrganization.type || 'restaurant',
+            type: createdOrganization.type || 'restaurant',
+            members: []
+          };
+        }
+      } else if(window.__userSession){
+        window.__userSession.organizations = Array.isArray(window.__userSession.organizations) ? window.__userSession.organizations : [];
+        window.__userSession.organizations.push({
+          id: createdOrganization.id,
+          name: createdOrganization.name || n,
+          type: createdOrganization.type || 'restaurant',
+          status: createdOrganization.status || 'active'
+        });
+        window.__userSession.activeOrganizationId = createdOrganization.id;
+        window.__userSession.activeOrganization = {
+          id: createdOrganization.id,
+          name: createdOrganization.name || n,
+          type: createdOrganization.type || 'restaurant',
+          status: createdOrganization.status || 'active'
+        };
+        window.__userSession.noOrganization = false;
+        if(window.__userSession.currentUser){
+          window.__userSession.currentUser.activeOrganizationId = createdOrganization.id;
+          window.__userSession.currentUser.organizationId = createdOrganization.id;
+          window.__userSession.currentUser.company = createdOrganization.name || n;
+        }
+        window.CU = window.__userSession.currentUser || window.CU;
+        window.activeRest = {
+          id: createdOrganization.id,
+          organizationId: createdOrganization.id,
+          name: createdOrganization.name || n,
+          kind: createdOrganization.type || 'restaurant',
+          type: createdOrganization.type || 'restaurant',
+          members: []
+        };
+      }
+      closeModal('addRest');
+      toast('✅ «'+n+'» добавлен!','ok');
+      console.info('organization created', {
+        organizationId: createdOrganization.id,
+        profileId: profileId,
+        membershipRole: memberRole
+      });
+    } catch (error) {
+      console.error('submitRest create failed', error);
+      toast((error && error.message) ? error.message : 'Не удалось создать организацию','err');
+      return;
+    }
   }
   renderRestaurants();
   renderRestPick();
