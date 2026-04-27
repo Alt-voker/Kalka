@@ -4680,7 +4680,8 @@ window.submitOrganizationMemberAdd = async function () {
       target_auth_user_id: user.authUserId || user.auth_user_id || '',
       target_email: user.email || '',
       target_organization_id: orgId,
-      target_role: role
+      target_role: role,
+      target_status: 'active'
     };
     console.info('assign user payload', payload);
     var result = await window.ownerAssignUserToOrganization(payload);

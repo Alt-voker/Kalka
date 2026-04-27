@@ -808,7 +808,8 @@ create or replace function public.owner_assign_user_to_organization(
   target_auth_user_id uuid,
   target_email text,
   target_organization_id uuid,
-  target_role text
+  target_role text,
+  target_status text default 'active'
 )
 returns table (
   membership_id uuid,
@@ -837,13 +838,19 @@ declare
   v_email text := lower(coalesce(nullif(trim(target_email), ''), ''));
   v_first_name text := 'Пользователь';
   v_last_name text := '';
-  v_status text := 'active';
+  v_status text := lower(trim(coalesce(target_status, 'active')));
 begin
   if target_organization_id is null then
     raise exception 'organization_id is required';
   end if;
   if coalesce(nullif(trim(v_target_role), ''), '') = '' then
     raise exception 'role is required';
+  end if;
+  if coalesce(nullif(trim(v_status), ''), '') = '' then
+    v_status := 'active';
+  end if;
+  if v_status not in ('active', 'inactive') then
+    v_status := 'active';
   end if;
 
   select coalesce(om.role, 'unassigned')
@@ -952,7 +959,7 @@ begin
 
   update public.organization_members om
      set role = v_target_role,
-         status = 'active',
+         status = v_status,
          updated_at = now()
    where om.organization_id = target_organization_id
      and om.user_profile_id = v_profile.id
@@ -968,7 +975,7 @@ begin
       target_organization_id,
       v_profile.id,
       v_target_role,
-      'active'
+      v_status
     )
     returning * into v_membership;
   end if;
@@ -999,8 +1006,8 @@ begin
 end;
 $$;
 
-revoke all on function public.owner_assign_user_to_organization(uuid, uuid, text, uuid, text) from public;
-grant execute on function public.owner_assign_user_to_organization(uuid, uuid, text, uuid, text) to authenticated;
+revoke all on function public.owner_assign_user_to_organization(uuid, uuid, text, uuid, text, text) from public;
+grant execute on function public.owner_assign_user_to_organization(uuid, uuid, text, uuid, text, text) to authenticated;
 
 create or replace function public.owner_update_user_role(
   target_user_profile_id uuid,
