@@ -464,18 +464,18 @@ begin
     raise exception 'role is required';
   end if;
 
-  select * into v_org
-  from public.organizations
-  where id = target_organization_id
+  select o.* into v_org
+  from public.organizations o
+  where o.id = target_organization_id
   limit 1;
   if not found then
     raise exception 'organization not found';
   end if;
 
   if target_user_profile_id is not null then
-    select * into v_profile
-    from public.user_profiles
-    where id = target_user_profile_id
+    select up.* into v_profile
+    from public.user_profiles up
+    where up.id = target_user_profile_id
     limit 1;
     v_profile_found := found;
   end if;
@@ -529,7 +529,7 @@ begin
       from auth.users u
       where u.id = v_auth_user_id;
     end if;
-    v_profile := public._ensure_user_profile_from_identity(
+      v_profile := public._ensure_user_profile_from_identity(
       v_auth_user_id,
       v_email,
       v_first_name,
@@ -550,8 +550,8 @@ begin
      set role = target_role,
          status = 'active',
          updated_at = now()
-   where organization_id = target_organization_id
-     and user_profile_id = v_profile.id
+   where organization_members.organization_id = target_organization_id
+     and organization_members.user_profile_id = v_profile.id
    returning * into v_membership;
 
   if not found then
@@ -572,8 +572,8 @@ begin
   select *
     into v_membership
   from public.organization_members
-  where organization_id = target_organization_id
-    and user_profile_id = v_profile.id
+  where organization_members.organization_id = target_organization_id
+    and organization_members.user_profile_id = v_profile.id
   limit 1;
 
   if not found then
@@ -636,8 +636,8 @@ begin
      set role = target_role,
          status = 'active',
          updated_at = now()
-   where organization_id = target_organization_id
-     and user_profile_id = target_user_profile_id
+   where organization_members.organization_id = target_organization_id
+     and organization_members.user_profile_id = target_user_profile_id
    returning * into v_membership;
 
   if not found then
@@ -647,8 +647,8 @@ begin
   select *
     into v_membership
   from public.organization_members
-  where organization_id = target_organization_id
-    and user_profile_id = target_user_profile_id
+  where organization_members.organization_id = target_organization_id
+    and organization_members.user_profile_id = target_user_profile_id
   limit 1;
 
   if not found then
@@ -691,8 +691,8 @@ begin
   update public.organization_members
      set status = 'inactive',
          updated_at = now()
-   where organization_id = target_organization_id
-     and user_profile_id = target_user_profile_id
+   where organization_members.organization_id = target_organization_id
+     and organization_members.user_profile_id = target_user_profile_id
    returning * into v_membership;
 
   if not found then
