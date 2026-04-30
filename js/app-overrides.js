@@ -1061,6 +1061,7 @@
           orders_count: toCountOrNull(row && (row.orders_count !== undefined ? row.orders_count : row.ordersCount)),
           updated_at: row && (row.updated_at || row.updatedAt) || new Date().toISOString()
         };
+        console.info('organization summary loaded', { orgId: orgId, summary: summary });
         bucket.data = summary;
         bucket.error = null;
         bucket.loadedAt = Date.now();

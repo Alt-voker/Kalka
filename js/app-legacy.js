@@ -4140,12 +4140,12 @@ function renderRestaurants(){
       var canRestore = (currentRole === 'owner' || currentRole === 'admin') && status === 'archived';
       var canDelete = currentRole === 'owner' && status !== 'deleted';
       var summaryCache = getOrganizationSummaryFromCache(normalizedOrg.id) || {};
-      var membersCount = (summaryCache && summaryCache.members_count !== undefined && summaryCache.members_count !== null)
-        ? summaryCache.members_count
-        : (normalizedOrg.membersCount !== undefined && normalizedOrg.membersCount !== null ? normalizedOrg.membersCount : getOrganizationMembersCountFromCache(normalizedOrg.id));
       var activeMembersCount = (summaryCache && summaryCache.active_members_count !== undefined && summaryCache.active_members_count !== null)
         ? summaryCache.active_members_count
         : (normalizedOrg.activeMembersCount !== undefined && normalizedOrg.activeMembersCount !== null ? normalizedOrg.activeMembersCount : null);
+      var membersCount = (summaryCache && summaryCache.members_count !== undefined && summaryCache.members_count !== null)
+        ? summaryCache.members_count
+        : (normalizedOrg.membersCount !== undefined && normalizedOrg.membersCount !== null ? normalizedOrg.membersCount : getOrganizationMembersCountFromCache(normalizedOrg.id));
       var suppliersCount = (summaryCache && summaryCache.suppliers_count !== undefined && summaryCache.suppliers_count !== null)
         ? summaryCache.suppliers_count
         : (normalizedOrg.suppliersCount !== undefined && normalizedOrg.suppliersCount !== null ? normalizedOrg.suppliersCount : null);
@@ -4158,7 +4158,7 @@ function renderRestaurants(){
             +'<span class="badge" style="'+(status === 'active' ? 'background:var(--grD);color:var(--gr);border:1px solid var(--gr);' : 'background:#eef2f7;color:#475569;border:1px solid #cbd5e1;')+'">'+getOrganizationStatusLabelSafe(status)+'</span>'
             +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Роль: '+getOrganizationRoleLabelSafe(normalizedOrg.role || currentRole)+'</span>'
             +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">'+currentLabel+'</span>'
-            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Участники: '+getOrganizationCountLabelSafe(membersCount, '—')+'</span>'
+            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Участники: '+getOrganizationCountLabelSafe(activeMembersCount !== null && activeMembersCount !== undefined ? activeMembersCount : membersCount, '—')+'</span>'
             +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Поставщики: '+getOrganizationCountLabelSafe(suppliersCount, '—')+'</span>'
           +'</div>'
           +'<div style="margin-top:10px;font-size:13px;color:var(--t2);line-height:1.5;">'
