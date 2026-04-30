@@ -625,6 +625,7 @@ create or replace function public.owner_get_organization_summary(
   target_organization_id uuid
 )
 returns table (
+  organization_id uuid,
   members_count integer,
   active_members_count integer,
   suppliers_count integer,
@@ -638,6 +639,56 @@ set search_path = public, auth
 as $$
 declare
   v_is_owner boolean := public._is_platform_owner();
+  v_has_suppliers boolean := to_regclass('public.suppliers') is not null
+    and exists (
+      select 1
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.table_name = 'suppliers'
+        and c.column_name = 'organization_id'
+    );
+  v_has_supplier_status boolean := exists (
+      select 1
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.table_name = 'suppliers'
+        and c.column_name = 'status'
+    );
+  v_has_price_lists boolean := to_regclass('public.price_lists') is not null
+    and exists (
+      select 1
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.table_name = 'price_lists'
+        and c.column_name = 'organization_id'
+    );
+  v_has_price_list_status boolean := exists (
+      select 1
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.table_name = 'price_lists'
+        and c.column_name = 'status'
+    );
+  v_has_orders boolean := to_regclass('public.orders') is not null
+    and exists (
+      select 1
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.table_name = 'orders'
+        and c.column_name = 'organization_id'
+    );
+  v_has_order_status boolean := exists (
+      select 1
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.table_name = 'orders'
+        and c.column_name = 'status'
+    );
+  v_members_count integer := 0;
+  v_active_members_count integer := 0;
+  v_suppliers_count integer := 0;
+  v_price_lists_count integer := 0;
+  v_orders_count integer := 0;
 begin
   if target_organization_id is null then
     raise exception 'organization_id is required';
@@ -650,43 +701,59 @@ begin
     raise exception 'Forbidden';
   end if;
 
+  select count(*)::integer
+    into v_members_count
+  from public.organization_members om
+  where om.organization_id = target_organization_id;
+
+  select count(*)::integer
+    into v_active_members_count
+  from public.organization_members om
+  where om.organization_id = target_organization_id
+    and om.status = 'active';
+
+  if v_has_suppliers then
+    execute format(
+      'select count(*)::integer from public.suppliers s where s.organization_id = $1'
+      || case when v_has_supplier_status then ' and coalesce(s.status, ''active'') <> ''deleted''' else '' end
+    )
+      into v_suppliers_count
+      using target_organization_id;
+  end if;
+
+  if v_has_price_lists then
+    execute format(
+      'select count(*)::integer from public.price_lists pl where pl.organization_id = $1'
+      || case when v_has_price_list_status then ' and coalesce(pl.status, ''active'') <> ''deleted''' else '' end
+    )
+      into v_price_lists_count
+      using target_organization_id;
+  end if;
+
+  if v_has_orders then
+    execute format(
+      'select count(*)::integer from public.orders o where o.organization_id = $1'
+      || case when v_has_order_status then ' and coalesce(o.status, ''active'') <> ''deleted''' else '' end
+    )
+      into v_orders_count
+      using target_organization_id;
+  end if;
+
   return query
   select
-    coalesce((
-      select count(*)
-      from public.organization_members om
-      where om.organization_id = target_organization_id
-    ), 0)::integer as members_count,
-    coalesce((
-      select count(*)
-      from public.organization_members om
-      where om.organization_id = target_organization_id
-        and om.status = 'active'
-    ), 0)::integer as active_members_count,
-    coalesce((
-      select count(*)
-      from public.suppliers s
-      where s.organization_id = target_organization_id
-        and coalesce(s.status, 'active') <> 'deleted'
-    ), 0)::integer as suppliers_count,
-    coalesce((
-      select count(*)
-      from public.price_lists pl
-      where pl.organization_id = target_organization_id
-        and coalesce(pl.status, 'active') <> 'deleted'
-    ), 0)::integer as price_lists_count,
-    coalesce((
-      select count(*)
-      from public.orders o
-      where o.organization_id = target_organization_id
-        and coalesce(o.status, 'active') <> 'deleted'
-    ), 0)::integer as orders_count,
+    target_organization_id as organization_id,
+    v_members_count as members_count,
+    v_active_members_count as active_members_count,
+    v_suppliers_count as suppliers_count,
+    v_price_lists_count as price_lists_count,
+    v_orders_count as orders_count,
     now() as updated_at;
 end;
 $$;
 
 revoke all on function public.owner_get_organization_summary(uuid) from public;
 grant execute on function public.owner_get_organization_summary(uuid) to authenticated;
+notify pgrst, 'reload schema';
 
 create or replace function public.owner_update_organization(
   target_organization_id uuid,
