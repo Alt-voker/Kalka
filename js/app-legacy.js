@@ -4927,16 +4927,23 @@ function renderOrganizationDetailsModal(orgId){
   var orgType = String(org.type || org.kind || 'other').toLowerCase();
   var orgCity = org.city || org.location || '';
   var orgAddress = org.address || org.legal_address || '';
-  var membersCount = (org.membersCount !== undefined && org.membersCount !== null)
-    ? (Number(org.membersCount) || 0)
-    : (org.members_count !== undefined && org.members_count !== null ? (Number(org.members_count) || 0) : null);
-  var suppliersCount = null;
+  var summary = org.summary || getOrganizationSummaryFromCache(orgId) || null;
+  var membersCount = (summary && summary.members_count !== undefined && summary.members_count !== null)
+    ? Number(summary.members_count) || 0
+    : ((org.membersCount !== undefined && org.membersCount !== null)
+      ? (Number(org.membersCount) || 0)
+      : (org.members_count !== undefined && org.members_count !== null ? (Number(org.members_count) || 0) : null));
+  var suppliersCount = (summary && summary.suppliers_count !== undefined && summary.suppliers_count !== null)
+    ? Number(summary.suppliers_count) || 0
+    : null;
   var suppliersBucket = window.__dataCache && window.__dataCache.suppliersByOrg ? window.__dataCache.suppliersByOrg[String(orgId || '')] : null;
-  if (Array.isArray(suppliersBucket)) suppliersCount = suppliersBucket.length;
+  if (suppliersCount === null && Array.isArray(suppliersBucket)) suppliersCount = suppliersBucket.length;
   var membersBucket = getOrganizationMembersBucket(orgId);
-  var activeMembersCount = membersBucket && Array.isArray(membersBucket.items) ? membersBucket.items.filter(function (item) {
-    return String(item.status || 'active').toLowerCase() === 'active';
-  }).length : Number(org.activeMembersCount || 0) || 0;
+  var activeMembersCount = (summary && summary.active_members_count !== undefined && summary.active_members_count !== null)
+    ? Number(summary.active_members_count) || 0
+    : (membersBucket && Array.isArray(membersBucket.items) ? membersBucket.items.filter(function (item) {
+      return String(item.status || 'active').toLowerCase() === 'active';
+    }).length : (org.activeMembersCount !== undefined && org.activeMembersCount !== null ? Number(org.activeMembersCount) || 0 : null));
   var currentRole = normalizeLegacyRoleSafe((window.CU && window.CU.role) || (window.__userSession && window.__userSession.currentUser && window.__userSession.currentUser.role) || 'unassigned');
   var canManageMembers = ['owner','admin','organization_owner'].indexOf(currentRole) >= 0;
   if(title) title.textContent='🏢 '+(orgName || 'Организация без названия');

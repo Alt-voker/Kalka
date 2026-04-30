@@ -1046,7 +1046,8 @@
     };
     bucket.promise = (async function () {
       try {
-        var row = await rpcOwnerGetOrganizationSummary(client, orgId);
+        var rowResult = await rpcOwnerGetOrganizationSummary(client, orgId);
+        var row = Array.isArray(rowResult) ? rowResult[0] : rowResult;
         var toCountOrNull = function (value) {
           if (value === null || value === undefined || value === '') return null;
           var n = Number(value);
@@ -1068,7 +1069,8 @@
         if (window.__userSession && Array.isArray(window.__userSession.organizations)) {
           window.__userSession.organizations = window.__userSession.organizations.map(function (org) {
             if (!org || String(org.id || '') !== orgId) return org;
-            return Object.assign({}, org, {
+            var applied = Object.assign({}, org, {
+              summary: summary,
               membersCount: summary.members_count,
               activeMembersCount: summary.active_members_count,
               suppliersCount: summary.suppliers_count,
@@ -1076,10 +1078,24 @@
               ordersCount: summary.orders_count,
               updated_at: summary.updated_at
             });
+            console.info('organization summary applied', { orgId: orgId, summary: summary });
+            return applied;
           });
         }
         if (window.__userSession && window.__userSession.activeOrganization && String(window.__userSession.activeOrganization.id || '') === orgId) {
           window.__userSession.activeOrganization = Object.assign({}, window.__userSession.activeOrganization, {
+            summary: summary,
+            membersCount: summary.members_count,
+            activeMembersCount: summary.active_members_count,
+            suppliersCount: summary.suppliers_count,
+            priceListsCount: summary.price_lists_count,
+            ordersCount: summary.orders_count,
+            updated_at: summary.updated_at
+          });
+        }
+        if (window.activeRest && String(window.activeRest.id || window.activeRest.organizationId || '') === orgId) {
+          window.activeRest = Object.assign({}, window.activeRest, {
+            summary: summary,
             membersCount: summary.members_count,
             activeMembersCount: summary.active_members_count,
             suppliersCount: summary.suppliers_count,
