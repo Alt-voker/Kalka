@@ -4360,9 +4360,18 @@ function setModalBusy(modalId, busy){
 function getOrganizationById(orgId){
   var session = window.__userSession || {};
   var organizations = Array.isArray(session.organizations) ? session.organizations : [];
-  return organizations.find(function (org) {
-    return String(org && (org.id || org.organization_id || org.organizationId) || '').trim() === String(orgId || '').trim();
+  var id = String(orgId || '').trim();
+  if (!id) return null;
+  var found = organizations.find(function (org) {
+    return String(org && (org.id || org.organization_id || org.organizationId) || '').trim() === id;
   }) || null;
+  if (!found && session.activeOrganization && String(session.activeOrganization.id || session.activeOrganization.organizationId || '') === id) {
+    found = session.activeOrganization;
+  }
+  if (!found && window.activeRest && String(window.activeRest.id || window.activeRest.organizationId || '') === id) {
+    found = window.activeRest;
+  }
+  return found ? (normalizeOrganizationForRender(found) || found) : null;
 }
 function getOrganizationRoleLabel(role){
   var normalized = String(role || '').trim();
@@ -4843,6 +4852,10 @@ function openOrganizationDetailsModal(orgId){
   var modal = ensureOrganizationDetailsModal();
   modal.dataset.orgId = String(orgId || '').trim();
   modal.classList.add('on');
+  console.info('open organization details', {
+    orgId: String(orgId || ''),
+    org: getOrganizationById(orgId)
+  });
   renderOrganizationDetailsModal(orgId);
 }
 
@@ -4851,11 +4864,22 @@ function renderOrganizationDetailsModal(orgId){
   var title=document.getElementById('orgDetailsTitle');
   var meta=document.getElementById('orgDetailsMeta');
   if(!body) return;
-  var org=getOrganizationById(orgId);
+  var org=getOrganizationById(orgId) || normalizeOrganizationForRender({
+    id: orgId,
+    name: 'Организация без названия',
+    type: 'other',
+    status: 'active',
+    city: '',
+    address: '',
+    membersCount: 0,
+    activeMembersCount: 0
+  });
   if(!org){
-    body.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">Организация не найдена</div>';
+    body.innerHTML='<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">Организация без названия</div>';
     return;
   }
+  var orgStatus = String(org.status || 'active').toLowerCase();
+  var orgType = String(org.type || 'other').toLowerCase();
   var suppliersCount = 0;
   var suppliersBucket = window.__dataCache && window.__dataCache.suppliersByOrg ? window.__dataCache.suppliersByOrg[String(orgId || '')] : null;
   if (Array.isArray(suppliersBucket)) suppliersCount = suppliersBucket.length;
@@ -4867,7 +4891,7 @@ function renderOrganizationDetailsModal(orgId){
   var currentRole = normalizeLegacyRoleSafe((window.CU && window.CU.role) || (window.__userSession && window.__userSession.currentUser && window.__userSession.currentUser.role) || 'unassigned');
   var canManageMembers = ['owner','admin','organization_owner'].indexOf(currentRole) >= 0;
   if(title) title.textContent='🏢 '+(org.name || 'Организация без названия');
-  if(meta) meta.textContent='Статус: '+getOrganizationStatusLabelSafe(org.status || 'active')+' · Роль: '+getOrganizationRoleLabelSafe(org.role || (window.CU && window.CU.role));
+  if(meta) meta.textContent='Статус: '+getOrganizationStatusLabelSafe(orgStatus)+' · Роль: '+getOrganizationRoleLabelSafe(org.role || (window.CU && window.CU.role));
   body.innerHTML=''
     +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">'
       +'<div style="background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:14px 16px;box-shadow:0 8px 20px rgba(15,23,42,.06);">'
@@ -4876,11 +4900,11 @@ function renderOrganizationDetailsModal(orgId){
       +'</div>'
       +'<div style="background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:14px 16px;box-shadow:0 8px 20px rgba(15,23,42,.06);">'
         +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;">Тип</div>'
-        +'<div style="font-size:15px;font-weight:800;margin-top:6px;">'+getOrganizationTypeLabelSafe(org.type)+'</div>'
+        +'<div style="font-size:15px;font-weight:800;margin-top:6px;">'+getOrganizationTypeLabelSafe(orgType)+'</div>'
       +'</div>'
       +'<div style="background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:14px 16px;box-shadow:0 8px 20px rgba(15,23,42,.06);">'
         +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;">Статус</div>'
-        +'<div style="font-size:15px;font-weight:800;margin-top:6px;">'+getOrganizationStatusLabelSafe(org.status || 'active')+'</div>'
+        +'<div style="font-size:15px;font-weight:800;margin-top:6px;">'+getOrganizationStatusLabelSafe(orgStatus)+'</div>'
       +'</div>'
       +'<div style="background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:14px 16px;box-shadow:0 8px 20px rgba(15,23,42,.06);">'
         +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;">Участники</div>'
