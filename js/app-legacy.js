@@ -11298,3 +11298,35 @@ document.addEventListener('DOMContentLoaded',function(){
     },200);
   });
 });
+
+(function () {
+  function showSectionError(selector, message) {
+    var el = document.querySelector(selector);
+    if (!el) return;
+    el.innerHTML = '<div style="padding:24px;border:1px solid rgba(148,163,184,.18);border-radius:16px;background:#fff;color:var(--t2);box-shadow:0 10px 28px rgba(15,23,42,.08);text-align:center;">'
+      + '<div style="font-size:34px;margin-bottom:8px;">⚠️</div>'
+      + '<div style="font-size:16px;font-weight:700;margin-bottom:6px;">Раздел временно недоступен</div>'
+      + '<div style="font-size:13px;">' + _esc(message || 'Ошибка записана в консоль.') + '</div>'
+      + '</div>';
+  }
+
+  function wrapSafe(name, selector, message) {
+    var fn = window[name];
+    if (typeof fn !== 'function' || fn.__safeWrapped) return;
+    window[name] = function () {
+      var args = arguments;
+      return window.safeRender(name, function () {
+        return fn.apply(this, args);
+      }, function () {
+        if (selector && message) showSectionError(selector, message);
+      }) || null;
+    };
+    window[name].__safeWrapped = true;
+  }
+
+  wrapSafe('renderRestaurants', '#pg-restaurants', 'Организации');
+  wrapSafe('renderSuppliers', '#pg-suppliers', 'Поставщики');
+  wrapSafe('renderOwner', '#pg-owner', 'Панель владельца');
+  wrapSafe('buildNav');
+  wrapSafe('setupUI');
+})();
