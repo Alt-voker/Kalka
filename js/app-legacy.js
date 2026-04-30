@@ -4032,6 +4032,11 @@ function renderRestaurants(){
     noOrganization: !!session.noOrganization,
     activeOrganizationId: activeOrgId
   });
+  console.info('organizations render data', {
+    role: window.__userSession && window.__userSession.role,
+    organizations: window.__userSession && window.__userSession.organizations ? window.__userSession.organizations.length : 0,
+    activeOrganizationId: window.__userSession && window.__userSession.activeOrganizationId
+  });
 
   pageContainer.classList.add('on');
   pageContainer.classList.remove('gone', 'hidden');
@@ -4098,63 +4103,61 @@ function renderRestaurants(){
     return;
   }
 
-  root.innerHTML = finalList.map(function (org) {
-    var normalizedOrg = normalizeOrganizationForRender(org) || org;
-    var status = String(normalizedOrg.status || 'active').toLowerCase();
-    if (!status || status === 'undefined') status = 'active';
-    var isActive = String(normalizedOrg.id) === activeOrgId;
-    var canEdit = perms.canEdit && status !== 'deleted';
-    var canManageMembers = perms.canManageMembers && status !== 'deleted';
-    var canAddMembers = perms.canAddMembers && status !== 'deleted';
-    var canViewSuppliers = perms.canViewSuppliers && status !== 'deleted';
-    var canArchive = (currentRole === 'owner' || currentRole === 'admin') && status !== 'deleted' && status !== 'archived';
-    var canRestore = (currentRole === 'owner' || currentRole === 'admin') && status === 'archived';
-    var canDelete = currentRole === 'owner' && status !== 'deleted';
-    var membersCount = Number(normalizedOrg.membersCount || getOrganizationMembersCountFromCache(normalizedOrg.id) || 0) || 0;
-    var activeMembersCount = Number(normalizedOrg.activeMembersCount || 0) || 0;
-    var suppliersCount = Number(normalizedOrg.suppliersCount || getOrganizationSuppliersCountFromCache(normalizedOrg.id) || 0) || 0;
-    var currentLabel = getOrganizationCurrentLabelSafe(normalizedOrg.id, activeOrgId);
-    var disabledWhy = {
-      open: '',
-      members: canManageMembers ? '' : 'Недостаточно прав для просмотра участников',
-      add: canAddMembers ? '' : 'Недостаточно прав для добавления участников',
-      edit: canEdit ? '' : 'Недостаточно прав для редактирования',
-      suppliers: canViewSuppliers ? '' : 'Недостаточно прав для открытия поставщиков',
-      switch: '',
-      archive: canArchive ? '' : 'Недостаточно прав для архивации',
-      restore: canRestore ? '' : 'Недостаточно прав для восстановления',
-      delete: canDelete ? '' : 'Недостаточно прав для удаления'
-    };
-    return '<div class="panel" style="background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);border:1px solid rgba(148,163,184,.16);border-radius:18px;overflow:hidden;">'
-      +'<div style="padding:18px;">'
-        +'<div style="font-size:18px;font-weight:800;line-height:1.2;word-break:break-word;">'+_esc(normalizedOrg.name || 'Организация без названия')+'</div>'
-        +'<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
-          +'<span class="badge" style="background:#eef6ff;color:#2463eb;border:1px solid #cfe2ff;">'+getOrganizationTypeLabelSafe(normalizedOrg.type)+'</span>'
-          +'<span class="badge" style="'+(status === 'active' ? 'background:var(--grD);color:var(--gr);border:1px solid var(--gr);' : 'background:#eef2f7;color:#475569;border:1px solid #cbd5e1;')+'">'+getOrganizationStatusLabelSafe(status)+'</span>'
-          +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Роль: '+getOrganizationRoleLabelSafe(normalizedOrg.role || currentRole)+'</span>'
-          +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">'+currentLabel+'</span>'
-          +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Участники: '+membersCount+'</span>'
-          +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Поставщики: '+suppliersCount+'</span>'
+  try {
+    root.innerHTML = finalList.map(function (org) {
+      var normalizedOrg = normalizeOrganizationForRender(org) || org;
+      var status = String(normalizedOrg.status || 'active').toLowerCase();
+      if (!status || status === 'undefined') status = 'active';
+      var isActive = String(normalizedOrg.id) === activeOrgId;
+      var canEdit = perms.canEdit && status !== 'deleted';
+      var canManageMembers = perms.canManageMembers && status !== 'deleted';
+      var canAddMembers = perms.canAddMembers && status !== 'deleted';
+      var canViewSuppliers = perms.canViewSuppliers && status !== 'deleted';
+      var canArchive = (currentRole === 'owner' || currentRole === 'admin') && status !== 'deleted' && status !== 'archived';
+      var canRestore = (currentRole === 'owner' || currentRole === 'admin') && status === 'archived';
+      var canDelete = currentRole === 'owner' && status !== 'deleted';
+      var membersCount = Number(normalizedOrg.membersCount || getOrganizationMembersCountFromCache(normalizedOrg.id) || 0) || 0;
+      var activeMembersCount = Number(normalizedOrg.activeMembersCount || 0) || 0;
+      var suppliersCount = Number(normalizedOrg.suppliersCount || getOrganizationSuppliersCountFromCache(normalizedOrg.id) || 0) || 0;
+      var currentLabel = getOrganizationCurrentLabelSafe(normalizedOrg.id, activeOrgId);
+      return '<div class="panel" style="background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);border:1px solid rgba(148,163,184,.16);border-radius:18px;overflow:hidden;">'
+        +'<div style="padding:18px;">'
+          +'<div style="font-size:18px;font-weight:800;line-height:1.2;word-break:break-word;">'+_esc(normalizedOrg.name || 'Организация без названия')+'</div>'
+          +'<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
+            +'<span class="badge" style="background:#eef6ff;color:#2463eb;border:1px solid #cfe2ff;">'+getOrganizationTypeLabelSafe(normalizedOrg.type)+'</span>'
+            +'<span class="badge" style="'+(status === 'active' ? 'background:var(--grD);color:var(--gr);border:1px solid var(--gr);' : 'background:#eef2f7;color:#475569;border:1px solid #cbd5e1;')+'">'+getOrganizationStatusLabelSafe(status)+'</span>'
+            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Роль: '+getOrganizationRoleLabelSafe(normalizedOrg.role || currentRole)+'</span>'
+            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">'+currentLabel+'</span>'
+            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Участники: '+membersCount+'</span>'
+            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Поставщики: '+suppliersCount+'</span>'
+          +'</div>'
+          +'<div style="margin-top:10px;font-size:13px;color:var(--t2);line-height:1.5;">'
+            +(normalizedOrg.city ? '<div><b>Город:</b> '+_esc(normalizedOrg.city)+'</div>' : '')
+            +(normalizedOrg.address ? '<div><b>Адрес:</b> '+_esc(normalizedOrg.address)+'</div>' : '')
+            +(normalizedOrg.created_at ? '<div><b>Дата создания:</b> '+_esc(String(normalizedOrg.created_at).slice(0, 10))+'</div>' : '')
+          +'</div>'
+          +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">'
+            +'<button class="tbBtn" data-org-action="open" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
+            +(perms.canManageMembers ? '<button class="tbBtn" data-org-action="members" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Участники</button>' : '')
+            +(perms.canAddMembers ? '<button class="tbBtn" data-org-action="add-user" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Добавить участника</button>' : '')
+            +(perms.canEdit ? '<button class="tbBtn" data-org-action="edit" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Редактировать</button>' : '')
+            +(perms.canViewSuppliers ? '<button class="tbBtn" data-org-action="suppliers" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Поставщики</button>' : '')
+            +(isActive ? '<span class="badge" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);">Текущая организация</span>' : '<button class="tbBtn" data-org-action="switch" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Переключиться</button>')
+            +(perms.canArchive ? '<button class="tbBtn" data-org-action="archive" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Архивировать</button>' : '')
+            +(perms.canRestore && status === 'archived' ? '<button class="tbBtn" data-org-action="restore" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Восстановить</button>' : '')
+            +(perms.canDelete ? '<button class="tbBtn" data-org-action="delete" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Удалить</button>' : '')
+          +'</div>'
         +'</div>'
-        +'<div style="margin-top:10px;font-size:13px;color:var(--t2);line-height:1.5;">'
-          +(normalizedOrg.city ? '<div><b>Город:</b> '+_esc(normalizedOrg.city)+'</div>' : '')
-          +(normalizedOrg.address ? '<div><b>Адрес:</b> '+_esc(normalizedOrg.address)+'</div>' : '')
-          +(normalizedOrg.created_at ? '<div><b>Дата создания:</b> '+_esc(String(normalizedOrg.created_at).slice(0, 10))+'</div>' : '')
-        +'</div>'
-        +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">'
-          +'<button class="tbBtn" data-org-action="open" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
-          +(perms.canManageMembers ? '<button class="tbBtn" data-org-action="members" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Участники</button>' : '')
-          +(perms.canAddMembers ? '<button class="tbBtn" data-org-action="add-user" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Добавить участника</button>' : '')
-          +(perms.canEdit ? '<button class="tbBtn" data-org-action="edit" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Редактировать</button>' : '')
-          +(perms.canViewSuppliers ? '<button class="tbBtn" data-org-action="suppliers" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Поставщики</button>' : '')
-          +(isActive ? '<span class="badge" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);">Текущая организация</span>' : '<button class="tbBtn" data-org-action="switch" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Переключиться</button>')
-          +(perms.canArchive ? '<button class="tbBtn" data-org-action="archive" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Архивировать</button>' : '')
-          +(perms.canRestore && status === 'archived' ? '<button class="tbBtn" data-org-action="restore" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Восстановить</button>' : '')
-          +(perms.canDelete ? '<button class="tbBtn" data-org-action="delete" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Удалить</button>' : '')
-        +'</div>'
-      +'</div>'
-    +'</div>';
-  }).join('');
+      +'</div>';
+    }).join('');
+  } catch (error) {
+    console.error('renderRestaurants failed:', error);
+    root.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--t2);background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:18px;box-shadow:0 10px 28px rgba(15,23,42,.08);">'
+      +'<div style="font-size:18px;font-weight:700;margin-bottom:8px;">Не удалось отрисовать блок организаций</div>'
+      +'<div style="font-size:13px;">Ошибка записана в консоль.</div>'
+      +'</div>';
+    return;
+  }
 
   console.info('restaurant cards rendered', finalList.length);
   console.info('orgsStableRoot children', root.children.length);
