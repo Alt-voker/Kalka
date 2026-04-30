@@ -59,6 +59,12 @@ function getRolePagesSafe(role){
   return Array.from(new Set(pages.filter(Boolean)));
 }
 
+function normalizeRoleSafe(role) {
+  if (!role) return 'unassigned';
+  if (role === 'platform_owner') return 'owner';
+  return String(role).trim();
+}
+
 function hasPermissionSafe(permissionKey){
   try {
     if (typeof window.hasPermission === 'function') return !!window.hasPermission(permissionKey);

@@ -26,6 +26,7 @@
   var initReady = false;
   var initError = null;
   var bindingAttached = false;
+  window.setLastInitError = window.setLastInitError || function () {};
   window.__authModuleReady = false;
   window.__authLoginHandlerAttached = false;
   window.__lastInitError = null;
@@ -284,7 +285,7 @@
         ? MISSING_SUPABASE_LIB_MESSAGE
         : 'Сервис авторизации временно недоступен. Обратитесь к администратору';
       setAuthServiceStatus(msg, 'err');
-      setLastInitError(new Error(msg));
+      window.setLastInitError(new Error(msg));
       return Promise.resolve({ ok: false, message: msg });
     }
     setAuthServiceStatus('Проверяем соединение с Supabase Auth…', 'ok');
@@ -298,7 +299,7 @@
           ? 'Соединение с Supabase установлено'
           : 'Соединение с Supabase установлено. Сессия не найдена — выполните вход.';
         setAuthServiceStatus(sessionText, 'ok');
-        setLastInitError(null);
+        window.setLastInitError(null);
         return {
           ok: true,
           source: 'getSession',
@@ -324,7 +325,7 @@
           source: diag.source,
           url: 'supabase.auth.getSession()'
         });
-        setLastInitError(error);
+        window.setLastInitError(error);
         setAuthServiceStatus(msg, 'err');
         return {
           ok: false,
