@@ -71,15 +71,20 @@
       (session.currentUser && session.currentUser.role) ||
       ''
     );
-    var permissions = normalizePermissionList(
-      session.activeOrganizationPermissions ||
-      (session.currentUser && session.currentUser.activeOrganizationPermissions)
-    );
+    var permissions = session.activeOrganizationPermissions ||
+      (session.currentUser && session.currentUser.activeOrganizationPermissions) ||
+      session.permissions ||
+      {};
 
     if (!permissionKey) return false;
     if (role === 'owner') return true;
-    if (!permissions.length) return false;
-    return permissions.indexOf(permissionKey) >= 0;
+    if (Array.isArray(permissions)) {
+      return permissions.indexOf(permissionKey) >= 0;
+    }
+    if (permissions && typeof permissions === 'object') {
+      return permissions[permissionKey] === true;
+    }
+    return false;
   }
 
   window.normalizeRole = normalizeRole;
@@ -87,6 +92,8 @@
   window.safeHasAccess = safeHasAccess;
   window.hasPermission = hasPermission;
 
-  console.info('access-control loaded');
-  console.info('access test owner dash', safeHasAccess('dash', 'owner'));
+  console.info('access-control loaded', {
+    hasPermission: typeof window.hasPermission,
+    safeHasAccess: typeof window.safeHasAccess
+  });
 })();
