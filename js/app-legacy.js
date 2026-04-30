@@ -4176,6 +4176,9 @@ function renderRestaurants(){
       try {
         if (action === 'open' && typeof window.openOrganizationDetails === 'function') {
           window.openOrganizationDetails(orgId);
+        } else if (action === 'open') {
+          if (typeof window.openOrganizationDetailsModal === 'function') window.openOrganizationDetailsModal(orgId);
+          else if (typeof window.toast === 'function') window.toast('Раздел временно недоступен. Ошибка записана в консоль.', 'warn');
         } else if (action === 'add-user' && typeof window.openOrganizationAddMemberModal === 'function') {
           window.openOrganizationAddMemberModal(orgId);
         } else if (action === 'members' && typeof window.openOrganizationMembers === 'function') {
@@ -4188,20 +4191,38 @@ function renderRestaurants(){
           }
           if (typeof window.goPage === 'function') window.goPage('suppliers');
           else if (typeof window.renderSuppliers === 'function') window.renderSuppliers();
-        } else if (action === 'archive' && typeof window.archiveOrganizationFromCard === 'function') {
+        } else if (action === 'archive' && hasPermissionSafe('organization.archive') && typeof window.archiveOrganizationFromCard === 'function') {
           window.archiveOrganizationFromCard(orgId);
-        } else if (action === 'restore' && typeof window.restoreOrganizationFromCard === 'function') {
+        } else if (action === 'restore' && hasPermissionSafe('organization.archive') && typeof window.restoreOrganizationFromCard === 'function') {
           window.restoreOrganizationFromCard(orgId);
-        } else if (action === 'delete' && typeof window.deleteOrganizationFromCard === 'function') {
+        } else if (action === 'delete' && hasPermissionSafe('organization.delete') && typeof window.deleteOrganizationFromCard === 'function') {
           window.deleteOrganizationFromCard(orgId);
         } else if (action === 'switch' && typeof window.setActiveOrganization === 'function') {
           window.setActiveOrganization(orgId);
         } else {
+          if (action === 'members' || action === 'add-user' || action === 'edit' || action === 'archive' || action === 'restore' || action === 'delete') {
+            if (!hasPermissionSafe(
+              action === 'members' ? 'organization.members.view' :
+              action === 'add-user' ? 'organization.members.invite' :
+              action === 'edit' ? 'organization.edit' :
+              action === 'archive' || action === 'restore' ? 'organization.archive' :
+              'organization.delete'
+            )) {
+              if (typeof window.toast === 'function') window.toast('Недостаточно прав', 'err');
+              return;
+            }
+          }
           console.error('organization action handler missing', { action: action, orgId: orgId });
           if (typeof window.toast === 'function') window.toast('Не удалось выполнить действие', 'err');
         }
       } catch (error) {
-        console.error('organization action handler failed', { action: action, orgId: orgId, error: error });
+        console.error('organization action handler failed', {
+          action: action,
+          orgId: orgId,
+          error: error,
+          message: error && error.message,
+          stack: error && error.stack
+        });
         if (typeof window.toast === 'function') window.toast('Не удалось выполнить действие', 'err');
       }
     });
