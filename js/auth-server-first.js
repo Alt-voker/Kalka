@@ -277,6 +277,47 @@
     return message || 'Не удалось подключиться к серверу авторизации';
   }
 
+  function isRetryableAuthFetchError(error) {
+    var info = errorInfo(error);
+    var message = String(
+      (error && error.message) ||
+      info.message ||
+      info.code ||
+      error || ''
+    );
+    return /Failed to fetch|NetworkError|ERR_QUIC_PROTOCOL_ERROR|AuthRetryableFetchError/i.test(message);
+  }
+
+  function sleep(ms) {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, ms);
+    });
+  }
+
+  async function retrySignInWithPassword(client, payload) {
+    var delays = [800, 1500, 3000];
+    var lastError = null;
+    for (var attempt = 0; attempt < delays.length; attempt += 1) {
+      try {
+        if (attempt === 1) {
+          setAuthServiceStatus('Проблема соединения с сервером. Повторяем попытку...', 'warn');
+        }
+        return await withTimeout(
+          client.auth.signInWithPassword(payload),
+          25000,
+          'Не удалось подключиться к серверу авторизации'
+        );
+      } catch (error) {
+        lastError = error;
+        if (!isRetryableAuthFetchError(error) || attempt === delays.length - 1) {
+          throw error;
+        }
+        await sleep(delays[attempt]);
+      }
+    }
+    throw lastError || new Error('Не удалось подключиться к серверу авторизации');
+  }
+
   function checkSupabaseConnection() {
     var client = getClient();
     var diag = getSupabaseDiagnostics();
@@ -1181,11 +1222,7 @@
     console.info('auth: signIn started');
     setAuthStepStatus('auth request started', 'ok');
     markPerf('auth_start');
-    var response = await withTimeout(
-      client.auth.signInWithPassword({ email: email, password: password }),
-      25000,
-      'Не удалось подключиться к серверу авторизации'
-    ).catch(function (error) {
+    var response = await retrySignInWithPassword(client, { email: email, password: password }).catch(function (error) {
       var info = errorInfo(error);
       console.error('signIn failed', {
         code: info.code,
