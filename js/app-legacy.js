@@ -3833,6 +3833,18 @@ function getOrganizationMembersCountFromCache(orgId) {
   return null;
 }
 
+function getOrganizationSummaryFromCache(orgId) {
+  var cache = window.__dataCache && window.__dataCache.organizationSummaryByOrg ? window.__dataCache.organizationSummaryByOrg[String(orgId || '')] : null;
+  return cache || null;
+}
+
+function getOrganizationCountLabelSafe(value, fallbackLabel) {
+  if (value === null || value === undefined || value === '') return fallbackLabel || '—';
+  var n = Number(value);
+  if (!isFinite(n)) return fallbackLabel || '—';
+  return String(n);
+}
+
 function getSafeDataCache() {
   window.__dataCache = window.__dataCache && typeof window.__dataCache === 'object' ? window.__dataCache : {};
   if (!window.__dataCache.suppliersByOrg || typeof window.__dataCache.suppliersByOrg !== 'object') {
@@ -3916,8 +3928,12 @@ function normalizeOrganizationForRender(org) {
     address: org.address || '',
     created_at: org.created_at || org.createdAt || '',
     updated_at: org.updated_at || org.updatedAt || '',
-    membersCount: Number(org.membersCount || org.members_count || 0) || 0,
-    activeMembersCount: Number(org.activeMembersCount || org.active_members_count || 0) || 0
+    membersCount: (org.membersCount !== undefined && org.membersCount !== null)
+      ? Number(org.membersCount || 0) || 0
+      : (org.members_count !== undefined && org.members_count !== null ? Number(org.members_count || 0) || 0 : null),
+    activeMembersCount: (org.activeMembersCount !== undefined && org.activeMembersCount !== null)
+      ? Number(org.activeMembersCount || 0) || 0
+      : (org.active_members_count !== undefined && org.active_members_count !== null ? Number(org.active_members_count || 0) || 0 : null)
   };
 }
 
@@ -3951,8 +3967,8 @@ function getOrganizationsByCurrentFilterSafe(orgFilter, currentRole) {
     return sessionFiltered.map(function (org) {
       var membersCount = typeof org.membersCount === 'number' ? org.membersCount : getOrganizationMembersCountFromCache(org.id);
       return Object.assign({}, org, {
-        membersCount: typeof membersCount === 'number' ? membersCount : 0,
-        activeMembersCount: typeof org.activeMembersCount === 'number' ? org.activeMembersCount : 0
+        membersCount: typeof membersCount === 'number' ? membersCount : null,
+        activeMembersCount: typeof org.activeMembersCount === 'number' ? org.activeMembersCount : null
       });
     });
   }
@@ -3976,8 +3992,8 @@ function syncOrganizationListItemIntoSession(org) {
     address: org.address || '',
     created_at: org.created_at || org.createdAt || '',
     updated_at: org.updated_at || org.updatedAt || '',
-    membersCount: Number(org.membersCount || 0) || 0,
-    activeMembersCount: Number(org.activeMembersCount || 0) || 0,
+    membersCount: org.membersCount === null || org.membersCount === undefined || org.membersCount === '' ? null : (Number(org.membersCount) || 0),
+    activeMembersCount: org.activeMembersCount === null || org.activeMembersCount === undefined || org.activeMembersCount === '' ? null : (Number(org.activeMembersCount) || 0),
     role: org.role || ''
   };
   var idx = window.__userSession.organizations.findIndex(function (item) {
@@ -4107,7 +4123,7 @@ function renderRestaurants(){
       +'<div style="font-size:16px;font-weight:700;margin-bottom:8px;">У вас пока нет доступных организаций</div>'
       +'<div style="font-size:13px;margin-bottom:20px;">Обратитесь к владельцу платформы или создайте новую организацию</div>'
       +'</div>';
-    return;
+      return;
   }
 
   try {
@@ -4123,9 +4139,16 @@ function renderRestaurants(){
       var canArchive = (currentRole === 'owner' || currentRole === 'admin') && status !== 'deleted' && status !== 'archived';
       var canRestore = (currentRole === 'owner' || currentRole === 'admin') && status === 'archived';
       var canDelete = currentRole === 'owner' && status !== 'deleted';
-      var membersCount = Number(normalizedOrg.membersCount || getOrganizationMembersCountFromCache(normalizedOrg.id) || 0) || 0;
-      var activeMembersCount = Number(normalizedOrg.activeMembersCount || 0) || 0;
-      var suppliersCount = Number(normalizedOrg.suppliersCount || getOrganizationSuppliersCountFromCache(normalizedOrg.id) || 0) || 0;
+      var summaryCache = getOrganizationSummaryFromCache(normalizedOrg.id) || {};
+      var membersCount = (summaryCache && summaryCache.members_count !== undefined && summaryCache.members_count !== null)
+        ? summaryCache.members_count
+        : (normalizedOrg.membersCount !== undefined && normalizedOrg.membersCount !== null ? normalizedOrg.membersCount : getOrganizationMembersCountFromCache(normalizedOrg.id));
+      var activeMembersCount = (summaryCache && summaryCache.active_members_count !== undefined && summaryCache.active_members_count !== null)
+        ? summaryCache.active_members_count
+        : (normalizedOrg.activeMembersCount !== undefined && normalizedOrg.activeMembersCount !== null ? normalizedOrg.activeMembersCount : null);
+      var suppliersCount = (summaryCache && summaryCache.suppliers_count !== undefined && summaryCache.suppliers_count !== null)
+        ? summaryCache.suppliers_count
+        : (normalizedOrg.suppliersCount !== undefined && normalizedOrg.suppliersCount !== null ? normalizedOrg.suppliersCount : null);
       var currentLabel = getOrganizationCurrentLabelSafe(normalizedOrg.id, activeOrgId);
       return '<div class="panel" style="background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);border:1px solid rgba(148,163,184,.16);border-radius:18px;overflow:hidden;">'
         +'<div style="padding:18px;">'
@@ -4135,14 +4158,14 @@ function renderRestaurants(){
             +'<span class="badge" style="'+(status === 'active' ? 'background:var(--grD);color:var(--gr);border:1px solid var(--gr);' : 'background:#eef2f7;color:#475569;border:1px solid #cbd5e1;')+'">'+getOrganizationStatusLabelSafe(status)+'</span>'
             +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Роль: '+getOrganizationRoleLabelSafe(normalizedOrg.role || currentRole)+'</span>'
             +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">'+currentLabel+'</span>'
-            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Участники: '+membersCount+'</span>'
-            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Поставщики: '+suppliersCount+'</span>'
+            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Участники: '+getOrganizationCountLabelSafe(membersCount, '—')+'</span>'
+            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Поставщики: '+getOrganizationCountLabelSafe(suppliersCount, '—')+'</span>'
           +'</div>'
           +'<div style="margin-top:10px;font-size:13px;color:var(--t2);line-height:1.5;">'
             +(normalizedOrg.city ? '<div><b>Город:</b> '+_esc(normalizedOrg.city)+'</div>' : '')
             +(normalizedOrg.address ? '<div><b>Адрес:</b> '+_esc(normalizedOrg.address)+'</div>' : '')
             +(normalizedOrg.created_at ? '<div><b>Дата создания:</b> '+_esc(String(normalizedOrg.created_at).slice(0, 10))+'</div>' : '')
-          +'</div>'
+        +'</div>'
           +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">'
             +'<button class="tbBtn" data-org-action="open" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
             +(perms.canManageMembers ? '<button class="tbBtn" data-org-action="members" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Участники</button>' : '')
@@ -4169,6 +4192,11 @@ function renderRestaurants(){
   console.info('restaurant cards rendered', finalList.length);
   console.info('orgsStableRoot children', root.children.length);
   console.info('organization page rendered only in #pg-restaurants');
+  finalList.forEach(function (org) {
+    if (org && org.id && typeof window.loadOrganizationSummaryForOrganization === 'function') {
+      window.loadOrganizationSummaryForOrganization(org.id).catch(function () {});
+    }
+  });
 
   if (!root.__orgActionsBound) {
     root.addEventListener('click', function (e) {
@@ -4899,8 +4927,10 @@ function renderOrganizationDetailsModal(orgId){
   var orgType = String(org.type || org.kind || 'other').toLowerCase();
   var orgCity = org.city || org.location || '';
   var orgAddress = org.address || org.legal_address || '';
-  var membersCount = Number(org.membersCount || org.members_count || 0) || 0;
-  var suppliersCount = 0;
+  var membersCount = (org.membersCount !== undefined && org.membersCount !== null)
+    ? (Number(org.membersCount) || 0)
+    : (org.members_count !== undefined && org.members_count !== null ? (Number(org.members_count) || 0) : null);
+  var suppliersCount = null;
   var suppliersBucket = window.__dataCache && window.__dataCache.suppliersByOrg ? window.__dataCache.suppliersByOrg[String(orgId || '')] : null;
   if (Array.isArray(suppliersBucket)) suppliersCount = suppliersBucket.length;
   var membersBucket = getOrganizationMembersBucket(orgId);
@@ -5174,8 +5204,8 @@ function refreshOrgCachesAfterMutation(orgRow){
     address: orgRow.address || '',
     created_at: orgRow.created_at || orgRow.createdAt || '',
     updated_at: orgRow.updated_at || orgRow.updatedAt || '',
-    membersCount: Number(orgRow.members_count || orgRow.membersCount || 0) || 0,
-    activeMembersCount: Number(orgRow.active_members_count || orgRow.activeMembersCount || 0) || 0
+    membersCount: orgRow.members_count === null || orgRow.members_count === undefined || orgRow.members_count === '' ? null : (Number(orgRow.members_count) || 0),
+    activeMembersCount: orgRow.active_members_count === null || orgRow.active_members_count === undefined || orgRow.active_members_count === '' ? null : (Number(orgRow.active_members_count) || 0)
   };
   syncOrganizationListItemIntoSession(normalized);
   if (typeof window.refreshOrganizationsForRestaurants === 'function') {
@@ -5240,8 +5270,8 @@ window.submitOrganizationForm = async function () {
         status: result.status || status,
         city: result.city || city,
         address: result.address || address,
-        membersCount: result.members_count || result.membersCount || 0,
-        activeMembersCount: result.active_members_count || result.activeMembersCount || 0
+        membersCount: result.members_count === null || result.members_count === undefined || result.members_count === "" ? null : (result.membersCount === null || result.membersCount === undefined || result.membersCount === "" ? null : (Number(result.membersCount) || 0)),
+        activeMembersCount: result.active_members_count === null || result.active_members_count === undefined || result.active_members_count === "" ? null : (result.activeMembersCount === null || result.activeMembersCount === undefined || result.activeMembersCount === "" ? null : (Number(result.activeMembersCount) || 0))
       };
     }
     refreshOrgCachesAfterMutation(confirmRow);

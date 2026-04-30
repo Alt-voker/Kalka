@@ -569,6 +569,9 @@
     if (!window.__dataCache.organizationMembersByOrg || typeof window.__dataCache.organizationMembersByOrg !== 'object') {
       window.__dataCache.organizationMembersByOrg = {};
     }
+    if (!window.__dataCache.organizationSummaryByOrg || typeof window.__dataCache.organizationSummaryByOrg !== 'object') {
+      window.__dataCache.organizationSummaryByOrg = {};
+    }
     if (!window.__dataCache.organizationsByFilter || typeof window.__dataCache.organizationsByFilter !== 'object') {
       window.__dataCache.organizationsByFilter = {};
     }
@@ -970,6 +973,10 @@
     var cache = getDataCache();
     delete cache.organizationMembersByOrg[orgId];
     var items = await loadOrganizationMembersForOrganization(orgId);
+    delete cache.organizationSummaryByOrg[orgId];
+    if (typeof window.loadOrganizationSummaryForOrganization === 'function') {
+      window.loadOrganizationSummaryForOrganization(orgId).catch(function () {});
+    }
     if (typeof window.renderRestaurants === 'function') window.renderRestaurants();
     if (typeof window.renderOrganizationMembersModal === 'function') window.renderOrganizationMembersModal(orgId);
     var detailsModal = document.getElementById('ov-orgDetails');
@@ -984,6 +991,144 @@
   };
   window.loadOrganizationMembersForOrganization = loadOrganizationMembersForOrganization;
   window.refreshOrganizationMembersForOrganization = refreshOrganizationMembersForOrganization;
+
+  async function rpcOwnerGetOrganizationSummary(client, organizationId) {
+    console.info('supabase request start', 'owner_get_organization_summary');
+    var response = await withTimeout(
+      client.rpc('owner_get_organization_summary', { target_organization_id: organizationId }),
+      8000,
+      'Не удалось загрузить статистику организации'
+    ).catch(function (error) {
+      console.error('rpc owner_get_organization_summary failed', {
+        request: 'owner_get_organization_summary',
+        organizationId: String(organizationId || ''),
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
+      });
+      throw error;
+    });
+    if (response && response.error) {
+      console.error('rpc owner_get_organization_summary failed', {
+        request: 'owner_get_organization_summary',
+        organizationId: String(organizationId || ''),
+        code: response.error.code || '',
+        message: response.error.message || '',
+        details: response.error.details || '',
+        hint: response.error.hint || '',
+        raw: response.error
+      });
+      throw response.error;
+    }
+    return Array.isArray(response && response.data) ? response.data[0] || null : null;
+  }
+
+  async function loadOrganizationSummaryForOrganization(organizationId) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    var orgId = String(organizationId || '').trim();
+    if (!client || !orgId) return null;
+    var cache = getDataCache();
+    var bucket = cache.organizationSummaryByOrg[orgId];
+    if (bucket && bucket.loadedAt && (Date.now() - bucket.loadedAt) < 30000 && bucket.data) {
+      return Object.assign({}, bucket.data);
+    }
+    if (bucket && bucket.promise) {
+      return bucket.promise;
+    }
+    cache.organizationSummaryByOrg[orgId] = bucket = {
+      data: bucket && bucket.data ? Object.assign({}, bucket.data) : null,
+      loading: true,
+      error: null,
+      promise: null,
+      loadedAt: bucket && bucket.loadedAt ? bucket.loadedAt : 0
+    };
+    bucket.promise = (async function () {
+      try {
+        var row = await rpcOwnerGetOrganizationSummary(client, orgId);
+        var toCountOrNull = function (value) {
+          if (value === null || value === undefined || value === '') return null;
+          var n = Number(value);
+          return isFinite(n) ? n : null;
+        };
+        var summary = {
+          organization_id: row && (row.organization_id || row.id) || orgId,
+          members_count: toCountOrNull(row && (row.members_count !== undefined ? row.members_count : row.membersCount)),
+          active_members_count: toCountOrNull(row && (row.active_members_count !== undefined ? row.active_members_count : row.activeMembersCount)),
+          suppliers_count: toCountOrNull(row && (row.suppliers_count !== undefined ? row.suppliers_count : row.suppliersCount)),
+          price_lists_count: toCountOrNull(row && (row.price_lists_count !== undefined ? row.price_lists_count : row.priceListsCount)),
+          orders_count: toCountOrNull(row && (row.orders_count !== undefined ? row.orders_count : row.ordersCount)),
+          updated_at: row && (row.updated_at || row.updatedAt) || new Date().toISOString()
+        };
+        bucket.data = summary;
+        bucket.error = null;
+        bucket.loadedAt = Date.now();
+        if (window.__userSession && Array.isArray(window.__userSession.organizations)) {
+          window.__userSession.organizations = window.__userSession.organizations.map(function (org) {
+            if (!org || String(org.id || '') !== orgId) return org;
+            return Object.assign({}, org, {
+              membersCount: summary.members_count,
+              activeMembersCount: summary.active_members_count,
+              suppliersCount: summary.suppliers_count,
+              priceListsCount: summary.price_lists_count,
+              ordersCount: summary.orders_count,
+              updated_at: summary.updated_at
+            });
+          });
+        }
+        if (window.__userSession && window.__userSession.activeOrganization && String(window.__userSession.activeOrganization.id || '') === orgId) {
+          window.__userSession.activeOrganization = Object.assign({}, window.__userSession.activeOrganization, {
+            membersCount: summary.members_count,
+            activeMembersCount: summary.active_members_count,
+            suppliersCount: summary.suppliers_count,
+            priceListsCount: summary.price_lists_count,
+            ordersCount: summary.orders_count,
+            updated_at: summary.updated_at
+          });
+        }
+        if (typeof window.renderRestaurants === 'function' && String(window.__orgListFilter || 'active').trim() === 'active') {
+          window.renderRestaurants();
+        }
+        return Object.assign({}, summary);
+      } catch (error) {
+        bucket.error = {
+          code: error && error.code ? error.code : '',
+          message: error && error.message ? error.message : '',
+          details: error && error.details ? error.details : '',
+          hint: error && error.hint ? error.hint : '',
+          raw: error
+        };
+        return null;
+      } finally {
+        bucket.loading = false;
+        bucket.promise = null;
+      }
+    })();
+    return bucket.promise;
+  }
+
+  async function refreshOrganizationSummaryForOrganization(organizationId) {
+    var orgId = String(organizationId || '').trim();
+    if (!orgId) return null;
+    var cache = getDataCache();
+    delete cache.organizationSummaryByOrg[orgId];
+    var result = await loadOrganizationSummaryForOrganization(orgId);
+    if (typeof window.renderOrganizationDetailsModal === 'function') {
+      var detailsModal = document.getElementById('ov-orgDetails');
+      if (detailsModal && String(detailsModal.dataset.orgId || '').trim() === orgId) {
+        window.renderOrganizationDetailsModal(orgId);
+      }
+    }
+    if (typeof window.renderRestaurants === 'function') window.renderRestaurants();
+    return result;
+  }
+
+  window.ownerGetOrganizationSummary = function (organizationId) {
+    return loadOrganizationSummaryForOrganization(organizationId);
+  };
+  window.loadOrganizationSummaryForOrganization = loadOrganizationSummaryForOrganization;
+  window.refreshOrganizationSummaryForOrganization = refreshOrganizationSummaryForOrganization;
 
   function normalizeOrganizationRow(row) {
     if (!row) return null;
@@ -1075,8 +1220,8 @@
               address: org.address,
               created_at: org.created_at || org.createdAt || '',
               updated_at: org.updated_at || org.updatedAt || '',
-              members_count: org.membersCount || 0,
-              active_members_count: org.activeMembersCount || 0
+              members_count: org.membersCount !== undefined && org.membersCount !== null ? org.membersCount : null,
+              active_members_count: org.activeMembersCount !== undefined && org.activeMembersCount !== null ? org.activeMembersCount : null
             });
           }).filter(Boolean);
         }
@@ -1093,12 +1238,12 @@
             return Object.assign({}, org, {
               type: found.type || org.type,
               status: found.status || org.status || 'active',
-              city: found.city || org.city || '',
-              address: found.address || org.address || '',
-              membersCount: found.activeMembersCount || found.membersCount || org.membersCount || 0,
-              activeMembersCount: found.activeMembersCount || org.activeMembersCount || 0
+                city: found.city || org.city || '',
+                address: found.address || org.address || '',
+                membersCount: found.membersCount !== undefined && found.membersCount !== null ? found.membersCount : (org.membersCount !== undefined && org.membersCount !== null ? org.membersCount : null),
+                activeMembersCount: found.activeMembersCount !== undefined && found.activeMembersCount !== null ? found.activeMembersCount : (org.activeMembersCount !== undefined && org.activeMembersCount !== null ? org.activeMembersCount : null)
+              });
             });
-          });
           if (window.__userSession.activeOrganization) {
             var activeId = String(window.__userSession.activeOrganization.id || '').trim();
             var activeFound = items.find(function (item) { return String(item.id || '').trim() === activeId; });
@@ -1108,7 +1253,8 @@
                 status: activeFound.status || window.__userSession.activeOrganization.status || 'active',
                 city: activeFound.city || window.__userSession.activeOrganization.city || '',
                 address: activeFound.address || window.__userSession.activeOrganization.address || '',
-              membersCount: activeFound.activeMembersCount || activeFound.membersCount || 0
+              membersCount: activeFound.membersCount !== undefined && activeFound.membersCount !== null ? activeFound.membersCount : null,
+              activeMembersCount: activeFound.activeMembersCount !== undefined && activeFound.activeMembersCount !== null ? activeFound.activeMembersCount : null
               });
             }
           }
@@ -1116,6 +1262,11 @@
         if (typeof window.renderRestaurants === 'function' && String(window.__orgListFilter || 'active').trim() === filter) {
           window.renderRestaurants();
         }
+        items.forEach(function (org) {
+          if (org && org.id && typeof window.loadOrganizationSummaryForOrganization === 'function') {
+            window.loadOrganizationSummaryForOrganization(org.id).catch(function () {});
+          }
+        });
         return items.slice();
       } catch (error) {
         bucket.error = {
@@ -1135,16 +1286,21 @@
                 status: org.status,
                 city: org.city,
                 address: org.address,
-                created_at: org.created_at || org.createdAt || '',
-                updated_at: org.updated_at || org.updatedAt || '',
-                members_count: org.membersCount || 0,
-                active_members_count: org.activeMembersCount || 0
+              created_at: org.created_at || org.createdAt || '',
+              updated_at: org.updated_at || org.updatedAt || '',
+                members_count: org.membersCount !== undefined && org.membersCount !== null ? org.membersCount : null,
+                active_members_count: org.activeMembersCount !== undefined && org.activeMembersCount !== null ? org.activeMembersCount : null
               });
             }).filter(Boolean)
           : [];
         if (typeof window.renderRestaurants === 'function' && String(window.__orgListFilter || 'active').trim() === filter) {
           window.renderRestaurants();
         }
+        bucket.items.forEach(function (org) {
+          if (org && org.id && typeof window.loadOrganizationSummaryForOrganization === 'function') {
+            window.loadOrganizationSummaryForOrganization(org.id).catch(function () {});
+          }
+        });
         return [];
       } finally {
         bucket.loading = false;
@@ -1171,6 +1327,11 @@
 
   function normalizeOrganizationResponse(row) {
     if (!row) return null;
+    var toCountOrNull = function (value) {
+      if (value === null || value === undefined || value === '') return null;
+      var n = Number(value);
+      return isFinite(n) ? n : null;
+    };
     return {
       id: row.id || row.organization_id || '',
       name: row.name || '',
@@ -1180,14 +1341,19 @@
       address: row.address || '',
       created_at: row.created_at || row.createdAt || '',
       updated_at: row.updated_at || row.updatedAt || '',
-      membersCount: Number(row.members_count || row.membersCount || 0) || 0,
-      activeMembersCount: Number(row.active_members_count || row.activeMembersCount || 0) || 0
+      membersCount: toCountOrNull(row.members_count !== undefined ? row.members_count : row.membersCount),
+      activeMembersCount: toCountOrNull(row.active_members_count !== undefined ? row.active_members_count : row.activeMembersCount)
     };
   }
 
   function syncOrganizationIntoSession(org) {
     if (!org || !window.__userSession) return org;
     window.__userSession.organizations = Array.isArray(window.__userSession.organizations) ? window.__userSession.organizations : [];
+    var toCountOrNull = function (value) {
+      if (value === null || value === undefined || value === '') return null;
+      var n = Number(value);
+      return isFinite(n) ? n : null;
+    };
     var idx = window.__userSession.organizations.findIndex(function (item) {
       return String(item && item.id || '').trim() === String(org.id || '').trim();
     });
@@ -1200,8 +1366,8 @@
       address: org.address || '',
       created_at: org.created_at || '',
       updated_at: org.updated_at || '',
-      membersCount: org.membersCount || 0,
-      activeMembersCount: org.activeMembersCount || 0
+      membersCount: toCountOrNull(org.membersCount),
+      activeMembersCount: toCountOrNull(org.activeMembersCount)
     };
     if (idx >= 0) window.__userSession.organizations[idx] = Object.assign({}, window.__userSession.organizations[idx], merged);
     else window.__userSession.organizations.push(merged);
@@ -2168,6 +2334,9 @@
       }
 
       if (typeof window.closeSupplierModal === 'function') window.closeSupplierModal();
+      if (typeof window.refreshOrganizationSummaryForOrganization === 'function' && activeOrgId) {
+        window.refreshOrganizationSummaryForOrganization(activeOrgId).catch(function () {});
+      }
       if (typeof window.renderSuppliers === 'function') window.renderSuppliers();
       if (typeof window.renderCatalog === 'function') window.renderCatalog();
       if (typeof window.renderOwner === 'function' && window.CU && window.CU.role === 'owner') window.renderOwner();

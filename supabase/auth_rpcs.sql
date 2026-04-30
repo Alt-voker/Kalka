@@ -621,6 +621,73 @@ $$;
 revoke all on function public.owner_list_organizations(text) from public;
 grant execute on function public.owner_list_organizations(text) to authenticated;
 
+create or replace function public.owner_get_organization_summary(
+  target_organization_id uuid
+)
+returns table (
+  members_count integer,
+  active_members_count integer,
+  suppliers_count integer,
+  price_lists_count integer,
+  orders_count integer,
+  updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_is_owner boolean := public._is_platform_owner();
+begin
+  if target_organization_id is null then
+    raise exception 'organization_id is required';
+  end if;
+  if auth.uid() is null then
+    raise exception 'auth.uid() is required';
+  end if;
+
+  if not v_is_owner and not public.current_user_can_access_organization(target_organization_id) then
+    raise exception 'Forbidden';
+  end if;
+
+  return query
+  select
+    coalesce((
+      select count(*)
+      from public.organization_members om
+      where om.organization_id = target_organization_id
+    ), 0)::integer as members_count,
+    coalesce((
+      select count(*)
+      from public.organization_members om
+      where om.organization_id = target_organization_id
+        and om.status = 'active'
+    ), 0)::integer as active_members_count,
+    coalesce((
+      select count(*)
+      from public.suppliers s
+      where s.organization_id = target_organization_id
+        and coalesce(s.status, 'active') <> 'deleted'
+    ), 0)::integer as suppliers_count,
+    coalesce((
+      select count(*)
+      from public.price_lists pl
+      where pl.organization_id = target_organization_id
+        and coalesce(pl.status, 'active') <> 'deleted'
+    ), 0)::integer as price_lists_count,
+    coalesce((
+      select count(*)
+      from public.orders o
+      where o.organization_id = target_organization_id
+        and coalesce(o.status, 'active') <> 'deleted'
+    ), 0)::integer as orders_count,
+    now() as updated_at;
+end;
+$$;
+
+revoke all on function public.owner_get_organization_summary(uuid) from public;
+grant execute on function public.owner_get_organization_summary(uuid) to authenticated;
+
 create or replace function public.owner_update_organization(
   target_organization_id uuid,
   target_name text,
