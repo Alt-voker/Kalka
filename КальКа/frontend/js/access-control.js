@@ -87,5 +87,6 @@
   window.safeHasAccess = safeHasAccess;
   window.hasPermission = hasPermission;
 
+  console.info('access-control loaded');
   console.info('access test owner dash', safeHasAccess('dash', 'owner'));
 })();
