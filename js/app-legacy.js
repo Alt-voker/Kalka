@@ -4140,15 +4140,41 @@ function renderRestaurants(){
       var canRestore = (currentRole === 'owner' || currentRole === 'admin') && status === 'archived';
       var canDelete = currentRole === 'owner' && status !== 'deleted';
       var summaryCache = getOrganizationSummaryFromCache(normalizedOrg.id) || {};
-      var activeMembersCount = (summaryCache && summaryCache.active_members_count !== undefined && summaryCache.active_members_count !== null)
-        ? summaryCache.active_members_count
-        : (normalizedOrg.activeMembersCount !== undefined && normalizedOrg.activeMembersCount !== null ? normalizedOrg.activeMembersCount : null);
-      var membersCount = (summaryCache && summaryCache.members_count !== undefined && summaryCache.members_count !== null)
-        ? summaryCache.members_count
-        : (normalizedOrg.membersCount !== undefined && normalizedOrg.membersCount !== null ? normalizedOrg.membersCount : getOrganizationMembersCountFromCache(normalizedOrg.id));
-      var suppliersCount = (summaryCache && summaryCache.suppliers_count !== undefined && summaryCache.suppliers_count !== null)
-        ? summaryCache.suppliers_count
-        : (normalizedOrg.suppliersCount !== undefined && normalizedOrg.suppliersCount !== null ? normalizedOrg.suppliersCount : null);
+      var summaryObj = normalizedOrg.summary && typeof normalizedOrg.summary === 'object' ? normalizedOrg.summary : {};
+      var activeMembersCount = (
+        summaryObj.activeMembersCount !== undefined && summaryObj.activeMembersCount !== null ? summaryObj.activeMembersCount :
+        summaryObj.active_members_count !== undefined && summaryObj.active_members_count !== null ? summaryObj.active_members_count :
+        summaryCache.activeMembersCount !== undefined && summaryCache.activeMembersCount !== null ? summaryCache.activeMembersCount :
+        summaryCache.active_members_count !== undefined && summaryCache.active_members_count !== null ? summaryCache.active_members_count :
+        normalizedOrg.activeMembersCount !== undefined && normalizedOrg.activeMembersCount !== null ? normalizedOrg.activeMembersCount :
+        normalizedOrg.active_members_count !== undefined && normalizedOrg.active_members_count !== null ? normalizedOrg.active_members_count :
+        null
+      );
+      var membersCount = (
+        summaryObj.membersCount !== undefined && summaryObj.membersCount !== null ? summaryObj.membersCount :
+        summaryObj.members_count !== undefined && summaryObj.members_count !== null ? summaryObj.members_count :
+        summaryCache.membersCount !== undefined && summaryCache.membersCount !== null ? summaryCache.membersCount :
+        summaryCache.members_count !== undefined && summaryCache.members_count !== null ? summaryCache.members_count :
+        normalizedOrg.membersCount !== undefined && normalizedOrg.membersCount !== null ? normalizedOrg.membersCount :
+        normalizedOrg.members_count !== undefined && normalizedOrg.members_count !== null ? normalizedOrg.members_count :
+        null
+      );
+      var suppliersCount = (
+        summaryObj.suppliersCount !== undefined && summaryObj.suppliersCount !== null ? summaryObj.suppliersCount :
+        summaryObj.suppliers_count !== undefined && summaryObj.suppliers_count !== null ? summaryObj.suppliers_count :
+        summaryCache.suppliersCount !== undefined && summaryCache.suppliersCount !== null ? summaryCache.suppliersCount :
+        summaryCache.suppliers_count !== undefined && summaryCache.suppliers_count !== null ? summaryCache.suppliers_count :
+        normalizedOrg.suppliersCount !== undefined && normalizedOrg.suppliersCount !== null ? normalizedOrg.suppliersCount :
+        normalizedOrg.suppliers_count !== undefined && normalizedOrg.suppliers_count !== null ? normalizedOrg.suppliers_count :
+        null
+      );
+      console.info('card member count resolved', {
+        orgId: normalizedOrg.id,
+        name: normalizedOrg.name,
+        activeMembersCount: activeMembersCount,
+        membersCount: membersCount,
+        summary: summaryObj && Object.keys(summaryObj).length ? summaryObj : (summaryCache && Object.keys(summaryCache).length ? summaryCache : null)
+      });
       var currentLabel = getOrganizationCurrentLabelSafe(normalizedOrg.id, activeOrgId);
       return '<div class="panel" style="background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);border:1px solid rgba(148,163,184,.16);border-radius:18px;overflow:hidden;">'
         +'<div style="padding:18px;">'
@@ -4158,7 +4184,7 @@ function renderRestaurants(){
             +'<span class="badge" style="'+(status === 'active' ? 'background:var(--grD);color:var(--gr);border:1px solid var(--gr);' : 'background:#eef2f7;color:#475569;border:1px solid #cbd5e1;')+'">'+getOrganizationStatusLabelSafe(status)+'</span>'
             +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Роль: '+getOrganizationRoleLabelSafe(normalizedOrg.role || currentRole)+'</span>'
             +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">'+currentLabel+'</span>'
-            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Участники: '+getOrganizationCountLabelSafe(activeMembersCount !== null && activeMembersCount !== undefined ? activeMembersCount : membersCount, '—')+'</span>'
+            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Участники: '+getOrganizationCountLabelSafe(activeMembersCount !== null && activeMembersCount !== undefined ? activeMembersCount : (membersCount !== null && membersCount !== undefined ? membersCount : null), '—')+'</span>'
             +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Поставщики: '+getOrganizationCountLabelSafe(suppliersCount, '—')+'</span>'
           +'</div>'
           +'<div style="margin-top:10px;font-size:13px;color:var(--t2);line-height:1.5;">'
