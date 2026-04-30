@@ -59,6 +59,29 @@ function getRolePagesSafe(role){
   return Array.from(new Set(pages.filter(Boolean)));
 }
 
+function hasPermissionSafe(permissionKey){
+  try {
+    if (typeof window.hasPermission === 'function') return !!window.hasPermission(permissionKey);
+  } catch (error) {}
+  var role = normalizeRoleSafe((window.__userSession && window.__userSession.role) || (window.CU && window.CU.role) || '');
+  if (role === 'owner' || role === 'platform_owner') return true;
+  return false;
+}
+
+function logOrgPermissionCheck(action, permission, allowed){
+  console.info('organization permission check', { action: action, permission: permission, allowed: !!allowed });
+}
+
+function canRenderOrgAction(action, permission, roleFallbackAllowed){
+  var allowed = hasPermissionSafe(permission);
+  if (!allowed && roleFallbackAllowed) {
+    var role = normalizeRoleSafe((window.__userSession && window.__userSession.role) || (window.CU && window.CU.role) || '');
+    allowed = role === 'owner' || role === 'platform_owner';
+  }
+  logOrgPermissionCheck(action, permission, allowed);
+  return !!allowed;
+}
+
 // ── СЛОВАРИ ПАРСЕРА И ПОИСКА ─────────────────────────────────
 
 var NAME_SYNONYMS = [
@@ -3841,15 +3864,22 @@ function getOrganizationCurrentLabelSafe(orgId, activeOrgId) {
 
 function getOrganizationActionRolePermissions(role) {
   var normalized = normalizeLegacyRoleSafe(role);
+  var canManageMembers = ['owner', 'admin', 'organization_owner'].indexOf(normalized) >= 0;
+  var canViewSuppliers = ['owner', 'admin', 'organization_owner', 'manager', 'buyer'].indexOf(normalized) >= 0;
+  var canArchive = ['owner', 'admin'].indexOf(normalized) >= 0;
+  var canDelete = normalized === 'owner';
   return {
     canCreate: normalized === 'owner' || normalized === 'admin',
     canViewDetails: true,
-    canEdit: ['owner', 'admin', 'organization_owner'].indexOf(normalized) >= 0,
-    canManageMembers: ['owner', 'admin', 'organization_owner'].indexOf(normalized) >= 0,
-    canAddMembers: ['owner', 'admin', 'organization_owner'].indexOf(normalized) >= 0,
-    canViewSuppliers: ['owner', 'admin', 'organization_owner', 'manager', 'buyer'].indexOf(normalized) >= 0,
-    canArchive: ['owner', 'admin'].indexOf(normalized) >= 0,
-    canDelete: normalized === 'owner',
+    canEdit: canRenderOrgAction('edit', 'organization.edit', ['owner', 'admin', 'organization_owner'].indexOf(normalized) >= 0),
+    canManageMembers: canRenderOrgAction('members', 'organization.members.view', canManageMembers),
+    canAddMembers: canRenderOrgAction('add-user', 'organization.members.invite', canManageMembers),
+    canEditRole: canRenderOrgAction('change-role', 'organization.members.edit_role', canManageMembers),
+    canDisableMember: canRenderOrgAction('disconnect', 'organization.members.disable', canManageMembers),
+    canViewSuppliers: canRenderOrgAction('suppliers', 'suppliers.view', canViewSuppliers),
+    canArchive: canRenderOrgAction('archive', 'organization.archive', canArchive),
+    canRestore: canRenderOrgAction('restore', 'organization.archive', canArchive),
+    canDelete: canRenderOrgAction('delete', 'organization.delete', canDelete),
     canSwitch: true
   };
 }
@@ -4099,15 +4129,15 @@ function renderRestaurants(){
           +(normalizedOrg.created_at ? '<div><b>Дата создания:</b> '+_esc(String(normalizedOrg.created_at).slice(0, 10))+'</div>' : '')
         +'</div>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">'
-          +'<button class="tbBtn" data-org-action="open" data-org-id="'+_esc(normalizedOrg.id)+'" '+(disabledWhy.open ? 'disabled title="'+_esc(disabledWhy.open)+'"' : '')+' style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
-          +'<button class="tbBtn" data-org-action="members" data-org-id="'+_esc(normalizedOrg.id)+'" '+(canManageMembers ? '' : 'disabled title="'+_esc(disabledWhy.members)+'"')+' style="cursor:pointer;">Участники</button>'
-          +'<button class="tbBtn" data-org-action="add-user" data-org-id="'+_esc(normalizedOrg.id)+'" '+(canAddMembers ? '' : 'disabled title="'+_esc(disabledWhy.add)+'"')+' style="cursor:pointer;">Добавить участника</button>'
-          +'<button class="tbBtn" data-org-action="edit" data-org-id="'+_esc(normalizedOrg.id)+'" '+(canEdit ? '' : 'disabled title="'+_esc(disabledWhy.edit)+'"')+' style="cursor:pointer;">Редактировать</button>'
-          +'<button class="tbBtn" data-org-action="suppliers" data-org-id="'+_esc(normalizedOrg.id)+'" '+(canViewSuppliers ? '' : 'disabled title="'+_esc(disabledWhy.suppliers)+'"')+' style="cursor:pointer;">Поставщики</button>'
-          +(isActive ? '<span class="badge" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);">Текущая организация</span>' : '<button class="tbBtn" data-org-action="switch" data-org-id="'+_esc(normalizedOrg.id)+'" '+(disabledWhy.switch ? 'disabled title="'+_esc(disabledWhy.switch)+'"' : '')+' style="cursor:pointer;">Переключиться</button>')
-          +(canArchive ? '<button class="tbBtn" data-org-action="archive" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Архивировать</button>' : (currentRole === 'owner' || currentRole === 'admin' ? '<button class="tbBtn" data-org-action="archive" data-org-id="'+_esc(normalizedOrg.id)+'" disabled title="Недостаточно прав для архивации" style="cursor:pointer;">Архивировать</button>' : ''))
-          +(canRestore ? '<button class="tbBtn" data-org-action="restore" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Восстановить</button>' : ((currentRole === 'owner' || currentRole === 'admin') && status !== 'deleted' ? '<button class="tbBtn" data-org-action="restore" data-org-id="'+_esc(normalizedOrg.id)+'" disabled title="Недоступно для текущего статуса" style="cursor:pointer;">Восстановить</button>' : ''))
-          +(canDelete ? '<button class="tbBtn" data-org-action="delete" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Удалить</button>' : (currentRole === 'owner' ? '<button class="tbBtn" data-org-action="delete" data-org-id="'+_esc(normalizedOrg.id)+'" disabled title="Недостаточно прав для удаления" style="cursor:pointer;">Удалить</button>' : ''))
+          +'<button class="tbBtn" data-org-action="open" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Открыть</button>'
+          +(perms.canManageMembers ? '<button class="tbBtn" data-org-action="members" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Участники</button>' : '')
+          +(perms.canAddMembers ? '<button class="tbBtn" data-org-action="add-user" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Добавить участника</button>' : '')
+          +(perms.canEdit ? '<button class="tbBtn" data-org-action="edit" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Редактировать</button>' : '')
+          +(perms.canViewSuppliers ? '<button class="tbBtn" data-org-action="suppliers" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Поставщики</button>' : '')
+          +(isActive ? '<span class="badge" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);">Текущая организация</span>' : '<button class="tbBtn" data-org-action="switch" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Переключиться</button>')
+          +(perms.canArchive ? '<button class="tbBtn" data-org-action="archive" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Архивировать</button>' : '')
+          +(perms.canRestore && status === 'archived' ? '<button class="tbBtn" data-org-action="restore" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Восстановить</button>' : '')
+          +(perms.canDelete ? '<button class="tbBtn" data-org-action="delete" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Удалить</button>' : '')
         +'</div>'
       +'</div>'
     +'</div>';
@@ -4199,7 +4229,19 @@ window.runOrganizationModuleSelfTest = async function () {
   orgActionMap.concat(memberActionMap).forEach(function (item) {
     var button = document.querySelector(item.selector);
     var handlerAttached = typeof window[item.handler] === 'function';
-    var status = ((!!button || (item.action === 'open' ? !!cardButtons.length : false)) && handlerAttached) ? 'OK' : 'FAIL';
+    var permissionAllowed = true;
+    if (item.action === 'edit') permissionAllowed = hasPermissionSafe('organization.edit');
+    if (item.action === 'members') permissionAllowed = hasPermissionSafe('organization.members.view');
+    if (item.action === 'add-user' || item.action === 'submit-add') permissionAllowed = hasPermissionSafe('organization.members.invite');
+    if (item.action === 'change-role') permissionAllowed = hasPermissionSafe('organization.members.edit_role');
+    if (item.action === 'disconnect') permissionAllowed = hasPermissionSafe('organization.members.disable');
+    if (item.action === 'suppliers') permissionAllowed = hasPermissionSafe('suppliers.view');
+    if (item.action === 'archive' || item.action === 'restore') permissionAllowed = hasPermissionSafe('organization.archive');
+    if (item.action === 'delete') permissionAllowed = hasPermissionSafe('organization.delete');
+    var status = ((!!button || (item.action === 'open' ? !!cardButtons.length : false)) && handlerAttached && permissionAllowed) ? 'OK' : 'FAIL';
+    if (!permissionAllowed && (item.action === 'edit' || item.action === 'members' || item.action === 'add-user' || item.action === 'submit-add' || item.action === 'change-role' || item.action === 'disconnect' || item.action === 'suppliers' || item.action === 'archive' || item.action === 'restore' || item.action === 'delete')) {
+      status = 'SKIP';
+    }
     if ((item.action === 'change-role' || item.action === 'disconnect') && !document.querySelector('#ov-orgMembers [data-member-action="'+item.action+'"]')) {
       status = 'SKIP';
     }
