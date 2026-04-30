@@ -4020,6 +4020,13 @@ function renderRestaurants(){
   var perms = getOrganizationActionRolePermissions(currentRole);
   var orgFilter = String(window.__orgListFilter || 'active').trim().toLowerCase() || 'active';
 
+  console.info('organizations visible for user', {
+    role: currentRole,
+    count: normalized.length,
+    noOrganization: !!session.noOrganization,
+    activeOrganizationId: activeOrgId
+  });
+
   pageContainer.classList.add('on');
   pageContainer.classList.remove('gone', 'hidden');
   pageContainer.style.display = 'block';
