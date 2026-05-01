@@ -1766,6 +1766,7 @@ function repeatVisibleOrder(orderId){
 }
 function renderSuppliers(){
   var el=document.getElementById('supGrid');if(!el)return;
+  ensureSupplierGridActionBinding();
   var activeOrgId = String((window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
   var cache = window.__dataCache || {};
   var sessionSuppliers = (window.__userSession && Array.isArray(window.__userSession.suppliers)) ? window.__userSession.suppliers : [];
@@ -1832,7 +1833,7 @@ function renderSuppliers(){
   var sm={active:'bg',contract:'by',new:'bb'};
   var sl={active:'Активен',contract:'Контракт',new:'Новый'};
   var canAdmin=CU&&['owner','admin'].includes(CU.role);
-  var canManagePrices=CU&&['owner','admin','buyer','manager'].includes(CU.role);
+  var canManagePrices=hasPermissionSafe('price_lists.view') || hasPermissionSafe('price_lists.upload') || canAdmin;
   var canCreateSupplier=hasPermissionSafe('suppliers.create') || canAdmin || (CU && ['owner','admin','director','organization_owner'].indexOf(normalizeLegacyRoleSafe(CU.role)) >= 0);
   var canEditSupplier=hasPermissionSafe('suppliers.edit') || canAdmin || (CU && ['owner','admin','director','organization_owner'].indexOf(normalizeLegacyRoleSafe(CU.role)) >= 0);
   var canDeleteSupplier=hasPermissionSafe('suppliers.delete') || canAdmin || (CU && ['owner','admin','director','organization_owner'].indexOf(normalizeLegacyRoleSafe(CU.role)) >= 0);
@@ -1857,13 +1858,14 @@ function renderSuppliers(){
       +'<button onclick="openSupPriceUpload(\''+s.name+'\',true)" style="flex:1;background:var(--bg3);color:var(--t2);border:1px solid var(--br);border-radius:6px;padding:5px 8px;font-size:11px;cursor:pointer;">+ Доп.прайс</button>'
       +'</div>':'';
 
-    var favoriteBtn='<button onclick="toggleFavoriteSupplier(\''+s.name+'\')" style="flex:1;background:'+(favoriteSuppliers.indexOf(s.name)>=0?'var(--aD)':'var(--bg3)')+';border:1px solid '+(favoriteSuppliers.indexOf(s.name)>=0?'var(--ac)':'var(--br)')+';border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:'+(favoriteSuppliers.indexOf(s.name)>=0?'var(--ac)':'var(--t2)')+';">'+(favoriteSuppliers.indexOf(s.name)>=0?'★ В избранном':'☆ В избранное')+'</button>';
-    var openBtn='<button onclick="openSupplierDetails('+i+')" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Открыть</button>';
+    var favoriteBtn='<button data-supplier-action="favorite" data-supplier-id="'+_esc(String(s.id||''))+'" onclick="toggleFavoriteSupplier(\''+s.name+'\')" style="flex:1;background:'+(favoriteSuppliers.indexOf(s.name)>=0?'var(--aD)':'var(--bg3)')+';border:1px solid '+(favoriteSuppliers.indexOf(s.name)>=0?'var(--ac)':'var(--br)')+';border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:'+(favoriteSuppliers.indexOf(s.name)>=0?'var(--ac)':'var(--t2)')+';">'+(favoriteSuppliers.indexOf(s.name)>=0?'★ В избранном':'☆ В избранное')+'</button>';
+    var openBtn='<button data-supplier-action="open" data-supplier-id="'+_esc(String(s.id||''))+'" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Открыть</button>';
+    var pricesMainBtn=canManagePrices?('<button data-supplier-action="prices" data-supplier-id="'+_esc(String(s.id||''))+'" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Прайсы</button>'):'';
     var manageBtn=canManageSupplier?(
-      '<button onclick="openSupplierModal('+i+')" style="flex:1;background:var(--bg4);border:1px solid var(--br2);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Редактировать</button>'
+      '<button data-supplier-action="edit" data-supplier-id="'+_esc(String(s.id||''))+'" style="flex:1;background:var(--bg4);border:1px solid var(--br2);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Редактировать</button>'
     ):'';
     var archiveBtn=(canDeleteSupplier || canManageSupplier)?(
-      '<button onclick="archiveSupplierFromCard('+i+')" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);opacity:.85;">Архивировать</button>'
+      '<button data-supplier-action="archive" data-supplier-id="'+_esc(String(s.id||''))+'" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);opacity:.85;">Архивировать</button>'
     ):'';
     var adminBtns=canAdmin?(
       '<button onclick="toggleSupHidden('+i+')" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">'+(s.hidden?'Показать':'Скрыть всем')+'</button>'
@@ -1903,6 +1905,7 @@ function renderSuppliers(){
       +'<div style="display:flex;gap:6px;margin-top:12px;border-top:1px solid var(--br);padding-top:10px;">'
       +favoriteBtn
       +openBtn
+      +pricesMainBtn
       +manageBtn
       +archiveBtn
       +adminBtns
@@ -1929,9 +1932,9 @@ function ensureSupplierDetailsModal(){
       +'</div>'
       +'<div id="supDetailsBody" style="display:grid;gap:12px;margin-top:14px;"></div>'
       +'<div class="m-acts" style="margin-top:18px;">'
-        +'<button class="m-ok" onclick="openSupplierModal(window.__supplierDetailsIndex)">Редактировать</button>'
-        +'<button class="m-ok" style="background:#5ba3f5;color:#fff;" onclick="if(window.__supplierDetailsIndex!==undefined){var s=Array.isArray(SUPS_DATA)?SUPS_DATA[window.__supplierDetailsIndex]:null;if(s&&typeof openSupPriceUpload===\'function\'){openSupPriceUpload(s.name,false);} }">Прайсы</button>'
-        +'<button class="m-ok" style="background:var(--bg3);color:var(--tx);border-color:var(--br);" onclick="archiveSupplierFromCard(window.__supplierDetailsIndex)">Архивировать</button>'
+        +'<button class="m-ok" data-supplier-action="edit" onclick="openSupplierModal(window.__supplierDetailsIndex)">Редактировать</button>'
+        +'<button class="m-ok" data-supplier-action="prices" style="background:#5ba3f5;color:#fff;" onclick="if(window.__supplierDetailsIndex!==undefined){var s=Array.isArray(SUPS_DATA)?SUPS_DATA[window.__supplierDetailsIndex]:null;if(s&&typeof openSupPriceUpload===\'function\'){openSupPriceUpload(s.name,false);} }">Прайсы</button>'
+        +'<button class="m-ok" data-supplier-action="archive" style="background:var(--bg3);color:var(--tx);border-color:var(--br);" onclick="archiveSupplierFromCard(window.__supplierDetailsIndex)">Архивировать</button>'
         +'<button class="m-cancel" onclick="closeSupplierDetailsModal()">Закрыть</button>'
       +'</div>'
     +'</div>';
@@ -1985,7 +1988,7 @@ window.archiveSupplierFromCard = async function(index){
       throw new Error('Недостаточно прав');
     }
     if (typeof window.ownerArchiveSupplier !== 'function') throw new Error('RPC архивации поставщика недоступен');
-    var result = await window.ownerArchiveSupplier({ target_supplier_id: supplier.id });
+    var result = await window.ownerArchiveSupplier({ target_supplier_id: supplier.id, target_organization_id: activeOrgId });
     if (!result || !result.length) {
       // keep silent if rpc returns single row as object
     }
@@ -1996,8 +1999,14 @@ window.archiveSupplierFromCard = async function(index){
     if (typeof window.refreshSupplierLegalEntitiesForOrganization === 'function') {
       await window.refreshSupplierLegalEntitiesForOrganization(activeOrgId).catch(function(){});
     }
+    var summary = null;
+    if (typeof window.refreshOrganizationSummaryForOrganization === 'function' && activeOrgId) {
+      summary = await window.refreshOrganizationSummaryForOrganization(activeOrgId).catch(function(){ return null; });
+      console.info('organization summary after supplier mutation', { orgId: activeOrgId, summary: summary });
+    }
     renderSuppliers();
     if (typeof window.toast === 'function') window.toast('Поставщик архивирован', 'ok');
+    console.info('supplier mutation success', { action: 'archive', supplierId: supplier.id });
     return true;
   } catch (error) {
     console.error('archiveSupplierFromCard failed', { index: index, error: error, message: error && error.message, stack: error && error.stack });
@@ -2713,6 +2722,9 @@ function getSupplierVisibleOrganizationsForUser(supplier, user, db){
     org = window.activeRest;
   }
   var rests = org && ids.indexOf(String(activeOrgId)) >= 0 ? [org] : [];
+  if (!rests.length && activeOrgId && !ids.length && supplier && String(supplier.organization_id || supplier.organizationId || '').trim() === '') {
+    rests = org ? [org] : [];
+  }
   if(!user) return [];
   if(user.role==='owner' || user.role==='admin') return rests;
   return rests.filter(function(rest){ return isRestaurantParticipant(user, rest); });
@@ -2722,7 +2734,12 @@ function canManageSupplierRecord(user, supplier, db){
   db=db||dbGet();
   if(!user || !supplier) return false;
   if(user.role==='owner' || user.role==='admin') return true;
-  return getSupplierVisibleOrganizationsForUser(supplier, user, db).length>0;
+  var activeOrgId=String((window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
+  var ids=normalizeSupplierOrganizationIds(supplier, db);
+  if (!ids.length && activeOrgId) {
+    ids = [activeOrgId];
+  }
+  return !!(activeOrgId && ids.indexOf(activeOrgId) >= 0 && (hasPermissionSafe('suppliers.edit') || hasPermissionSafe('suppliers.delete') || hasPermissionSafe('suppliers.view')));
 }
 
 function getUserVisibleSuppliers(user){
@@ -3438,6 +3455,58 @@ function normalizeSupplierLegalEntityIds(supplier){
   if(Array.isArray(supplier.legalEntities)) ids=ids.concat(supplier.legalEntities.map(function(entity){ return entity ? String(entity.id || entity.legal_entity_id || entity.legalEntityId || '').trim() : ''; }));
   if(Array.isArray(supplier.legal_entities)) ids=ids.concat(supplier.legal_entities.map(function(entity){ return entity ? String(entity.id || entity.legal_entity_id || entity.legalEntityId || '').trim() : ''; }));
   return Array.from(new Set(ids.map(String).filter(Boolean)));
+}
+
+function getSupplierActionSupplierIndex(action, supplierId){
+  var id = String(supplierId || '').trim();
+  if (!id || !Array.isArray(SUPS_DATA)) return -1;
+  for (var i = 0; i < SUPS_DATA.length; i++) {
+    var row = SUPS_DATA[i] || {};
+    if (String(row.id || '').trim() === id) return i;
+  }
+  return -1;
+}
+
+function ensureSupplierGridActionBinding(){
+  var root = document.getElementById('supGrid');
+  if(!root || root.dataset.supplierActionBound === '1') return;
+  root.dataset.supplierActionBound = '1';
+  root.addEventListener('click', function(e){
+    var btn = e.target && typeof e.target.closest === 'function' ? e.target.closest('[data-supplier-action]') : null;
+    if(!btn || !root.contains(btn)) return;
+    var action = String(btn.dataset.supplierAction || '').trim();
+    var supplierId = String(btn.dataset.supplierId || '').trim();
+    console.info('supplier action clicked', { action: action, supplierId: supplierId });
+    try {
+      var index = getSupplierActionSupplierIndex(action, supplierId);
+      if(action === 'open'){
+        if(index >= 0) return openSupplierDetailsModal(index);
+        throw new Error('Поставщик не найден');
+      }
+      if(action === 'edit'){
+        if(index >= 0) return openSupplierModal(index);
+        throw new Error('Поставщик не найден');
+      }
+      if(action === 'archive'){
+        if(index >= 0) return archiveSupplierFromCard(index);
+        throw new Error('Поставщик не найден');
+      }
+      if(action === 'prices'){
+        var supplier = index >= 0 ? SUPS_DATA[index] : null;
+        if(supplier && typeof openSupPriceUpload === 'function') return openSupPriceUpload(supplier.name, false);
+        throw new Error('Прайсы недоступны');
+      }
+    } catch (error) {
+      console.error('supplier action handler failed', {
+        action: action,
+        supplierId: supplierId,
+        error: error,
+        message: error && error.message,
+        stack: error && error.stack
+      });
+      toast(error && error.message ? error.message : 'Не удалось выполнить действие с поставщиком', 'err');
+    }
+  });
 }
 function renderSupplierOrganizationOptions(selectedIds){
   var box=document.getElementById('as-orgs');

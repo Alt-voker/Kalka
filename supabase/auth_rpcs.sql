@@ -761,7 +761,7 @@ begin
   if v_has_suppliers then
     execute format(
       'select count(*)::integer from public.suppliers s where s.organization_id = $1'
-      || case when v_has_supplier_status then ' and coalesce(s.status, ''active'') <> ''deleted''' else '' end
+      || case when v_has_supplier_status then ' and coalesce(s.status, ''active'') = ''active''' else '' end
     )
       into v_suppliers_count
       using target_organization_id;

@@ -2572,10 +2572,6 @@
       var name = ((document.getElementById('as-n') || {}).value || '').trim();
       if (!name) throw new Error('Укажите название поставщика');
 
-      if (!selectedLegalEntityIds.length) {
-        throw new Error('Выберите хотя бы одно юрлицо');
-      }
-
       var supplierId = editId !== '' && window.__userSession && Array.isArray(window.__userSession.suppliers)
         ? (window.__userSession.suppliers[Number(editId)] && window.__userSession.suppliers[Number(editId)].id) || ''
         : '';
@@ -2608,7 +2604,8 @@
 
       await window.ownerLinkSupplierLegalEntities({
         target_supplier_id: upsertRow.id,
-        target_legal_entity_ids: selectedLegalEntityIds.slice()
+        target_legal_entity_ids: selectedLegalEntityIds.slice(),
+        target_organization_id: activeOrgId
       });
 
       var refreshedSuppliers = typeof window.refreshSuppliersForOrganization === 'function'
@@ -2630,8 +2627,10 @@
       }
 
       if (typeof window.closeSupplierModal === 'function') window.closeSupplierModal();
+      var summary = null;
       if (typeof window.refreshOrganizationSummaryForOrganization === 'function' && activeOrgId) {
-        window.refreshOrganizationSummaryForOrganization(activeOrgId).catch(function () {});
+        summary = await window.refreshOrganizationSummaryForOrganization(activeOrgId).catch(function () { return null; });
+        console.info('organization summary after supplier mutation', { orgId: activeOrgId, summary: summary });
       }
       if (typeof window.renderSuppliers === 'function') window.renderSuppliers();
       if (typeof window.renderCatalog === 'function') window.renderCatalog();
@@ -2639,6 +2638,7 @@
       if (typeof window.toast === 'function') {
         window.toast('✅ Поставщик сохранён', 'ok');
       }
+      console.info('supplier mutation success', { action: supplierId ? 'update' : 'create', supplierId: supplierId || (upsertRow && upsertRow.id) || '' });
       if (window.logAudit) {
         window.logAudit(auditActor(), (supplierId ? 'Обновил' : 'Добавил') + ' поставщика «' + name + '»', 'Поставщики');
       }

@@ -118,376 +118,34 @@ alter table public.organizations add column if not exists city text not null def
 alter table public.organizations add column if not exists address text not null default '';
 alter table public.organizations add column if not exists deleted_at timestamptz;
 
-alter table if exists public.organization_members drop constraint if exists organization_members_role_check;
-alter table public.organization_members add constraint organization_members_role_check check (
-  role in (
-    'platform_owner',
-    'platform_moderator',
-    'owner',
-    'admin',
-    'organization_owner',
-    'director',
-    'manager',
-    'buyer',
-    'chef',
-    'sous_chef',
-    'bar_manager',
-    'senior_bartender',
-    'accountant',
-    'warehouse',
-    'supplier'
-  )
-);
-
-create table if not exists public.permission_catalog (
-  key text primary key,
-  title text not null,
-  description text not null default '',
-  module text not null default '',
-  is_platform_permission boolean not null default false,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists public.role_permission_defaults (
-  role text not null,
-  permission_key text not null references public.permission_catalog(key) on delete cascade,
-  allowed boolean not null default true,
-  created_at timestamptz not null default now(),
-  primary key (role, permission_key)
-);
-
-create table if not exists public.member_permission_overrides (
+create table if not exists public.legal_entities (
   id uuid primary key default gen_random_uuid(),
-  organization_member_id uuid not null references public.organization_members(id) on delete cascade,
-  permission_key text not null references public.permission_catalog(key) on delete cascade,
-  allowed boolean not null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint member_permission_overrides_unique unique (organization_member_id, permission_key)
+  organization_id uuid not null references public.organizations(id),
+  name text not null,
+  inn text,
+  kpp text,
+  ogrn text,
+  legal_address text,
+  actual_address text,
+  contact_name text,
+  contact_phone text,
+  contact_email text,
+  status text default 'active',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
-create table if not exists public.platform_staff_roles (
-  id uuid primary key default gen_random_uuid(),
-  user_profile_id uuid not null references public.user_profiles(id) on delete cascade,
-  role text not null check (role in ('platform_owner', 'platform_moderator')),
-  status text not null default 'active' check (status in ('active', 'inactive')),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint platform_staff_roles_user_unique unique (user_profile_id)
-);
+alter table public.legal_entities add column if not exists actual_address text;
+alter table public.legal_entities add column if not exists contact_name text;
+alter table public.legal_entities add column if not exists contact_phone text;
+alter table public.legal_entities add column if not exists contact_email text;
+alter table public.legal_entities add column if not exists status text default 'active';
+alter table public.legal_entities add column if not exists created_at timestamptz default now();
+alter table public.legal_entities add column if not exists updated_at timestamptz default now();
 
-create table if not exists public.platform_member_permission_overrides (
-  id uuid primary key default gen_random_uuid(),
-  platform_staff_role_id uuid not null references public.platform_staff_roles(id) on delete cascade,
-  permission_key text not null references public.permission_catalog(key) on delete cascade,
-  allowed boolean not null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint platform_member_permission_overrides_unique unique (platform_staff_role_id, permission_key)
-);
-
-create index if not exists idx_member_permission_overrides_member_id on public.member_permission_overrides(organization_member_id);
-create index if not exists idx_member_permission_overrides_permission_key on public.member_permission_overrides(permission_key);
-create index if not exists idx_platform_staff_roles_user_profile_id on public.platform_staff_roles(user_profile_id);
-create index if not exists idx_platform_member_permission_overrides_staff_role_id on public.platform_member_permission_overrides(platform_staff_role_id);
-create index if not exists idx_platform_member_permission_overrides_permission_key on public.platform_member_permission_overrides(permission_key);
-
-drop trigger if exists set_updated_at_member_permission_overrides on public.member_permission_overrides;
-create trigger set_updated_at_member_permission_overrides
-before update on public.member_permission_overrides
-for each row execute procedure public.tg_set_updated_at();
-
-drop trigger if exists set_updated_at_platform_staff_roles on public.platform_staff_roles;
-create trigger set_updated_at_platform_staff_roles
-before update on public.platform_staff_roles
-for each row execute procedure public.tg_set_updated_at();
-
-drop trigger if exists set_updated_at_platform_member_permission_overrides on public.platform_member_permission_overrides;
-create trigger set_updated_at_platform_member_permission_overrides
-before update on public.platform_member_permission_overrides
-for each row execute procedure public.tg_set_updated_at();
-
-insert into public.permission_catalog (
-  key,
-  title,
-  description,
-  module,
-  is_platform_permission
-)
-select *
-from (
-  values
-    ('platform.view_all_organizations', 'Просмотр всех организаций', 'Платформенная возможность видеть все организации', 'platform', true),
-    ('platform.manage_all_organizations', 'Управление всеми организациями', 'Платформенная возможность редактировать и модерировать все организации', 'platform', true),
-    ('platform.manage_platform_users', 'Управление пользователями платформы', 'Платформенная возможность управлять пользователями платформы', 'platform', true),
-    ('platform.view_platform_stats', 'Просмотр статистики платформы', 'Платформенная возможность просматривать статистику', 'platform', true),
-    ('platform.monitoring', 'Мониторинг платформы', 'Платформенная возможность мониторинга', 'platform', true),
-    ('platform.support_access', 'Доступ поддержки', 'Платформенная возможность поддержки', 'platform', true),
-    ('organization.view', 'Просмотр организации', 'Просмотр сведений об организации', 'organization', false),
-    ('organization.edit', 'Редактирование организации', 'Изменение данных организации', 'organization', false),
-    ('organization.archive', 'Архивация организации', 'Архивация и восстановление организации', 'organization', false),
-    ('organization.delete', 'Удаление организации', 'Soft delete организации', 'organization', false),
-    ('organization.members.view', 'Просмотр участников', 'Просмотр списка участников организации', 'organization', false),
-    ('organization.members.invite', 'Приглашение участников', 'Добавление участников организации', 'organization', false),
-    ('organization.members.edit_role', 'Изменение роли участника', 'Смена роли участника организации', 'organization', false),
-    ('organization.members.disable', 'Отключение участника', 'Отключение участника организации', 'organization', false),
-    ('organization.members.permissions', 'Управление правами участников', 'Настройка прав внутри организации', 'organization', false),
-    ('suppliers.view', 'Просмотр поставщиков', 'Просмотр списка поставщиков', 'suppliers', false),
-    ('suppliers.create', 'Создание поставщика', 'Создание поставщика', 'suppliers', false),
-    ('suppliers.edit', 'Редактирование поставщика', 'Редактирование поставщика', 'suppliers', false),
-    ('suppliers.delete', 'Удаление поставщика', 'Удаление поставщика', 'suppliers', false),
-    ('price_lists.view', 'Просмотр прайсов', 'Просмотр прайс-листов', 'prices', false),
-    ('price_lists.upload', 'Загрузка прайсов', 'Загрузка прайс-листов', 'prices', false),
-    ('price_lists.edit', 'Редактирование прайсов', 'Редактирование прайс-листов', 'prices', false),
-    ('price_lists.delete', 'Удаление прайсов', 'Удаление прайс-листов', 'prices', false),
-    ('orders.view', 'Просмотр заказов', 'Просмотр заказов', 'orders', false),
-    ('orders.create', 'Создание заказов', 'Создание заказов', 'orders', false),
-    ('orders.approve', 'Подтверждение заказов', 'Подтверждение заказов', 'orders', false),
-    ('orders.history', 'История заказов', 'Просмотр истории заказов', 'orders', false),
-    ('cart.view', 'Просмотр корзины', 'Просмотр корзины', 'orders', false),
-    ('cart.edit', 'Редактирование корзины', 'Редактирование корзины', 'orders', false),
-    ('tenders.view', 'Просмотр тендеров', 'Просмотр тендеров', 'tenders', false),
-    ('tenders.create', 'Создание тендеров', 'Создание тендеров', 'tenders', false),
-    ('tenders.manage', 'Управление тендерами', 'Управление тендерами', 'tenders', false),
-    ('tech_cards.view', 'Просмотр техкарт', 'Просмотр технологических карт', 'tech_cards', false),
-    ('tech_cards.create', 'Создание техкарт', 'Создание технологических карт', 'tech_cards', false),
-    ('tech_cards.edit', 'Редактирование техкарт', 'Редактирование технологических карт', 'tech_cards', false),
-    ('tech_cards.delete', 'Удаление техкарт', 'Удаление технологических карт', 'tech_cards', false),
-    ('calculator.view', 'Калькулятор', 'Доступ к калькулятору', 'calculator', false),
-    ('analytics.view', 'Аналитика', 'Просмотр аналитики', 'analytics', false),
-    ('reports.view', 'Отчёты', 'Просмотр отчётов', 'reports', false),
-    ('stock.view', 'Склад', 'Просмотр склада и остатков', 'stock', false),
-    ('documents.view', 'Документы', 'Просмотр документов', 'documents', false),
-    ('supplier_portal.upload_price', 'Загрузка прайса поставщика', 'Загрузка/обновление прайс-листа поставщика', 'supplier_portal', false),
-    ('supplier_portal.view_orders', 'Просмотр заказов поставщика', 'Просмотр заказов по своим поставкам', 'supplier_portal', false),
-    ('supplier_portal.accept_orders', 'Подтверждение заказов поставщика', 'Подтверждение заказов поставщика', 'supplier_portal', false),
-    ('supplier_portal.view_shipments_stats', 'Статистика отгрузок', 'Просмотр статистики отгрузок поставщика', 'supplier_portal', false)
-) as seed(key, title, description, module, is_platform_permission)
-on conflict (key) do update
-set title = excluded.title,
-    description = excluded.description,
-    module = excluded.module,
-    is_platform_permission = excluded.is_platform_permission;
-
-insert into public.role_permission_defaults(role, permission_key, allowed)
-select role_name, permission_key, true
-from (values ('organization_owner'), ('director'), ('admin'), ('owner')) as roles(role_name)
-cross join unnest(array[
-  'organization.view',
-  'organization.edit',
-  'organization.archive',
-  'organization.delete',
-  'organization.members.view',
-  'organization.members.invite',
-  'organization.members.edit_role',
-  'organization.members.disable',
-  'organization.members.permissions',
-  'suppliers.view',
-  'suppliers.create',
-  'suppliers.edit',
-  'suppliers.delete',
-  'price_lists.view',
-  'price_lists.upload',
-  'price_lists.edit',
-  'price_lists.delete',
-  'orders.view',
-  'orders.create',
-  'orders.approve',
-  'orders.history',
-  'cart.view',
-  'cart.edit',
-  'tenders.view',
-  'tenders.create',
-  'tenders.manage',
-  'tech_cards.view',
-  'tech_cards.create',
-  'tech_cards.edit',
-  'tech_cards.delete',
-  'calculator.view',
-  'analytics.view',
-  'reports.view',
-  'stock.view',
-  'documents.view'
-]) as permissions(permission_key)
-on conflict (role, permission_key) do update
-set allowed = excluded.allowed;
-
-insert into public.role_permission_defaults(role, permission_key, allowed)
-select role_name, permission_key, true
-from (values ('manager')) as roles(role_name)
-cross join unnest(array[
-  'organization.view',
-  'organization.members.view',
-  'suppliers.view',
-  'suppliers.create',
-  'suppliers.edit',
-  'price_lists.view',
-  'price_lists.upload',
-  'price_lists.edit',
-  'orders.view',
-  'orders.create',
-  'orders.history',
-  'cart.view',
-  'cart.edit',
-  'tenders.view',
-  'tenders.create',
-  'tenders.manage',
-  'tech_cards.view',
-  'tech_cards.create',
-  'tech_cards.edit',
-  'tech_cards.delete',
-  'calculator.view',
-  'analytics.view'
-]) as permissions(permission_key)
-on conflict (role, permission_key) do update
-set allowed = excluded.allowed;
-
-insert into public.role_permission_defaults(role, permission_key, allowed)
-select role_name, permission_key, true
-from (values ('buyer')) as roles(role_name)
-cross join unnest(array[
-  'organization.view',
-  'organization.members.view',
-  'suppliers.view',
-  'price_lists.view',
-  'orders.view',
-  'orders.create',
-  'orders.history',
-  'cart.view',
-  'cart.edit',
-  'tenders.view',
-  'tenders.create',
-  'analytics.view'
-]) as permissions(permission_key)
-on conflict (role, permission_key) do update
-set allowed = excluded.allowed;
-
-insert into public.role_permission_defaults(role, permission_key, allowed)
-select role_name, permission_key, true
-from (values ('chef'), ('sous_chef')) as roles(role_name)
-cross join unnest(array[
-  'organization.view',
-  'organization.members.view',
-  'suppliers.view',
-  'price_lists.view',
-  'orders.view',
-  'orders.create',
-  'orders.history',
-  'cart.view',
-  'cart.edit',
-  'tenders.view',
-  'tenders.create',
-  'tenders.manage',
-  'tech_cards.view',
-  'tech_cards.create',
-  'tech_cards.edit',
-  'tech_cards.delete',
-  'calculator.view',
-  'analytics.view'
-]) as permissions(permission_key)
-on conflict (role, permission_key) do update
-set allowed = excluded.allowed;
-
-insert into public.role_permission_defaults(role, permission_key, allowed)
-select role_name, permission_key, true
-from (values ('bar_manager')) as roles(role_name)
-cross join unnest(array[
-  'organization.view',
-  'organization.members.view',
-  'suppliers.view',
-  'price_lists.view',
-  'orders.view',
-  'orders.create',
-  'orders.history',
-  'cart.view',
-  'cart.edit',
-  'tenders.view',
-  'tenders.create',
-  'tenders.manage',
-  'tech_cards.view',
-  'tech_cards.create',
-  'tech_cards.edit',
-  'tech_cards.delete',
-  'calculator.view',
-  'analytics.view'
-]) as permissions(permission_key)
-on conflict (role, permission_key) do update
-set allowed = excluded.allowed;
-
-insert into public.role_permission_defaults(role, permission_key, allowed)
-select role_name, permission_key, true
-from (values ('senior_bartender')) as roles(role_name)
-cross join unnest(array[
-  'organization.view',
-  'organization.members.view',
-  'suppliers.view',
-  'price_lists.view',
-  'orders.view',
-  'orders.create',
-  'orders.history',
-  'cart.view',
-  'cart.edit',
-  'tenders.view',
-  'tenders.create',
-  'tech_cards.view',
-  'tech_cards.create',
-  'tech_cards.edit',
-  'tech_cards.delete',
-  'calculator.view'
-]) as permissions(permission_key)
-on conflict (role, permission_key) do update
-set allowed = excluded.allowed;
-
-insert into public.role_permission_defaults(role, permission_key, allowed)
-select role_name, permission_key, true
-from (values ('accountant')) as roles(role_name)
-cross join unnest(array[
-  'organization.view',
-  'orders.history',
-  'analytics.view',
-  'reports.view',
-  'documents.view'
-]) as permissions(permission_key)
-on conflict (role, permission_key) do update
-set allowed = excluded.allowed;
-
-insert into public.role_permission_defaults(role, permission_key, allowed)
-select role_name, permission_key, true
-from (values ('warehouse')) as roles(role_name)
-cross join unnest(array[
-  'organization.view',
-  'stock.view',
-  'orders.view',
-  'orders.history',
-  'suppliers.view'
-]) as permissions(permission_key)
-on conflict (role, permission_key) do update
-set allowed = excluded.allowed;
-
-insert into public.role_permission_defaults(role, permission_key, allowed)
-select role_name, permission_key, true
-from (values ('supplier')) as roles(role_name)
-cross join unnest(array[
-  'supplier_portal.upload_price',
-  'supplier_portal.view_orders',
-  'supplier_portal.accept_orders',
-  'supplier_portal.view_shipments_stats'
-]) as permissions(permission_key)
-on conflict (role, permission_key) do update
-set allowed = excluded.allowed;
-
-insert into public.role_permission_defaults(role, permission_key, allowed)
-select 'platform_moderator', permission_key, false
-from unnest(array[
-  'platform.view_all_organizations',
-  'platform.manage_all_organizations',
-  'platform.manage_platform_users',
-  'platform.view_platform_stats',
-  'platform.monitoring',
-  'platform.support_access'
-]) as permission_key
-on conflict (role, permission_key) do update
-set allowed = excluded.allowed;
+create index if not exists idx_legal_entities_organization_id on public.legal_entities(organization_id);
+create index if not exists idx_legal_entities_status on public.legal_entities(status);
+create index if not exists idx_legal_entities_inn on public.legal_entities(inn);
 
 create or replace function public.ensure_user_profile()
 returns table (
@@ -538,266 +196,10 @@ as $$
     where up.auth_user_id = auth.uid()
       and om.status = 'active'
       and om.role in ('platform_owner', 'owner')
-  )
-  or exists (
-    select 1
-    from public.platform_staff_roles psr
-    join public.user_profiles up on up.id = psr.user_profile_id
-    where up.auth_user_id = auth.uid()
-      and psr.status = 'active'
-      and psr.role = 'platform_owner'
   );
 $$;
 
 revoke all on function public._is_platform_owner() from public;
-
-create or replace function public.current_user_is_platform_owner()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public, auth
-set row_security = off
-as $$
-  select public._is_platform_owner()
-$$;
-
-create or replace function public.current_user_platform_role()
-returns text
-language sql
-stable
-security definer
-set search_path = public, auth
-set row_security = off
-as $$
-  select case
-    when public._is_platform_owner() then 'platform_owner'
-    when exists (
-      select 1
-      from public.platform_staff_roles psr
-      join public.user_profiles up on up.id = psr.user_profile_id
-      where up.auth_user_id = auth.uid()
-        and psr.status = 'active'
-        and psr.role = 'platform_moderator'
-    ) then 'platform_moderator'
-    else 'unassigned'
-  end
-$$;
-
-create or replace function public.current_user_platform_staff_role_id()
-returns uuid
-language sql
-stable
-security definer
-set search_path = public, auth
-set row_security = off
-as $$
-  select psr.id
-  from public.platform_staff_roles psr
-  join public.user_profiles up on up.id = psr.user_profile_id
-  where up.auth_user_id = auth.uid()
-    and psr.status = 'active'
-    and psr.role = 'platform_moderator'
-  limit 1
-$$;
-
-create or replace function public.current_user_role_for_organization(target_org_id uuid)
-returns text
-language sql
-stable
-security definer
-set search_path = public, auth
-set row_security = off
-as $$
-  select om.role
-  from public.organization_members om
-  join public.user_profiles up on up.id = om.user_profile_id
-  where up.auth_user_id = auth.uid()
-    and om.status = 'active'
-    and om.organization_id = target_org_id
-  order by case om.role
-    when 'platform_owner' then 0
-    when 'owner' then 0
-    when 'platform_moderator' then 1
-    when 'organization_owner' then 1
-    when 'director' then 1
-    when 'admin' then 2
-    when 'manager' then 3
-    when 'buyer' then 4
-    when 'chef' then 5
-    when 'sous_chef' then 6
-    when 'bar_manager' then 7
-    when 'senior_bartender' then 8
-    when 'accountant' then 9
-    when 'warehouse' then 10
-    when 'supplier' then 11
-    else 99 end
-  limit 1
-$$;
-
-create or replace function public.has_permission(
-  target_organization_id uuid,
-  permission_key text
-)
-returns boolean
-language plpgsql
-security definer
-set search_path = public, auth
-set row_security = off
-as $$
-declare
-  v_key text := lower(trim(coalesce(permission_key, '')));
-  v_catalog public.permission_catalog%rowtype;
-  v_org_role text := 'unassigned';
-  v_membership_id uuid;
-  v_default_allowed boolean := false;
-  v_override_allowed boolean;
-  v_platform_staff_role_id uuid;
-begin
-  if auth.uid() is null or v_key = '' then
-    return false;
-  end if;
-
-  select *
-    into v_catalog
-  from public.permission_catalog pc
-  where pc.key = v_key
-  limit 1;
-
-  if not found then
-    return false;
-  end if;
-
-  if public._is_platform_owner() then
-    return true;
-  end if;
-
-  if v_catalog.is_platform_permission then
-    if public.current_user_platform_role() <> 'platform_moderator' then
-      return false;
-    end if;
-
-    select public.current_user_platform_staff_role_id()
-      into v_platform_staff_role_id;
-
-    if v_platform_staff_role_id is null then
-      return false;
-    end if;
-
-    select mpo.allowed
-      into v_override_allowed
-    from public.platform_member_permission_overrides mpo
-    where mpo.platform_staff_role_id = v_platform_staff_role_id
-      and mpo.permission_key = v_key
-    limit 1;
-
-    if found then
-      return coalesce(v_override_allowed, false);
-    end if;
-
-    select rpd.allowed
-      into v_default_allowed
-    from public.role_permission_defaults rpd
-    where rpd.role = 'platform_moderator'
-      and rpd.permission_key = v_key
-    limit 1;
-
-    return coalesce(v_default_allowed, false);
-  end if;
-
-  if target_organization_id is null then
-    return false;
-  end if;
-
-  select om.id, om.role
-    into v_membership_id, v_org_role
-  from public.organization_members om
-  join public.user_profiles up on up.id = om.user_profile_id
-  where up.auth_user_id = auth.uid()
-    and om.organization_id = target_organization_id
-    and om.status = 'active'
-  order by case om.role
-    when 'platform_owner' then 0
-    when 'owner' then 0
-    when 'organization_owner' then 1
-    when 'director' then 1
-    when 'admin' then 2
-    when 'manager' then 3
-    when 'buyer' then 4
-    when 'chef' then 5
-    when 'sous_chef' then 6
-    when 'bar_manager' then 7
-    when 'senior_bartender' then 8
-    when 'accountant' then 9
-    when 'warehouse' then 10
-    when 'supplier' then 11
-    else 99 end
-  limit 1;
-
-  if v_membership_id is null then
-    return false;
-  end if;
-
-  select rpd.allowed
-    into v_default_allowed
-  from public.role_permission_defaults rpd
-  where rpd.role = v_org_role
-    and rpd.permission_key = v_key
-  limit 1;
-
-  if found then
-    select mpo.allowed
-      into v_override_allowed
-    from public.member_permission_overrides mpo
-    where mpo.organization_member_id = v_membership_id
-      and mpo.permission_key = v_key
-    limit 1;
-
-    if found then
-      return coalesce(v_override_allowed, false);
-    end if;
-
-    return coalesce(v_default_allowed, false);
-  end if;
-
-  return false;
-end;
-$$;
-
-create or replace function public.get_my_permissions(
-  target_organization_id uuid
-)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public, auth
-set row_security = off
-as $$
-declare
-  v_permissions jsonb;
-begin
-  if auth.uid() is null then
-    return '[]'::jsonb;
-  end if;
-
-  if public._is_platform_owner() then
-    select coalesce(jsonb_agg(pc.key order by pc.key), '[]'::jsonb)
-      into v_permissions
-    from public.permission_catalog pc;
-    return v_permissions;
-  end if;
-
-  select coalesce(jsonb_agg(perms.key order by perms.key), '[]'::jsonb)
-    into v_permissions
-  from (
-    select pc.key
-    from public.permission_catalog pc
-    where public.has_permission(target_organization_id, pc.key)
-  ) perms;
-
-  return coalesce(v_permissions, '[]'::jsonb);
-end;
-$$;
 
 create or replace function public.get_my_session()
 returns table (
@@ -815,8 +217,6 @@ returns table (
   "noOrganization" boolean,
   "membershipsCount" integer,
   "organizationsCount" integer,
-  permissions jsonb,
-  "activeOrganizationPermissions" jsonb,
   "errorMessage" text
 )
 language plpgsql
@@ -834,7 +234,6 @@ declare
   v_memberships_count integer := 0;
   v_organizations_count integer := 0;
   v_is_owner boolean := false;
-  v_permissions jsonb := '[]'::jsonb;
 begin
   if auth.uid() is null then
     raise exception 'auth.uid() is required';
@@ -859,7 +258,13 @@ begin
   where om.user_profile_id = v_profile.id
     and om.status = 'active';
   v_memberships_count := coalesce(jsonb_array_length(v_memberships), 0);
-  v_is_owner := public._is_platform_owner();
+  v_is_owner := exists(
+    select 1
+    from public.organization_members om
+    where om.user_profile_id = v_profile.id
+      and om.status = 'active'
+      and om.role in ('platform_owner', 'owner')
+  );
 
   if v_is_owner then
     select coalesce(jsonb_agg(
@@ -934,8 +339,6 @@ begin
     v_error_message := null;
   end if;
 
-  v_permissions := public.get_my_permissions(v_active_org_id);
-
   return query
   select
     v_profile.id,
@@ -956,8 +359,6 @@ begin
     end,
     v_memberships_count,
     v_organizations_count,
-    coalesce(v_permissions, '[]'::jsonb),
-    coalesce(v_permissions, '[]'::jsonb),
     v_error_message;
 end;
 $$;
@@ -990,7 +391,7 @@ begin
     join public.user_profiles up on up.id = om.user_profile_id
     where up.auth_user_id = auth.uid()
       and om.status = 'active'
-      and om.role in ('admin', 'organization_owner', 'director', 'owner')
+      and om.role in ('admin', 'organization_owner')
     limit 1;
     if not found then
       raise exception 'Forbidden';
@@ -1110,7 +511,7 @@ begin
     else 99 end
   limit 1;
 
-  if not public._is_platform_owner() and v_actor_role not in ('admin', 'organization_owner', 'director', 'owner') then
+  if not public._is_platform_owner() and v_actor_role not in ('admin', 'organization_owner') then
     raise exception 'Forbidden';
   end if;
 
@@ -1237,7 +638,8 @@ begin
         and my_om.organization_id = o.id
         and my_om.status = 'active'
     )
-    or (v_role in ('organization_owner', 'director', 'admin', 'owner') and public.current_user_can_access_organization(o.id))
+    or (v_role = 'organization_owner' and public.current_user_can_access_organization(o.id))
+    or (v_role = 'admin' and public.current_user_can_access_organization(o.id))
   )
     and (target_status is null or lower(o.status) = lower(target_status))
   group by o.id
@@ -1247,6 +649,464 @@ $$;
 
 revoke all on function public.owner_list_organizations(text) from public;
 grant execute on function public.owner_list_organizations(text) to authenticated;
+
+create or replace function public.owner_get_organization_summary(
+  target_organization_id uuid
+)
+returns table (
+  organization_id uuid,
+  members_count integer,
+  active_members_count integer,
+  legal_entities_count integer,
+  suppliers_count integer,
+  price_lists_count integer,
+  orders_count integer,
+  updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_is_owner boolean := public._is_platform_owner();
+  v_has_suppliers boolean := to_regclass('public.suppliers') is not null
+    and exists (
+      select 1
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.table_name = 'suppliers'
+        and c.column_name = 'organization_id'
+    );
+  v_has_supplier_status boolean := exists (
+      select 1
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.table_name = 'suppliers'
+        and c.column_name = 'status'
+    );
+  v_has_price_lists boolean := to_regclass('public.price_lists') is not null
+    and exists (
+      select 1
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.table_name = 'price_lists'
+        and c.column_name = 'organization_id'
+    );
+  v_has_price_list_status boolean := exists (
+      select 1
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.table_name = 'price_lists'
+        and c.column_name = 'status'
+    );
+  v_has_orders boolean := to_regclass('public.orders') is not null
+    and exists (
+      select 1
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.table_name = 'orders'
+        and c.column_name = 'organization_id'
+    );
+  v_has_order_status boolean := exists (
+      select 1
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.table_name = 'orders'
+        and c.column_name = 'status'
+    );
+  v_has_legal_entities boolean := to_regclass('public.legal_entities') is not null
+    and exists (
+      select 1
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.table_name = 'legal_entities'
+        and c.column_name = 'organization_id'
+    );
+  v_has_legal_entities_status boolean := exists (
+      select 1
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.table_name = 'legal_entities'
+        and c.column_name = 'status'
+    );
+  v_members_count integer := 0;
+  v_active_members_count integer := 0;
+  v_legal_entities_count integer := 0;
+  v_suppliers_count integer := 0;
+  v_price_lists_count integer := 0;
+  v_orders_count integer := 0;
+begin
+  if target_organization_id is null then
+    raise exception 'organization_id is required';
+  end if;
+  if auth.uid() is null then
+    raise exception 'auth.uid() is required';
+  end if;
+
+  if not v_is_owner and not public.current_user_can_access_organization(target_organization_id) then
+    raise exception 'Forbidden';
+  end if;
+
+  select count(*)::integer
+    into v_members_count
+  from public.organization_members om
+  where om.organization_id = target_organization_id;
+
+  select count(*)::integer
+    into v_active_members_count
+  from public.organization_members om
+  where om.organization_id = target_organization_id
+    and om.status = 'active';
+
+  if v_has_suppliers then
+    execute format(
+      'select count(*)::integer from public.suppliers s where s.organization_id = $1'
+      || case when v_has_supplier_status then ' and coalesce(s.status, ''active'') = ''active''' else '' end
+    )
+      into v_suppliers_count
+      using target_organization_id;
+  end if;
+
+  if v_has_price_lists then
+    execute format(
+      'select count(*)::integer from public.price_lists pl where pl.organization_id = $1'
+      || case when v_has_price_list_status then ' and coalesce(pl.status, ''active'') <> ''deleted''' else '' end
+    )
+      into v_price_lists_count
+      using target_organization_id;
+  end if;
+
+  if v_has_orders then
+    execute format(
+      'select count(*)::integer from public.orders o where o.organization_id = $1'
+      || case when v_has_order_status then ' and coalesce(o.status, ''active'') <> ''deleted''' else '' end
+    )
+      into v_orders_count
+      using target_organization_id;
+  end if;
+
+  if v_has_legal_entities then
+    execute format(
+      'select count(*)::integer from public.legal_entities le where le.organization_id = $1'
+      || case when v_has_legal_entities_status then ' and coalesce(le.status, ''active'') = ''active''' else '' end
+    )
+      into v_legal_entities_count
+      using target_organization_id;
+  end if;
+
+  return query
+  select
+    target_organization_id as organization_id,
+    v_members_count as members_count,
+    v_active_members_count as active_members_count,
+    v_legal_entities_count as legal_entities_count,
+    v_suppliers_count as suppliers_count,
+    v_price_lists_count as price_lists_count,
+    v_orders_count as orders_count,
+    now() as updated_at;
+end;
+$$;
+
+revoke all on function public.owner_get_organization_summary(uuid) from public;
+grant execute on function public.owner_get_organization_summary(uuid) to authenticated;
+notify pgrst, 'reload schema';
+
+create or replace function public.owner_list_legal_entities(
+  target_organization_id uuid
+)
+returns table (
+  id uuid,
+  organization_id uuid,
+  name text,
+  inn text,
+  kpp text,
+  ogrn text,
+  legal_address text,
+  actual_address text,
+  contact_name text,
+  contact_phone text,
+  contact_email text,
+  status text,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+begin
+  if target_organization_id is null then
+    raise exception 'organization_id is required';
+  end if;
+  if auth.uid() is null then
+    raise exception 'auth.uid() is required';
+  end if;
+  if not public.has_permission(target_organization_id, 'organization.view')
+     and not public.has_permission(target_organization_id, 'organization.edit') then
+    raise exception 'Forbidden';
+  end if;
+
+  return query
+  select
+    le.id,
+    le.organization_id,
+    le.name,
+    le.inn,
+    le.kpp,
+    le.ogrn,
+    coalesce(le.legal_address, '') as legal_address,
+    coalesce(le.actual_address, '') as actual_address,
+    coalesce(le.contact_name, '') as contact_name,
+    coalesce(le.contact_phone, '') as contact_phone,
+    coalesce(le.contact_email, '') as contact_email,
+    coalesce(le.status, 'active') as status,
+    le.created_at,
+    le.updated_at
+  from public.legal_entities le
+  where le.organization_id = target_organization_id
+    and coalesce(le.status, 'active') <> 'deleted'
+  order by case when coalesce(le.status, 'active') = 'active' then 0 else 1 end, le.created_at asc;
+end;
+$$;
+
+revoke all on function public.owner_list_legal_entities(uuid) from public;
+grant execute on function public.owner_list_legal_entities(uuid) to authenticated;
+
+create or replace function public.owner_create_legal_entity(
+  target_organization_id uuid,
+  target_name text,
+  target_inn text default null,
+  target_kpp text default null,
+  target_ogrn text default null,
+  target_legal_address text default null,
+  target_actual_address text default null,
+  target_contact_name text default null,
+  target_contact_phone text default null,
+  target_contact_email text default null,
+  target_status text default 'active'
+)
+returns table (
+  id uuid,
+  organization_id uuid,
+  name text,
+  inn text,
+  kpp text,
+  ogrn text,
+  legal_address text,
+  actual_address text,
+  contact_name text,
+  contact_phone text,
+  contact_email text,
+  status text,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_row public.legal_entities%rowtype;
+begin
+  if target_organization_id is null then
+    raise exception 'organization_id is required';
+  end if;
+  if auth.uid() is null then
+    raise exception 'auth.uid() is required';
+  end if;
+  if not public.has_permission(target_organization_id, 'organization.edit') then
+    raise exception 'Forbidden';
+  end if;
+  if coalesce(nullif(trim(target_name), ''), '') = '' then
+    raise exception 'name is required';
+  end if;
+
+  insert into public.legal_entities (
+    organization_id,
+    name,
+    inn,
+    kpp,
+    ogrn,
+    legal_address,
+    actual_address,
+    contact_name,
+    contact_phone,
+    contact_email,
+    status
+  ) values (
+    target_organization_id,
+    trim(target_name),
+    nullif(trim(target_inn), ''),
+    nullif(trim(target_kpp), ''),
+    nullif(trim(target_ogrn), ''),
+    nullif(trim(target_legal_address), ''),
+    nullif(trim(target_actual_address), ''),
+    nullif(trim(target_contact_name), ''),
+    nullif(trim(target_contact_phone), ''),
+    nullif(trim(target_contact_email), ''),
+    coalesce(nullif(lower(trim(coalesce(target_status, 'active'))), ''), 'active')
+  )
+  returning * into v_row;
+
+  return query
+  select
+    v_row.id,
+    v_row.organization_id,
+    v_row.name,
+    v_row.inn,
+    v_row.kpp,
+    v_row.ogrn,
+    coalesce(v_row.legal_address, ''),
+    coalesce(v_row.actual_address, ''),
+    coalesce(v_row.contact_name, ''),
+    coalesce(v_row.contact_phone, ''),
+    coalesce(v_row.contact_email, ''),
+    coalesce(v_row.status, 'active'),
+    v_row.created_at,
+    v_row.updated_at;
+end;
+$$;
+
+revoke all on function public.owner_create_legal_entity(uuid, text, text, text, text, text, text, text, text, text, text) from public;
+grant execute on function public.owner_create_legal_entity(uuid, text, text, text, text, text, text, text, text, text, text) to authenticated;
+
+create or replace function public.owner_update_legal_entity(
+  target_legal_entity_id uuid,
+  target_organization_id uuid,
+  target_name text,
+  target_inn text default null,
+  target_kpp text default null,
+  target_ogrn text default null,
+  target_legal_address text default null,
+  target_actual_address text default null,
+  target_contact_name text default null,
+  target_contact_phone text default null,
+  target_contact_email text default null,
+  target_status text default null
+)
+returns table (
+  id uuid,
+  organization_id uuid,
+  name text,
+  inn text,
+  kpp text,
+  ogrn text,
+  legal_address text,
+  actual_address text,
+  contact_name text,
+  contact_phone text,
+  contact_email text,
+  status text,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_row public.legal_entities%rowtype;
+begin
+  if target_legal_entity_id is null then
+    raise exception 'legal_entity_id is required';
+  end if;
+  if target_organization_id is null then
+    raise exception 'organization_id is required';
+  end if;
+  if auth.uid() is null then
+    raise exception 'auth.uid() is required';
+  end if;
+  if not public.has_permission(target_organization_id, 'organization.edit') then
+    raise exception 'Forbidden';
+  end if;
+
+  update public.legal_entities le
+     set name = coalesce(nullif(trim(target_name), ''), le.name),
+         inn = coalesce(nullif(trim(target_inn), ''), le.inn),
+         kpp = coalesce(nullif(trim(target_kpp), ''), le.kpp),
+         ogrn = coalesce(nullif(trim(target_ogrn), ''), le.ogrn),
+         legal_address = coalesce(nullif(trim(target_legal_address), ''), le.legal_address),
+         actual_address = coalesce(nullif(trim(target_actual_address), ''), le.actual_address),
+         contact_name = coalesce(nullif(trim(target_contact_name), ''), le.contact_name),
+         contact_phone = coalesce(nullif(trim(target_contact_phone), ''), le.contact_phone),
+         contact_email = coalesce(nullif(trim(target_contact_email), ''), le.contact_email),
+         status = coalesce(nullif(lower(trim(coalesce(target_status, ''))), ''), le.status),
+         updated_at = now()
+   where le.id = target_legal_entity_id
+     and le.organization_id = target_organization_id
+   returning * into v_row;
+
+  if not found then
+    raise exception 'legal_entity not found';
+  end if;
+
+  return query
+  select
+    v_row.id,
+    v_row.organization_id,
+    v_row.name,
+    v_row.inn,
+    v_row.kpp,
+    v_row.ogrn,
+    coalesce(v_row.legal_address, ''),
+    coalesce(v_row.actual_address, ''),
+    coalesce(v_row.contact_name, ''),
+    coalesce(v_row.contact_phone, ''),
+    coalesce(v_row.contact_email, ''),
+    coalesce(v_row.status, 'active'),
+    v_row.created_at,
+    v_row.updated_at;
+end;
+$$;
+
+revoke all on function public.owner_update_legal_entity(uuid, uuid, text, text, text, text, text, text, text, text, text, text) from public;
+grant execute on function public.owner_update_legal_entity(uuid, uuid, text, text, text, text, text, text, text, text, text, text) to authenticated;
+
+create or replace function public.owner_archive_legal_entity(
+  target_legal_entity_id uuid,
+  target_organization_id uuid
+)
+returns table (
+  id uuid,
+  organization_id uuid,
+  name text,
+  inn text,
+  kpp text,
+  ogrn text,
+  legal_address text,
+  actual_address text,
+  contact_name text,
+  contact_phone text,
+  contact_email text,
+  status text,
+  created_at timestamptz,
+  updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+begin
+  return query
+  select * from public.owner_update_legal_entity(
+    target_legal_entity_id,
+    target_organization_id,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    'archived'
+  );
+end;
+$$;
+
+revoke all on function public.owner_archive_legal_entity(uuid, uuid) from public;
+grant execute on function public.owner_archive_legal_entity(uuid, uuid) to authenticated;
 
 create or replace function public.owner_update_organization(
   target_organization_id uuid,
@@ -1296,7 +1156,7 @@ begin
     else 99 end
   limit 1;
 
-  if not public._is_platform_owner() and v_role not in ('admin', 'organization_owner', 'director', 'owner') then
+  if not public._is_platform_owner() and v_role not in ('admin', 'organization_owner') then
     raise exception 'Forbidden';
   end if;
 
@@ -1495,7 +1355,7 @@ begin
     else 99 end
   limit 1;
 
-  if not public._is_platform_owner() and v_actor_role not in ('admin', 'organization_owner', 'director', 'owner') then
+  if not public._is_platform_owner() and v_actor_role not in ('admin', 'organization_owner') then
     raise exception 'Forbidden';
   end if;
   if v_target_role = 'platform_owner' and not public._is_platform_owner() then
@@ -1679,7 +1539,7 @@ begin
     else 99 end
   limit 1;
 
-  if not public._is_platform_owner() and v_actor_role not in ('admin', 'organization_owner', 'director', 'owner') then
+  if not public._is_platform_owner() and v_actor_role not in ('admin', 'organization_owner') then
     raise exception 'Forbidden';
   end if;
   if v_target_role = 'platform_owner' and not public._is_platform_owner() then
@@ -1760,7 +1620,7 @@ begin
     else 99 end
   limit 1;
 
-  if not public._is_platform_owner() and v_actor_role not in ('admin', 'organization_owner', 'director', 'owner') then
+  if not public._is_platform_owner() and v_actor_role not in ('admin', 'organization_owner') then
     raise exception 'Forbidden';
   end if;
 
@@ -1816,7 +1676,7 @@ begin
     where up.auth_user_id = auth.uid()
       and om.organization_id = target_organization_id
       and om.status = 'active'
-      and om.role in ('admin', 'organization_owner', 'director', 'owner')
+      and om.role in ('admin', 'organization_owner')
     limit 1;
     if not found then
       raise exception 'Forbidden';
@@ -1871,3 +1731,5 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
 after insert on auth.users
 for each row execute function public.handle_new_auth_user();
+
+notify pgrst, 'reload schema';

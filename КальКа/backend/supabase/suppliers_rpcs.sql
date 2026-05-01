@@ -256,6 +256,14 @@ begin
   from public.suppliers s
   where s.id = target_supplier_id
   limit 1;
+  if v_org_id is null and target_organization_id is not null then
+    v_org_id := target_organization_id;
+    update public.suppliers
+       set organization_id = v_org_id,
+           updated_at = now()
+     where id = target_supplier_id
+       and organization_id is null;
+  end if;
   if v_org_id is null then
     raise exception 'Поставщик не найден' using errcode = '22023';
   end if;
@@ -317,7 +325,8 @@ end;
 $$;
 
 create or replace function public.owner_archive_supplier(
-  target_supplier_id uuid
+  target_supplier_id uuid,
+  target_organization_id uuid default null
 )
 returns table (
   id uuid,
@@ -355,6 +364,14 @@ begin
   from public.suppliers s
   where s.id = target_supplier_id
   limit 1;
+  if v_org_id is null and target_organization_id is not null then
+    v_org_id := target_organization_id;
+    update public.suppliers
+       set organization_id = v_org_id,
+           updated_at = now()
+     where id = target_supplier_id
+       and organization_id is null;
+  end if;
   if v_org_id is null then
     raise exception 'Поставщик не найден' using errcode = '22023';
   end if;
@@ -374,7 +391,8 @@ $$;
 
 create or replace function public.owner_link_supplier_legal_entities(
   target_supplier_id uuid,
-  target_legal_entity_ids uuid[] default '{}'::uuid[]
+  target_legal_entity_ids uuid[] default '{}'::uuid[],
+  target_organization_id uuid default null
 )
 returns table (
   id uuid,
@@ -412,6 +430,14 @@ begin
   from public.suppliers s
   where s.id = target_supplier_id
   limit 1;
+  if v_org_id is null and target_organization_id is not null then
+    v_org_id := target_organization_id;
+    update public.suppliers
+       set organization_id = v_org_id,
+           updated_at = now()
+     where id = target_supplier_id
+       and organization_id is null;
+  end if;
   if v_org_id is null then
     raise exception 'Поставщик не найден' using errcode = '22023';
   end if;
@@ -457,13 +483,13 @@ $$;
 revoke all on function public.owner_list_suppliers(uuid) from public;
 revoke all on function public.owner_create_supplier(uuid, text, text, text, text, text, text, uuid[]) from public;
 revoke all on function public.owner_update_supplier(uuid, uuid, text, text, text, text, text, text, uuid[]) from public;
-revoke all on function public.owner_archive_supplier(uuid) from public;
-revoke all on function public.owner_link_supplier_legal_entities(uuid, uuid[]) from public;
+revoke all on function public.owner_archive_supplier(uuid, uuid) from public;
+revoke all on function public.owner_link_supplier_legal_entities(uuid, uuid[], uuid) from public;
 
 grant execute on function public.owner_list_suppliers(uuid) to authenticated;
 grant execute on function public.owner_create_supplier(uuid, text, text, text, text, text, text, uuid[]) to authenticated;
 grant execute on function public.owner_update_supplier(uuid, uuid, text, text, text, text, text, text, uuid[]) to authenticated;
-grant execute on function public.owner_archive_supplier(uuid) to authenticated;
-grant execute on function public.owner_link_supplier_legal_entities(uuid, uuid[]) to authenticated;
+grant execute on function public.owner_archive_supplier(uuid, uuid) to authenticated;
+grant execute on function public.owner_link_supplier_legal_entities(uuid, uuid[], uuid) to authenticated;
 
 notify pgrst, 'reload schema';
