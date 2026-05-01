@@ -624,7 +624,8 @@
   function normalizeSupplierRow(row) {
     if (!row) return null;
     return {
-      id: row.id || '',
+      id: row.id || row.supplier_id || row.supplierId || '',
+      _id: row.id || row.supplier_id || row.supplierId || '',
       organization_id: row.organization_id || '',
       name: row.name || '',
       inn: row.inn || '',
@@ -652,6 +653,7 @@
   function mapSupplierRowToLegacy(row) {
     return {
       id: row.id,
+      _id: row.id,
       organizationId: row.organization_id || '',
       emoji: row.emoji || '🏭',
       name: row.name || '',
