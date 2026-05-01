@@ -627,6 +627,7 @@
       id: row.id || '',
       organization_id: row.organization_id || '',
       name: row.name || '',
+      inn: row.inn || '',
       emoji: row.emoji || '🏭',
       kind: row.kind || 'Поставщик',
       rating: Number(row.rating || 0) || 0,
@@ -635,12 +636,16 @@
       min_order_text: row.min_order_text || '₽1 000',
       status: row.status || 'active',
       tags: Array.isArray(row.tags) ? row.tags.slice() : (row.tags || []),
+      contact_name: row.contact_name || row.contact_person || row.contact || '',
       contact: row.contact || '',
       phone: row.phone || '',
+      email: row.email || '',
       hidden: !!row.hidden,
       legacy_key: row.legacy_key || '',
       created_at: row.created_at || '',
-      updated_at: row.updated_at || ''
+      updated_at: row.updated_at || '',
+      legal_entity_ids: Array.isArray(row.legal_entity_ids) ? row.legal_entity_ids.slice() : [],
+      legal_entity_names: Array.isArray(row.legal_entity_names) ? row.legal_entity_names.slice() : []
     };
   }
 
@@ -650,6 +655,7 @@
       organizationId: row.organization_id || '',
       emoji: row.emoji || '🏭',
       name: row.name || '',
+      inn: row.inn || '',
       type: row.kind || 'Поставщик',
       rating: Number(row.rating || 0) || 0,
       orders: parseInt(row.orders_count || 0, 10) || 0,
@@ -657,11 +663,15 @@
       min: row.min_order_text || '₽1 000',
       status: row.status || 'active',
       tags: Array.isArray(row.tags) ? row.tags.slice() : [],
+      contactName: row.contact_name || row.contact_person || row.contact || '',
       contact: row.contact || '',
       phone: row.phone || '',
+      email: row.email || '',
       hidden: !!row.hidden,
       legacy_key: row.legacy_key || '',
-      legalName: row.contact || row.name || ''
+      legalName: row.contact_name || row.contact_person || row.contact || row.name || '',
+      legalEntityIds: Array.isArray(row.legal_entity_ids) ? row.legal_entity_ids.slice() : [],
+      legalEntityNames: Array.isArray(row.legal_entity_names) ? row.legal_entity_names.slice() : []
     };
   }
 
@@ -731,13 +741,7 @@
       } catch (markError) {}
       console.info('suppliers_load_start', orgId);
       try {
-        var response = await client
-          .from('suppliers')
-          .select('id, organization_id, name, phone, contact, status, created_at')
-          .eq('organization_id', orgId)
-          .eq('status', 'active')
-          .order('name', { ascending: true })
-          .limit(100);
+        var response = await client.rpc('owner_list_suppliers', { target_organization_id: orgId });
         if (response.error) {
           console.error('loadSuppliersForOrganization failed', {
             request: 'suppliers',
@@ -759,7 +763,7 @@
         cache.suppliersByOrg[orgId] = [];
         return [];
       }
-      var suppliers = (response.data || []).map(normalizeSupplierRow).filter(Boolean);
+      var suppliers = (Array.isArray(response.data) ? response.data : []).map(normalizeSupplierRow).filter(Boolean);
       cache.suppliersByOrg[orgId] = suppliers.slice();
       delete cache.suppliersErrorsByOrg[orgId];
       try {
@@ -800,6 +804,147 @@
   }
 
   window.loadSuppliersForOrganization = loadSuppliersForOrganization;
+
+  async function refreshSuppliersForOrganization(organizationId) {
+    var orgId = String(organizationId || '').trim();
+    var cache = getDataCache();
+    delete cache.suppliersByOrg[orgId];
+    delete cache.suppliersErrorsByOrg[orgId];
+    return loadSuppliersForOrganization(orgId);
+  }
+
+  window.refreshSuppliersForOrganization = refreshSuppliersForOrganization;
+
+  async function loadSupplierLegalEntitiesForOrganization(organizationId) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    var orgId = String(organizationId || '').trim();
+    if (!client || !orgId) return [];
+    var cache = getDataCache();
+    var bucket = cache.supplierLegalEntitiesByOrg[orgId];
+    if (bucket && bucket.promise) return bucket.promise;
+    if (bucket && Array.isArray(bucket.items) && bucket.loadedAt && (Date.now() - bucket.loadedAt) < 30000) {
+      return bucket.items.slice();
+    }
+    cache.supplierLegalEntitiesByOrg[orgId] = bucket = {
+      items: bucket && Array.isArray(bucket.items) ? bucket.items.slice() : [],
+      loading: true,
+      error: null,
+      promise: null,
+      loadedAt: bucket && bucket.loadedAt ? bucket.loadedAt : 0
+    };
+    bucket.promise = (async function () {
+      try {
+        var response = await client.rpc('owner_list_legal_entities', { target_organization_id: orgId });
+        if (response.error) throw response.error;
+        var items = (Array.isArray(response.data) ? response.data : []).map(function (item) {
+          return {
+            id: item.id,
+            name: item.name,
+            status: item.status || 'active'
+          };
+        }).filter(Boolean);
+        bucket.items = items.slice();
+        bucket.loadedAt = Date.now();
+        bucket.error = null;
+        return items.slice();
+      } catch (error) {
+        bucket.error = supplierErrorInfo(error);
+        bucket.items = [];
+        console.error('loadSupplierLegalEntitiesForOrganization failed', {
+          request: 'owner_list_legal_entities',
+          organizationId: orgId,
+          code: error && error.code ? error.code : '',
+          message: error && error.message ? error.message : '',
+          details: error && error.details ? error.details : '',
+          hint: error && error.hint ? error.hint : '',
+          raw: error
+        });
+        return [];
+      } finally {
+        bucket.loading = false;
+        bucket.promise = null;
+      }
+    })();
+    cache.supplierLegalEntitiesPromisesByOrg[orgId] = bucket.promise;
+    return bucket.promise;
+  }
+
+  window.loadSupplierLegalEntitiesForOrganization = loadSupplierLegalEntitiesForOrganization;
+
+  async function refreshSupplierLegalEntitiesForOrganization(organizationId) {
+    var orgId = String(organizationId || '').trim();
+    var cache = getDataCache();
+    delete cache.supplierLegalEntitiesByOrg[orgId];
+    return loadSupplierLegalEntitiesForOrganization(orgId);
+  }
+
+  window.refreshSupplierLegalEntitiesForOrganization = refreshSupplierLegalEntitiesForOrganization;
+
+  function rpcSupplierAction(client, name, payload, timeoutMessage) {
+    console.info('supabase request start', name);
+    return withTimeout(
+      client.rpc(name, payload || {}),
+      8000,
+      timeoutMessage || 'Не удалось выполнить действие с поставщиком'
+    ).then(function (response) {
+      if (response && response.error) {
+        console.error('rpc ' + name + ' failed', {
+          request: name,
+          code: response.error.code || '',
+          message: response.error.message || '',
+          details: response.error.details || '',
+          hint: response.error.hint || '',
+          raw: response.error
+        });
+        throw response.error;
+      }
+      var data = response && response.data;
+      return Array.isArray(data) ? data.slice() : (data ? [data] : []);
+    }).catch(function (error) {
+      console.error('rpc ' + name + ' failed', {
+        request: name,
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
+      });
+      throw error;
+    });
+  }
+
+  window.ownerListSuppliers = function (targetOrganizationId) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    var orgId = String(targetOrganizationId || '').trim();
+    if (!client || !orgId) return Promise.resolve([]);
+    return rpcSupplierAction(client, 'owner_list_suppliers', {
+      target_organization_id: orgId
+    }, 'Не удалось загрузить поставщиков');
+  };
+
+  window.ownerCreateSupplier = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcSupplierAction(client, 'owner_create_supplier', payload || {}, 'Не удалось создать поставщика');
+  };
+
+  window.ownerUpdateSupplier = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcSupplierAction(client, 'owner_update_supplier', payload || {}, 'Не удалось сохранить поставщика');
+  };
+
+  window.ownerArchiveSupplier = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcSupplierAction(client, 'owner_archive_supplier', payload || {}, 'Не удалось архивировать поставщика');
+  };
+
+  window.ownerLinkSupplierLegalEntities = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcSupplierAction(client, 'owner_link_supplier_legal_entities', payload || {}, 'Не удалось сохранить привязку юрлиц');
+  };
 
   async function loadOwnerUsers() {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
@@ -2400,6 +2545,9 @@
     var editId = (document.getElementById('as-edit-id') || { value: '' }).value;
     var activeOrgId = String((window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    var selectedLegalEntityIds = Array.from(document.querySelectorAll('#as-legal-entities input[type="checkbox"]:checked')).map(function (cb) {
+      return String(cb.value || '').trim();
+    }).filter(Boolean);
 
     if (btn) {
       btn.disabled = true;
@@ -2424,6 +2572,10 @@
       var name = ((document.getElementById('as-n') || {}).value || '').trim();
       if (!name) throw new Error('Укажите название поставщика');
 
+      if (!selectedLegalEntityIds.length) {
+        throw new Error('Выберите хотя бы одно юрлицо');
+      }
+
       var supplierId = editId !== '' && window.__userSession && Array.isArray(window.__userSession.suppliers)
         ? (window.__userSession.suppliers[Number(editId)] && window.__userSession.suppliers[Number(editId)].id) || ''
         : '';
@@ -2431,43 +2583,37 @@
         ? window.__userSession.suppliers.find(function (item) { return String(item.id) === String(supplierId); })
         : null;
 
-      var payload = {
-        organization_id: activeOrgId,
-        legacy_key: existing && existing.legacy_key ? existing.legacy_key : ('sup_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)),
-        name: name,
-        emoji: ((document.getElementById('as-em2') || {}).value || '🏭').trim() || '🏭',
-        kind: ((document.getElementById('as-c') || {}).value || 'Поставщик').trim() || 'Поставщик',
-        rating: existing && typeof existing.rating === 'number' ? existing.rating : 0,
-        orders_count: existing && typeof existing.orders === 'number' ? existing.orders : 0,
-        delivery: ((document.getElementById('as-dl') || {}).value || '1-2 дня').trim() || '1-2 дня',
-        min_order_text: (((document.getElementById('as-mn') || {}).value || '').trim() ? '₽' + ((document.getElementById('as-mn') || {}).value || '').trim() : '₽1 000'),
-        status: 'active',
-        tags: Array.isArray(existing && existing.tags) ? existing.tags.slice() : [],
-        contact: ((document.getElementById('as-ct') || {}).value || '').trim(),
-        phone: ((document.getElementById('as-ph') || {}).value || '').trim(),
-        hidden: false
+      var supplierPayload = {
+        target_organization_id: activeOrgId,
+        target_name: name,
+        target_inn: ((document.getElementById('as-inn') || {}).value || '').trim(),
+        target_phone: ((document.getElementById('as-ph') || {}).value || '').trim(),
+        target_email: ((document.getElementById('as-em') || {}).value || '').trim(),
+        target_contact_name: ((document.getElementById('as-ct') || {}).value || '').trim(),
+        target_status: ((document.getElementById('as-status') || {}).value || (existing && existing.status) || 'active').trim() || 'active',
+        target_legal_entity_ids: selectedLegalEntityIds.slice()
       };
+      console.info('assign supplier payload', supplierPayload);
 
-      var upsertResult;
+      var upsertRows;
       if (supplierId) {
-        upsertResult = await client
-          .from('suppliers')
-          .update(payload)
-          .eq('id', supplierId)
-          .eq('organization_id', activeOrgId)
-          .select('*')
-          .maybeSingle();
+        upsertRows = await window.ownerUpdateSupplier(Object.assign({}, supplierPayload, {
+          target_supplier_id: supplierId
+        }));
       } else {
-        upsertResult = await client
-          .from('suppliers')
-          .insert(payload)
-          .select('*')
-          .maybeSingle();
+        upsertRows = await window.ownerCreateSupplier(supplierPayload);
       }
+      var upsertRow = Array.isArray(upsertRows) ? upsertRows[0] : upsertRows;
+      if (!upsertRow || !upsertRow.id) throw new Error('Не удалось сохранить поставщика');
 
-      if (upsertResult.error) throw upsertResult.error;
+      await window.ownerLinkSupplierLegalEntities({
+        target_supplier_id: upsertRow.id,
+        target_legal_entity_ids: selectedLegalEntityIds.slice()
+      });
 
-      var refreshedSuppliers = await loadSuppliersForOrganization(activeOrgId);
+      var refreshedSuppliers = typeof window.refreshSuppliersForOrganization === 'function'
+        ? await window.refreshSuppliersForOrganization(activeOrgId)
+        : await loadSuppliersForOrganization(activeOrgId);
       if (window.__userSession) {
         window.__userSession.suppliers = refreshedSuppliers.slice();
       }
@@ -2478,6 +2624,9 @@
         window.SUPS_DATA = runtimeDb.supsData.slice();
       } catch (runtimeError) {
         console.error('Failed to refresh supplier runtime after save:', runtimeError);
+      }
+      if (typeof window.refreshSupplierLegalEntitiesForOrganization === 'function') {
+        await window.refreshSupplierLegalEntitiesForOrganization(activeOrgId).catch(function () {});
       }
 
       if (typeof window.closeSupplierModal === 'function') window.closeSupplierModal();

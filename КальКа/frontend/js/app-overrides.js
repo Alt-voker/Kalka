@@ -237,41 +237,155 @@
     return bootstrapPromises[key];
   }
 
-  async function loadLegalEntitiesForOrganization(organizationId) {
-    if (window.__loginInProgress || window.__restoreInProgress) return [];
-    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
-    var orgId = String(organizationId || '').trim();
-    if (!client || !orgId) return [];
-    try {
-      console.info('supabase request start', 'legal_entities');
-      var response = await client
-        .from('legal_entities')
-        .select('id, organization_id, name, inn, kpp, ogrn, legal_address, status, created_at, updated_at')
-        .eq('organization_id', orgId)
-        .order('created_at', { ascending: true });
-      if (response.error) {
-        console.warn('legal_entities query failed', {
-          code: response.error.code || '',
-          message: response.error.message || '',
-          details: response.error.details || '',
-          hint: response.error.hint || '',
-          raw: response.error
-        });
-        return [];
-      }
-      return (response.data || []).map(normalizeLegalEntityRow).filter(Boolean);
-    } catch (error) {
-      console.warn('legal_entities query failed', {
+  async function rpcOwnerListLegalEntities(client, organizationId) {
+    console.info('supabase request start', 'owner_list_legal_entities');
+    var response = await withTimeout(
+      client.rpc('owner_list_legal_entities', { target_organization_id: organizationId }),
+      8000,
+      'Не удалось загрузить юрлица'
+    ).catch(function (error) {
+      console.warn('rpc owner_list_legal_entities failed', {
+        request: 'owner_list_legal_entities',
+        organizationId: String(organizationId || ''),
         code: error && error.code ? error.code : '',
         message: error && error.message ? error.message : '',
         details: error && error.details ? error.details : '',
         hint: error && error.hint ? error.hint : '',
         raw: error
       });
-      return [];
+      throw error;
+    });
+    if (response && response.error) {
+      console.warn('rpc owner_list_legal_entities failed', {
+        request: 'owner_list_legal_entities',
+        organizationId: String(organizationId || ''),
+        code: response.error.code || '',
+        message: response.error.message || '',
+        details: response.error.details || '',
+        hint: response.error.hint || '',
+        raw: response.error
+      });
+      throw response.error;
     }
+    return Array.isArray(response && response.data) ? response.data.slice() : [];
   }
+
+  async function loadLegalEntitiesForOrganization(organizationId) {
+    if (window.__loginInProgress || window.__restoreInProgress) return [];
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    var orgId = String(organizationId || '').trim();
+    if (!client || !orgId) return [];
+    var cache = getDataCache();
+    var bucket = cache.legalEntitiesByOrg[orgId];
+    if (bucket && bucket.promise) return bucket.promise;
+    if (bucket && Array.isArray(bucket.items) && bucket.loadedAt && (Date.now() - bucket.loadedAt) < 30000) {
+      return bucket.items.slice();
+    }
+    cache.legalEntitiesByOrg[orgId] = bucket = {
+      items: bucket && Array.isArray(bucket.items) ? bucket.items.slice() : [],
+      loading: true,
+      error: null,
+      promise: null,
+      loadedAt: bucket && bucket.loadedAt ? bucket.loadedAt : 0
+    };
+    bucket.promise = (async function () {
+      try {
+        var rows = await rpcOwnerListLegalEntities(client, orgId);
+        var items = rows.map(normalizeLegalEntityRow).filter(Boolean);
+        bucket.items = items.slice();
+        bucket.error = null;
+        bucket.loadedAt = Date.now();
+        if (window.__userSession && Array.isArray(window.__userSession.organizations)) {
+          window.__userSession.organizations = window.__userSession.organizations.map(function (org) {
+            if (!org || String(org.id || '') !== orgId) return org;
+            return Object.assign({}, org, {
+              legalEntitiesCount: items.filter(function (item) {
+                return String(item.status || 'active').toLowerCase() === 'active';
+              }).length
+            });
+          });
+        }
+        if (window.__userSession && window.__userSession.activeOrganization && String(window.__userSession.activeOrganization.id || '') === orgId) {
+          window.__userSession.activeOrganization = Object.assign({}, window.__userSession.activeOrganization, {
+            legalEntitiesCount: items.filter(function (item) {
+              return String(item.status || 'active').toLowerCase() === 'active';
+            }).length
+          });
+        }
+        if (window.activeRest && String(window.activeRest.id || window.activeRest.organizationId || '') === orgId) {
+          window.activeRest = Object.assign({}, window.activeRest, {
+            legalEntitiesCount: items.filter(function (item) {
+              return String(item.status || 'active').toLowerCase() === 'active';
+            }).length
+          });
+        }
+        if (typeof window.renderRestaurants === 'function') window.renderRestaurants();
+        return items.slice();
+      } catch (error) {
+        bucket.error = {
+          code: error && error.code ? error.code : '',
+          message: error && error.message ? error.message : '',
+          details: error && error.details ? error.details : '',
+          hint: error && error.hint ? error.hint : '',
+          raw: error
+        };
+        console.warn('legal_entities query failed', bucket.error);
+        return [];
+      } finally {
+        bucket.loading = false;
+        bucket.promise = null;
+      }
+    })();
+    return bucket.promise;
+  }
+
+  async function refreshLegalEntitiesForOrganization(organizationId) {
+    var orgId = String(organizationId || '').trim();
+    if (!orgId) return [];
+    var cache = getDataCache();
+    delete cache.legalEntitiesByOrg[orgId];
+    var items = await loadLegalEntitiesForOrganization(orgId);
+    if (typeof window.refreshOrganizationSummaryForOrganization === 'function') {
+      await window.refreshOrganizationSummaryForOrganization(orgId).catch(function () {});
+    }
+    return items;
+  }
+
+  async function ownerCreateLegalEntity(payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) throw new Error('Supabase client is not available');
+    console.info('supabase request start', 'owner_create_legal_entity');
+    var response = await client.rpc('owner_create_legal_entity', payload || {});
+    if (response.error) throw response.error;
+    return Array.isArray(response.data) ? response.data[0] || null : response.data || null;
+  }
+
+  async function ownerUpdateLegalEntity(payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) throw new Error('Supabase client is not available');
+    console.info('supabase request start', 'owner_update_legal_entity');
+    var response = await client.rpc('owner_update_legal_entity', payload || {});
+    if (response.error) throw response.error;
+    return Array.isArray(response.data) ? response.data[0] || null : response.data || null;
+  }
+
+  async function ownerArchiveLegalEntity(payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) throw new Error('Supabase client is not available');
+    console.info('supabase request start', 'owner_archive_legal_entity');
+    var response = await client.rpc('owner_archive_legal_entity', payload || {});
+    if (response.error) throw response.error;
+    return Array.isArray(response.data) ? response.data[0] || null : response.data || null;
+  }
+
+  window.ownerListLegalEntities = function (organizationId) {
+    return loadLegalEntitiesForOrganization(organizationId);
+  };
   window.loadLegalEntitiesForOrganization = loadLegalEntitiesForOrganization;
+  window.refreshLegalEntitiesForOrganization = refreshLegalEntitiesForOrganization;
+  window.ownerCreateLegalEntity = ownerCreateLegalEntity;
+  window.ownerUpdateLegalEntity = ownerUpdateLegalEntity;
+  window.ownerArchiveLegalEntity = ownerArchiveLegalEntity;
 
   function upsertUserInDb(user) {
     var db = ensureArrays(window._dbCache || readLocalState() || getDefaults());
@@ -415,6 +529,10 @@
       kpp: row.kpp || '',
       ogrn: row.ogrn || '',
       legal_address: row.legal_address || '',
+      actual_address: row.actual_address || '',
+      contact_name: row.contact_name || '',
+      contact_phone: row.contact_phone || '',
+      contact_email: row.contact_email || '',
       status: row.status || 'active',
       created_at: row.created_at || '',
       updated_at: row.updated_at || ''
@@ -509,6 +627,7 @@
       id: row.id || '',
       organization_id: row.organization_id || '',
       name: row.name || '',
+      inn: row.inn || '',
       emoji: row.emoji || '🏭',
       kind: row.kind || 'Поставщик',
       rating: Number(row.rating || 0) || 0,
@@ -517,12 +636,16 @@
       min_order_text: row.min_order_text || '₽1 000',
       status: row.status || 'active',
       tags: Array.isArray(row.tags) ? row.tags.slice() : (row.tags || []),
+      contact_name: row.contact_name || row.contact_person || row.contact || '',
       contact: row.contact || '',
       phone: row.phone || '',
+      email: row.email || '',
       hidden: !!row.hidden,
       legacy_key: row.legacy_key || '',
       created_at: row.created_at || '',
-      updated_at: row.updated_at || ''
+      updated_at: row.updated_at || '',
+      legal_entity_ids: Array.isArray(row.legal_entity_ids) ? row.legal_entity_ids.slice() : [],
+      legal_entity_names: Array.isArray(row.legal_entity_names) ? row.legal_entity_names.slice() : []
     };
   }
 
@@ -532,6 +655,7 @@
       organizationId: row.organization_id || '',
       emoji: row.emoji || '🏭',
       name: row.name || '',
+      inn: row.inn || '',
       type: row.kind || 'Поставщик',
       rating: Number(row.rating || 0) || 0,
       orders: parseInt(row.orders_count || 0, 10) || 0,
@@ -539,11 +663,15 @@
       min: row.min_order_text || '₽1 000',
       status: row.status || 'active',
       tags: Array.isArray(row.tags) ? row.tags.slice() : [],
+      contactName: row.contact_name || row.contact_person || row.contact || '',
       contact: row.contact || '',
       phone: row.phone || '',
+      email: row.email || '',
       hidden: !!row.hidden,
       legacy_key: row.legacy_key || '',
-      legalName: row.contact || row.name || ''
+      legalName: row.contact_name || row.contact_person || row.contact || row.name || '',
+      legalEntityIds: Array.isArray(row.legal_entity_ids) ? row.legal_entity_ids.slice() : [],
+      legalEntityNames: Array.isArray(row.legal_entity_names) ? row.legal_entity_names.slice() : []
     };
   }
 
@@ -568,6 +696,15 @@
     }
     if (!window.__dataCache.organizationMembersByOrg || typeof window.__dataCache.organizationMembersByOrg !== 'object') {
       window.__dataCache.organizationMembersByOrg = {};
+    }
+    if (!window.__dataCache.organizationSummaryByOrg || typeof window.__dataCache.organizationSummaryByOrg !== 'object') {
+      window.__dataCache.organizationSummaryByOrg = {};
+    }
+    if (!window.__dataCache.legalEntitiesByOrg || typeof window.__dataCache.legalEntitiesByOrg !== 'object') {
+      window.__dataCache.legalEntitiesByOrg = {};
+    }
+    if (!window.__dataCache.legalEntitiesPromisesByOrg || typeof window.__dataCache.legalEntitiesPromisesByOrg !== 'object') {
+      window.__dataCache.legalEntitiesPromisesByOrg = {};
     }
     if (!window.__dataCache.organizationsByFilter || typeof window.__dataCache.organizationsByFilter !== 'object') {
       window.__dataCache.organizationsByFilter = {};
@@ -604,13 +741,7 @@
       } catch (markError) {}
       console.info('suppliers_load_start', orgId);
       try {
-        var response = await client
-          .from('suppliers')
-          .select('id, organization_id, name, phone, contact, status, created_at')
-          .eq('organization_id', orgId)
-          .eq('status', 'active')
-          .order('name', { ascending: true })
-          .limit(100);
+        var response = await client.rpc('owner_list_suppliers', { target_organization_id: orgId });
         if (response.error) {
           console.error('loadSuppliersForOrganization failed', {
             request: 'suppliers',
@@ -632,7 +763,7 @@
         cache.suppliersByOrg[orgId] = [];
         return [];
       }
-      var suppliers = (response.data || []).map(normalizeSupplierRow).filter(Boolean);
+      var suppliers = (Array.isArray(response.data) ? response.data : []).map(normalizeSupplierRow).filter(Boolean);
       cache.suppliersByOrg[orgId] = suppliers.slice();
       delete cache.suppliersErrorsByOrg[orgId];
       try {
@@ -673,6 +804,147 @@
   }
 
   window.loadSuppliersForOrganization = loadSuppliersForOrganization;
+
+  async function refreshSuppliersForOrganization(organizationId) {
+    var orgId = String(organizationId || '').trim();
+    var cache = getDataCache();
+    delete cache.suppliersByOrg[orgId];
+    delete cache.suppliersErrorsByOrg[orgId];
+    return loadSuppliersForOrganization(orgId);
+  }
+
+  window.refreshSuppliersForOrganization = refreshSuppliersForOrganization;
+
+  async function loadSupplierLegalEntitiesForOrganization(organizationId) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    var orgId = String(organizationId || '').trim();
+    if (!client || !orgId) return [];
+    var cache = getDataCache();
+    var bucket = cache.supplierLegalEntitiesByOrg[orgId];
+    if (bucket && bucket.promise) return bucket.promise;
+    if (bucket && Array.isArray(bucket.items) && bucket.loadedAt && (Date.now() - bucket.loadedAt) < 30000) {
+      return bucket.items.slice();
+    }
+    cache.supplierLegalEntitiesByOrg[orgId] = bucket = {
+      items: bucket && Array.isArray(bucket.items) ? bucket.items.slice() : [],
+      loading: true,
+      error: null,
+      promise: null,
+      loadedAt: bucket && bucket.loadedAt ? bucket.loadedAt : 0
+    };
+    bucket.promise = (async function () {
+      try {
+        var response = await client.rpc('owner_list_legal_entities', { target_organization_id: orgId });
+        if (response.error) throw response.error;
+        var items = (Array.isArray(response.data) ? response.data : []).map(function (item) {
+          return {
+            id: item.id,
+            name: item.name,
+            status: item.status || 'active'
+          };
+        }).filter(Boolean);
+        bucket.items = items.slice();
+        bucket.loadedAt = Date.now();
+        bucket.error = null;
+        return items.slice();
+      } catch (error) {
+        bucket.error = supplierErrorInfo(error);
+        bucket.items = [];
+        console.error('loadSupplierLegalEntitiesForOrganization failed', {
+          request: 'owner_list_legal_entities',
+          organizationId: orgId,
+          code: error && error.code ? error.code : '',
+          message: error && error.message ? error.message : '',
+          details: error && error.details ? error.details : '',
+          hint: error && error.hint ? error.hint : '',
+          raw: error
+        });
+        return [];
+      } finally {
+        bucket.loading = false;
+        bucket.promise = null;
+      }
+    })();
+    cache.supplierLegalEntitiesPromisesByOrg[orgId] = bucket.promise;
+    return bucket.promise;
+  }
+
+  window.loadSupplierLegalEntitiesForOrganization = loadSupplierLegalEntitiesForOrganization;
+
+  async function refreshSupplierLegalEntitiesForOrganization(organizationId) {
+    var orgId = String(organizationId || '').trim();
+    var cache = getDataCache();
+    delete cache.supplierLegalEntitiesByOrg[orgId];
+    return loadSupplierLegalEntitiesForOrganization(orgId);
+  }
+
+  window.refreshSupplierLegalEntitiesForOrganization = refreshSupplierLegalEntitiesForOrganization;
+
+  function rpcSupplierAction(client, name, payload, timeoutMessage) {
+    console.info('supabase request start', name);
+    return withTimeout(
+      client.rpc(name, payload || {}),
+      8000,
+      timeoutMessage || 'Не удалось выполнить действие с поставщиком'
+    ).then(function (response) {
+      if (response && response.error) {
+        console.error('rpc ' + name + ' failed', {
+          request: name,
+          code: response.error.code || '',
+          message: response.error.message || '',
+          details: response.error.details || '',
+          hint: response.error.hint || '',
+          raw: response.error
+        });
+        throw response.error;
+      }
+      var data = response && response.data;
+      return Array.isArray(data) ? data.slice() : (data ? [data] : []);
+    }).catch(function (error) {
+      console.error('rpc ' + name + ' failed', {
+        request: name,
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
+      });
+      throw error;
+    });
+  }
+
+  window.ownerListSuppliers = function (targetOrganizationId) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    var orgId = String(targetOrganizationId || '').trim();
+    if (!client || !orgId) return Promise.resolve([]);
+    return rpcSupplierAction(client, 'owner_list_suppliers', {
+      target_organization_id: orgId
+    }, 'Не удалось загрузить поставщиков');
+  };
+
+  window.ownerCreateSupplier = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcSupplierAction(client, 'owner_create_supplier', payload || {}, 'Не удалось создать поставщика');
+  };
+
+  window.ownerUpdateSupplier = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcSupplierAction(client, 'owner_update_supplier', payload || {}, 'Не удалось сохранить поставщика');
+  };
+
+  window.ownerArchiveSupplier = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcSupplierAction(client, 'owner_archive_supplier', payload || {}, 'Не удалось архивировать поставщика');
+  };
+
+  window.ownerLinkSupplierLegalEntities = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcSupplierAction(client, 'owner_link_supplier_legal_entities', payload || {}, 'Не удалось сохранить привязку юрлиц');
+  };
 
   async function loadOwnerUsers() {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
@@ -970,6 +1242,10 @@
     var cache = getDataCache();
     delete cache.organizationMembersByOrg[orgId];
     var items = await loadOrganizationMembersForOrganization(orgId);
+    delete cache.organizationSummaryByOrg[orgId];
+    if (typeof window.loadOrganizationSummaryForOrganization === 'function') {
+      window.loadOrganizationSummaryForOrganization(orgId).catch(function () {});
+    }
     if (typeof window.renderRestaurants === 'function') window.renderRestaurants();
     if (typeof window.renderOrganizationMembersModal === 'function') window.renderOrganizationMembersModal(orgId);
     var detailsModal = document.getElementById('ov-orgDetails');
@@ -984,6 +1260,165 @@
   };
   window.loadOrganizationMembersForOrganization = loadOrganizationMembersForOrganization;
   window.refreshOrganizationMembersForOrganization = refreshOrganizationMembersForOrganization;
+
+  async function rpcOwnerGetOrganizationSummary(client, organizationId) {
+    console.info('supabase request start', 'owner_get_organization_summary');
+    var response = await withTimeout(
+      client.rpc('owner_get_organization_summary', { target_organization_id: organizationId }),
+      8000,
+      'Не удалось загрузить статистику организации'
+    ).catch(function (error) {
+      console.error('rpc owner_get_organization_summary failed', {
+        request: 'owner_get_organization_summary',
+        organizationId: String(organizationId || ''),
+        code: error && error.code ? error.code : '',
+        message: error && error.message ? error.message : '',
+        details: error && error.details ? error.details : '',
+        hint: error && error.hint ? error.hint : '',
+        raw: error
+      });
+      throw error;
+    });
+    if (response && response.error) {
+      console.error('rpc owner_get_organization_summary failed', {
+        request: 'owner_get_organization_summary',
+        organizationId: String(organizationId || ''),
+        code: response.error.code || '',
+        message: response.error.message || '',
+        details: response.error.details || '',
+        hint: response.error.hint || '',
+        raw: response.error
+      });
+      throw response.error;
+    }
+    return Array.isArray(response && response.data) ? response.data[0] || null : null;
+  }
+
+  async function loadOrganizationSummaryForOrganization(organizationId) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    var orgId = String(organizationId || '').trim();
+    if (!client || !orgId) return null;
+    var cache = getDataCache();
+    var bucket = cache.organizationSummaryByOrg[orgId];
+    if (bucket && bucket.loadedAt && (Date.now() - bucket.loadedAt) < 30000 && bucket.data) {
+      return Object.assign({}, bucket.data);
+    }
+    if (bucket && bucket.promise) {
+      return bucket.promise;
+    }
+    cache.organizationSummaryByOrg[orgId] = bucket = {
+      data: bucket && bucket.data ? Object.assign({}, bucket.data) : null,
+      loading: true,
+      error: null,
+      promise: null,
+      loadedAt: bucket && bucket.loadedAt ? bucket.loadedAt : 0
+    };
+    bucket.promise = (async function () {
+      try {
+        var rowResult = await rpcOwnerGetOrganizationSummary(client, orgId);
+        var row = Array.isArray(rowResult) ? rowResult[0] : rowResult;
+        var toCountOrNull = function (value) {
+          if (value === null || value === undefined || value === '') return null;
+          var n = Number(value);
+          return isFinite(n) ? n : null;
+        };
+        var summary = {
+          organization_id: row && (row.organization_id || row.id) || orgId,
+          members_count: toCountOrNull(row && (row.members_count !== undefined ? row.members_count : row.membersCount)),
+          active_members_count: toCountOrNull(row && (row.active_members_count !== undefined ? row.active_members_count : row.activeMembersCount)),
+          legal_entities_count: toCountOrNull(row && (row.legal_entities_count !== undefined ? row.legal_entities_count : row.legalEntitiesCount)),
+          suppliers_count: toCountOrNull(row && (row.suppliers_count !== undefined ? row.suppliers_count : row.suppliersCount)),
+          price_lists_count: toCountOrNull(row && (row.price_lists_count !== undefined ? row.price_lists_count : row.priceListsCount)),
+          orders_count: toCountOrNull(row && (row.orders_count !== undefined ? row.orders_count : row.ordersCount)),
+          updated_at: row && (row.updated_at || row.updatedAt) || new Date().toISOString()
+        };
+        console.info('organization summary loaded', { orgId: orgId, summary: summary });
+        bucket.data = summary;
+        bucket.error = null;
+        bucket.loadedAt = Date.now();
+        if (window.__userSession && Array.isArray(window.__userSession.organizations)) {
+          window.__userSession.organizations = window.__userSession.organizations.map(function (org) {
+            if (!org || String(org.id || '') !== orgId) return org;
+            var applied = Object.assign({}, org, {
+              summary: summary,
+              membersCount: summary.members_count,
+              activeMembersCount: summary.active_members_count,
+              legalEntitiesCount: summary.legal_entities_count,
+              suppliersCount: summary.suppliers_count,
+              priceListsCount: summary.price_lists_count,
+              ordersCount: summary.orders_count,
+              updated_at: summary.updated_at
+            });
+            console.info('organization summary applied', { orgId: orgId, summary: summary });
+            return applied;
+          });
+        }
+        if (window.__userSession && window.__userSession.activeOrganization && String(window.__userSession.activeOrganization.id || '') === orgId) {
+          window.__userSession.activeOrganization = Object.assign({}, window.__userSession.activeOrganization, {
+            summary: summary,
+            membersCount: summary.members_count,
+            activeMembersCount: summary.active_members_count,
+            legalEntitiesCount: summary.legal_entities_count,
+            suppliersCount: summary.suppliers_count,
+            priceListsCount: summary.price_lists_count,
+            ordersCount: summary.orders_count,
+            updated_at: summary.updated_at
+          });
+        }
+        if (window.activeRest && String(window.activeRest.id || window.activeRest.organizationId || '') === orgId) {
+          window.activeRest = Object.assign({}, window.activeRest, {
+            summary: summary,
+            membersCount: summary.members_count,
+            activeMembersCount: summary.active_members_count,
+            legalEntitiesCount: summary.legal_entities_count,
+            suppliersCount: summary.suppliers_count,
+            priceListsCount: summary.price_lists_count,
+            ordersCount: summary.orders_count,
+            updated_at: summary.updated_at
+          });
+        }
+        if (typeof window.renderRestaurants === 'function' && String(window.__orgListFilter || 'active').trim() === 'active') {
+          window.renderRestaurants();
+        }
+        return Object.assign({}, summary);
+      } catch (error) {
+        bucket.error = {
+          code: error && error.code ? error.code : '',
+          message: error && error.message ? error.message : '',
+          details: error && error.details ? error.details : '',
+          hint: error && error.hint ? error.hint : '',
+          raw: error
+        };
+        return null;
+      } finally {
+        bucket.loading = false;
+        bucket.promise = null;
+      }
+    })();
+    return bucket.promise;
+  }
+
+  async function refreshOrganizationSummaryForOrganization(organizationId) {
+    var orgId = String(organizationId || '').trim();
+    if (!orgId) return null;
+    var cache = getDataCache();
+    delete cache.organizationSummaryByOrg[orgId];
+    var result = await loadOrganizationSummaryForOrganization(orgId);
+    if (typeof window.renderOrganizationDetailsModal === 'function') {
+      var detailsModal = document.getElementById('ov-orgDetails');
+      if (detailsModal && String(detailsModal.dataset.orgId || '').trim() === orgId) {
+        window.renderOrganizationDetailsModal(orgId);
+      }
+    }
+    if (typeof window.renderRestaurants === 'function') window.renderRestaurants();
+    return result;
+  }
+
+  window.ownerGetOrganizationSummary = function (organizationId) {
+    return loadOrganizationSummaryForOrganization(organizationId);
+  };
+  window.loadOrganizationSummaryForOrganization = loadOrganizationSummaryForOrganization;
+  window.refreshOrganizationSummaryForOrganization = refreshOrganizationSummaryForOrganization;
 
   function normalizeOrganizationRow(row) {
     if (!row) return null;
@@ -1075,8 +1510,8 @@
               address: org.address,
               created_at: org.created_at || org.createdAt || '',
               updated_at: org.updated_at || org.updatedAt || '',
-              members_count: org.membersCount || 0,
-              active_members_count: org.activeMembersCount || 0
+              members_count: org.membersCount !== undefined && org.membersCount !== null ? org.membersCount : null,
+              active_members_count: org.activeMembersCount !== undefined && org.activeMembersCount !== null ? org.activeMembersCount : null
             });
           }).filter(Boolean);
         }
@@ -1093,12 +1528,12 @@
             return Object.assign({}, org, {
               type: found.type || org.type,
               status: found.status || org.status || 'active',
-              city: found.city || org.city || '',
-              address: found.address || org.address || '',
-              membersCount: found.activeMembersCount || found.membersCount || org.membersCount || 0,
-              activeMembersCount: found.activeMembersCount || org.activeMembersCount || 0
+                city: found.city || org.city || '',
+                address: found.address || org.address || '',
+                membersCount: found.membersCount !== undefined && found.membersCount !== null ? found.membersCount : (org.membersCount !== undefined && org.membersCount !== null ? org.membersCount : null),
+                activeMembersCount: found.activeMembersCount !== undefined && found.activeMembersCount !== null ? found.activeMembersCount : (org.activeMembersCount !== undefined && org.activeMembersCount !== null ? org.activeMembersCount : null)
+              });
             });
-          });
           if (window.__userSession.activeOrganization) {
             var activeId = String(window.__userSession.activeOrganization.id || '').trim();
             var activeFound = items.find(function (item) { return String(item.id || '').trim() === activeId; });
@@ -1108,7 +1543,8 @@
                 status: activeFound.status || window.__userSession.activeOrganization.status || 'active',
                 city: activeFound.city || window.__userSession.activeOrganization.city || '',
                 address: activeFound.address || window.__userSession.activeOrganization.address || '',
-              membersCount: activeFound.activeMembersCount || activeFound.membersCount || 0
+              membersCount: activeFound.membersCount !== undefined && activeFound.membersCount !== null ? activeFound.membersCount : null,
+              activeMembersCount: activeFound.activeMembersCount !== undefined && activeFound.activeMembersCount !== null ? activeFound.activeMembersCount : null
               });
             }
           }
@@ -1116,6 +1552,11 @@
         if (typeof window.renderRestaurants === 'function' && String(window.__orgListFilter || 'active').trim() === filter) {
           window.renderRestaurants();
         }
+        items.forEach(function (org) {
+          if (org && org.id && typeof window.loadOrganizationSummaryForOrganization === 'function') {
+            window.loadOrganizationSummaryForOrganization(org.id).catch(function () {});
+          }
+        });
         return items.slice();
       } catch (error) {
         bucket.error = {
@@ -1135,16 +1576,21 @@
                 status: org.status,
                 city: org.city,
                 address: org.address,
-                created_at: org.created_at || org.createdAt || '',
-                updated_at: org.updated_at || org.updatedAt || '',
-                members_count: org.membersCount || 0,
-                active_members_count: org.activeMembersCount || 0
+              created_at: org.created_at || org.createdAt || '',
+              updated_at: org.updated_at || org.updatedAt || '',
+                members_count: org.membersCount !== undefined && org.membersCount !== null ? org.membersCount : null,
+                active_members_count: org.activeMembersCount !== undefined && org.activeMembersCount !== null ? org.activeMembersCount : null
               });
             }).filter(Boolean)
           : [];
         if (typeof window.renderRestaurants === 'function' && String(window.__orgListFilter || 'active').trim() === filter) {
           window.renderRestaurants();
         }
+        bucket.items.forEach(function (org) {
+          if (org && org.id && typeof window.loadOrganizationSummaryForOrganization === 'function') {
+            window.loadOrganizationSummaryForOrganization(org.id).catch(function () {});
+          }
+        });
         return [];
       } finally {
         bucket.loading = false;
@@ -1171,6 +1617,11 @@
 
   function normalizeOrganizationResponse(row) {
     if (!row) return null;
+    var toCountOrNull = function (value) {
+      if (value === null || value === undefined || value === '') return null;
+      var n = Number(value);
+      return isFinite(n) ? n : null;
+    };
     return {
       id: row.id || row.organization_id || '',
       name: row.name || '',
@@ -1180,14 +1631,20 @@
       address: row.address || '',
       created_at: row.created_at || row.createdAt || '',
       updated_at: row.updated_at || row.updatedAt || '',
-      membersCount: Number(row.members_count || row.membersCount || 0) || 0,
-      activeMembersCount: Number(row.active_members_count || row.activeMembersCount || 0) || 0
+      membersCount: toCountOrNull(row.members_count !== undefined ? row.members_count : row.membersCount),
+      activeMembersCount: toCountOrNull(row.active_members_count !== undefined ? row.active_members_count : row.activeMembersCount),
+      legalEntitiesCount: toCountOrNull(row.legal_entities_count !== undefined ? row.legal_entities_count : row.legalEntitiesCount)
     };
   }
 
   function syncOrganizationIntoSession(org) {
     if (!org || !window.__userSession) return org;
     window.__userSession.organizations = Array.isArray(window.__userSession.organizations) ? window.__userSession.organizations : [];
+    var toCountOrNull = function (value) {
+      if (value === null || value === undefined || value === '') return null;
+      var n = Number(value);
+      return isFinite(n) ? n : null;
+    };
     var idx = window.__userSession.organizations.findIndex(function (item) {
       return String(item && item.id || '').trim() === String(org.id || '').trim();
     });
@@ -1200,8 +1657,9 @@
       address: org.address || '',
       created_at: org.created_at || '',
       updated_at: org.updated_at || '',
-      membersCount: org.membersCount || 0,
-      activeMembersCount: org.activeMembersCount || 0
+      membersCount: toCountOrNull(org.membersCount),
+      activeMembersCount: toCountOrNull(org.activeMembersCount),
+      legalEntitiesCount: toCountOrNull(org.legalEntitiesCount)
     };
     if (idx >= 0) window.__userSession.organizations[idx] = Object.assign({}, window.__userSession.organizations[idx], merged);
     else window.__userSession.organizations.push(merged);
@@ -1839,10 +2297,6 @@
         status: item.status
       };
     });
-    session.activeOrganizationPermissions = Array.isArray(session.activeOrganizationPermissions)
-      ? session.activeOrganizationPermissions.slice()
-      : (Array.isArray(session.permissionKeys) ? session.permissionKeys.slice() : []);
-    session.currentUser.activeOrganizationPermissions = session.activeOrganizationPermissions.slice();
 
     session.suppliers = Array.isArray(session.suppliers) ? session.suppliers : [];
 
@@ -1923,33 +2377,6 @@
     }
 
     var row = Array.isArray(response && response.data) ? response.data[0] || null : (response && response.data) || null;
-    var normalizePermissionList = window.normalizePermissionList || function (value) {
-      if (!value) return [];
-      if (Array.isArray(value)) {
-        return value.map(function (item) {
-          if (typeof item === 'string') return item.trim();
-          if (item && typeof item === 'object') {
-            return String(item.key || item.permission_key || item.permissionKey || item.name || '').trim();
-          }
-          return '';
-        }).filter(Boolean);
-      }
-      if (typeof value === 'string') {
-        var trimmed = value.trim();
-        if (!trimmed) return [];
-        try {
-          return normalizePermissionList(JSON.parse(trimmed));
-        } catch (error) {
-          return trimmed.indexOf(',') >= 0 ? trimmed.split(',').map(function (item) { return item.trim(); }).filter(Boolean) : [trimmed];
-        }
-      }
-      if (value && typeof value === 'object') {
-        if (Array.isArray(value.permissions)) return normalizePermissionList(value.permissions);
-        if (Array.isArray(value.items)) return normalizePermissionList(value.items);
-        if (Array.isArray(value.data)) return normalizePermissionList(value.data);
-      }
-      return [];
-    };
     if (!row) {
       var fallbackProfile = normalizeProfileRow(buildFallbackProfile(authUser));
       var fallbackSession = buildNoOrganizationSession(authUser, fallbackProfile);
@@ -2047,9 +2474,6 @@
       suppliers: [],
       dbUsers: []
     };
-    session.permissionKeys = normalizePermissionList(row.permissions || []);
-    session.activeOrganizationPermissions = normalizePermissionList(row.activeOrganizationPermissions || row.active_organization_permissions || session.permissionKeys);
-    session.currentUser.activeOrganizationPermissions = session.activeOrganizationPermissions.slice();
 
     applyServerSession(session);
     console.info('session: ready');
@@ -2121,6 +2545,9 @@
     var editId = (document.getElementById('as-edit-id') || { value: '' }).value;
     var activeOrgId = String((window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    var selectedLegalEntityIds = Array.from(document.querySelectorAll('#as-legal-entities input[type="checkbox"]:checked')).map(function (cb) {
+      return String(cb.value || '').trim();
+    }).filter(Boolean);
 
     if (btn) {
       btn.disabled = true;
@@ -2145,6 +2572,10 @@
       var name = ((document.getElementById('as-n') || {}).value || '').trim();
       if (!name) throw new Error('Укажите название поставщика');
 
+      if (!selectedLegalEntityIds.length) {
+        throw new Error('Выберите хотя бы одно юрлицо');
+      }
+
       var supplierId = editId !== '' && window.__userSession && Array.isArray(window.__userSession.suppliers)
         ? (window.__userSession.suppliers[Number(editId)] && window.__userSession.suppliers[Number(editId)].id) || ''
         : '';
@@ -2152,43 +2583,37 @@
         ? window.__userSession.suppliers.find(function (item) { return String(item.id) === String(supplierId); })
         : null;
 
-      var payload = {
-        organization_id: activeOrgId,
-        legacy_key: existing && existing.legacy_key ? existing.legacy_key : ('sup_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)),
-        name: name,
-        emoji: ((document.getElementById('as-em2') || {}).value || '🏭').trim() || '🏭',
-        kind: ((document.getElementById('as-c') || {}).value || 'Поставщик').trim() || 'Поставщик',
-        rating: existing && typeof existing.rating === 'number' ? existing.rating : 0,
-        orders_count: existing && typeof existing.orders === 'number' ? existing.orders : 0,
-        delivery: ((document.getElementById('as-dl') || {}).value || '1-2 дня').trim() || '1-2 дня',
-        min_order_text: (((document.getElementById('as-mn') || {}).value || '').trim() ? '₽' + ((document.getElementById('as-mn') || {}).value || '').trim() : '₽1 000'),
-        status: 'active',
-        tags: Array.isArray(existing && existing.tags) ? existing.tags.slice() : [],
-        contact: ((document.getElementById('as-ct') || {}).value || '').trim(),
-        phone: ((document.getElementById('as-ph') || {}).value || '').trim(),
-        hidden: false
+      var supplierPayload = {
+        target_organization_id: activeOrgId,
+        target_name: name,
+        target_inn: ((document.getElementById('as-inn') || {}).value || '').trim(),
+        target_phone: ((document.getElementById('as-ph') || {}).value || '').trim(),
+        target_email: ((document.getElementById('as-em') || {}).value || '').trim(),
+        target_contact_name: ((document.getElementById('as-ct') || {}).value || '').trim(),
+        target_status: ((document.getElementById('as-status') || {}).value || (existing && existing.status) || 'active').trim() || 'active',
+        target_legal_entity_ids: selectedLegalEntityIds.slice()
       };
+      console.info('assign supplier payload', supplierPayload);
 
-      var upsertResult;
+      var upsertRows;
       if (supplierId) {
-        upsertResult = await client
-          .from('suppliers')
-          .update(payload)
-          .eq('id', supplierId)
-          .eq('organization_id', activeOrgId)
-          .select('*')
-          .maybeSingle();
+        upsertRows = await window.ownerUpdateSupplier(Object.assign({}, supplierPayload, {
+          target_supplier_id: supplierId
+        }));
       } else {
-        upsertResult = await client
-          .from('suppliers')
-          .insert(payload)
-          .select('*')
-          .maybeSingle();
+        upsertRows = await window.ownerCreateSupplier(supplierPayload);
       }
+      var upsertRow = Array.isArray(upsertRows) ? upsertRows[0] : upsertRows;
+      if (!upsertRow || !upsertRow.id) throw new Error('Не удалось сохранить поставщика');
 
-      if (upsertResult.error) throw upsertResult.error;
+      await window.ownerLinkSupplierLegalEntities({
+        target_supplier_id: upsertRow.id,
+        target_legal_entity_ids: selectedLegalEntityIds.slice()
+      });
 
-      var refreshedSuppliers = await loadSuppliersForOrganization(activeOrgId);
+      var refreshedSuppliers = typeof window.refreshSuppliersForOrganization === 'function'
+        ? await window.refreshSuppliersForOrganization(activeOrgId)
+        : await loadSuppliersForOrganization(activeOrgId);
       if (window.__userSession) {
         window.__userSession.suppliers = refreshedSuppliers.slice();
       }
@@ -2200,8 +2625,14 @@
       } catch (runtimeError) {
         console.error('Failed to refresh supplier runtime after save:', runtimeError);
       }
+      if (typeof window.refreshSupplierLegalEntitiesForOrganization === 'function') {
+        await window.refreshSupplierLegalEntitiesForOrganization(activeOrgId).catch(function () {});
+      }
 
       if (typeof window.closeSupplierModal === 'function') window.closeSupplierModal();
+      if (typeof window.refreshOrganizationSummaryForOrganization === 'function' && activeOrgId) {
+        window.refreshOrganizationSummaryForOrganization(activeOrgId).catch(function () {});
+      }
       if (typeof window.renderSuppliers === 'function') window.renderSuppliers();
       if (typeof window.renderCatalog === 'function') window.renderCatalog();
       if (typeof window.renderOwner === 'function' && window.CU && window.CU.role === 'owner') window.renderOwner();
