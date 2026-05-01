@@ -237,41 +237,155 @@
     return bootstrapPromises[key];
   }
 
-  async function loadLegalEntitiesForOrganization(organizationId) {
-    if (window.__loginInProgress || window.__restoreInProgress) return [];
-    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
-    var orgId = String(organizationId || '').trim();
-    if (!client || !orgId) return [];
-    try {
-      console.info('supabase request start', 'legal_entities');
-      var response = await client
-        .from('legal_entities')
-        .select('id, organization_id, name, inn, kpp, ogrn, legal_address, status, created_at, updated_at')
-        .eq('organization_id', orgId)
-        .order('created_at', { ascending: true });
-      if (response.error) {
-        console.warn('legal_entities query failed', {
-          code: response.error.code || '',
-          message: response.error.message || '',
-          details: response.error.details || '',
-          hint: response.error.hint || '',
-          raw: response.error
-        });
-        return [];
-      }
-      return (response.data || []).map(normalizeLegalEntityRow).filter(Boolean);
-    } catch (error) {
-      console.warn('legal_entities query failed', {
+  async function rpcOwnerListLegalEntities(client, organizationId) {
+    console.info('supabase request start', 'owner_list_legal_entities');
+    var response = await withTimeout(
+      client.rpc('owner_list_legal_entities', { target_organization_id: organizationId }),
+      8000,
+      'Не удалось загрузить юрлица'
+    ).catch(function (error) {
+      console.warn('rpc owner_list_legal_entities failed', {
+        request: 'owner_list_legal_entities',
+        organizationId: String(organizationId || ''),
         code: error && error.code ? error.code : '',
         message: error && error.message ? error.message : '',
         details: error && error.details ? error.details : '',
         hint: error && error.hint ? error.hint : '',
         raw: error
       });
-      return [];
+      throw error;
+    });
+    if (response && response.error) {
+      console.warn('rpc owner_list_legal_entities failed', {
+        request: 'owner_list_legal_entities',
+        organizationId: String(organizationId || ''),
+        code: response.error.code || '',
+        message: response.error.message || '',
+        details: response.error.details || '',
+        hint: response.error.hint || '',
+        raw: response.error
+      });
+      throw response.error;
     }
+    return Array.isArray(response && response.data) ? response.data.slice() : [];
   }
+
+  async function loadLegalEntitiesForOrganization(organizationId) {
+    if (window.__loginInProgress || window.__restoreInProgress) return [];
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    var orgId = String(organizationId || '').trim();
+    if (!client || !orgId) return [];
+    var cache = getDataCache();
+    var bucket = cache.legalEntitiesByOrg[orgId];
+    if (bucket && bucket.promise) return bucket.promise;
+    if (bucket && Array.isArray(bucket.items) && bucket.loadedAt && (Date.now() - bucket.loadedAt) < 30000) {
+      return bucket.items.slice();
+    }
+    cache.legalEntitiesByOrg[orgId] = bucket = {
+      items: bucket && Array.isArray(bucket.items) ? bucket.items.slice() : [],
+      loading: true,
+      error: null,
+      promise: null,
+      loadedAt: bucket && bucket.loadedAt ? bucket.loadedAt : 0
+    };
+    bucket.promise = (async function () {
+      try {
+        var rows = await rpcOwnerListLegalEntities(client, orgId);
+        var items = rows.map(normalizeLegalEntityRow).filter(Boolean);
+        bucket.items = items.slice();
+        bucket.error = null;
+        bucket.loadedAt = Date.now();
+        if (window.__userSession && Array.isArray(window.__userSession.organizations)) {
+          window.__userSession.organizations = window.__userSession.organizations.map(function (org) {
+            if (!org || String(org.id || '') !== orgId) return org;
+            return Object.assign({}, org, {
+              legalEntitiesCount: items.filter(function (item) {
+                return String(item.status || 'active').toLowerCase() === 'active';
+              }).length
+            });
+          });
+        }
+        if (window.__userSession && window.__userSession.activeOrganization && String(window.__userSession.activeOrganization.id || '') === orgId) {
+          window.__userSession.activeOrganization = Object.assign({}, window.__userSession.activeOrganization, {
+            legalEntitiesCount: items.filter(function (item) {
+              return String(item.status || 'active').toLowerCase() === 'active';
+            }).length
+          });
+        }
+        if (window.activeRest && String(window.activeRest.id || window.activeRest.organizationId || '') === orgId) {
+          window.activeRest = Object.assign({}, window.activeRest, {
+            legalEntitiesCount: items.filter(function (item) {
+              return String(item.status || 'active').toLowerCase() === 'active';
+            }).length
+          });
+        }
+        if (typeof window.renderRestaurants === 'function') window.renderRestaurants();
+        return items.slice();
+      } catch (error) {
+        bucket.error = {
+          code: error && error.code ? error.code : '',
+          message: error && error.message ? error.message : '',
+          details: error && error.details ? error.details : '',
+          hint: error && error.hint ? error.hint : '',
+          raw: error
+        };
+        console.warn('legal_entities query failed', bucket.error);
+        return [];
+      } finally {
+        bucket.loading = false;
+        bucket.promise = null;
+      }
+    })();
+    return bucket.promise;
+  }
+
+  async function refreshLegalEntitiesForOrganization(organizationId) {
+    var orgId = String(organizationId || '').trim();
+    if (!orgId) return [];
+    var cache = getDataCache();
+    delete cache.legalEntitiesByOrg[orgId];
+    var items = await loadLegalEntitiesForOrganization(orgId);
+    if (typeof window.refreshOrganizationSummaryForOrganization === 'function') {
+      await window.refreshOrganizationSummaryForOrganization(orgId).catch(function () {});
+    }
+    return items;
+  }
+
+  async function ownerCreateLegalEntity(payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) throw new Error('Supabase client is not available');
+    console.info('supabase request start', 'owner_create_legal_entity');
+    var response = await client.rpc('owner_create_legal_entity', payload || {});
+    if (response.error) throw response.error;
+    return Array.isArray(response.data) ? response.data[0] || null : response.data || null;
+  }
+
+  async function ownerUpdateLegalEntity(payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) throw new Error('Supabase client is not available');
+    console.info('supabase request start', 'owner_update_legal_entity');
+    var response = await client.rpc('owner_update_legal_entity', payload || {});
+    if (response.error) throw response.error;
+    return Array.isArray(response.data) ? response.data[0] || null : response.data || null;
+  }
+
+  async function ownerArchiveLegalEntity(payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) throw new Error('Supabase client is not available');
+    console.info('supabase request start', 'owner_archive_legal_entity');
+    var response = await client.rpc('owner_archive_legal_entity', payload || {});
+    if (response.error) throw response.error;
+    return Array.isArray(response.data) ? response.data[0] || null : response.data || null;
+  }
+
+  window.ownerListLegalEntities = function (organizationId) {
+    return loadLegalEntitiesForOrganization(organizationId);
+  };
   window.loadLegalEntitiesForOrganization = loadLegalEntitiesForOrganization;
+  window.refreshLegalEntitiesForOrganization = refreshLegalEntitiesForOrganization;
+  window.ownerCreateLegalEntity = ownerCreateLegalEntity;
+  window.ownerUpdateLegalEntity = ownerUpdateLegalEntity;
+  window.ownerArchiveLegalEntity = ownerArchiveLegalEntity;
 
   function upsertUserInDb(user) {
     var db = ensureArrays(window._dbCache || readLocalState() || getDefaults());
@@ -415,6 +529,10 @@
       kpp: row.kpp || '',
       ogrn: row.ogrn || '',
       legal_address: row.legal_address || '',
+      actual_address: row.actual_address || '',
+      contact_name: row.contact_name || '',
+      contact_phone: row.contact_phone || '',
+      contact_email: row.contact_email || '',
       status: row.status || 'active',
       created_at: row.created_at || '',
       updated_at: row.updated_at || ''
@@ -571,6 +689,12 @@
     }
     if (!window.__dataCache.organizationSummaryByOrg || typeof window.__dataCache.organizationSummaryByOrg !== 'object') {
       window.__dataCache.organizationSummaryByOrg = {};
+    }
+    if (!window.__dataCache.legalEntitiesByOrg || typeof window.__dataCache.legalEntitiesByOrg !== 'object') {
+      window.__dataCache.legalEntitiesByOrg = {};
+    }
+    if (!window.__dataCache.legalEntitiesPromisesByOrg || typeof window.__dataCache.legalEntitiesPromisesByOrg !== 'object') {
+      window.__dataCache.legalEntitiesPromisesByOrg = {};
     }
     if (!window.__dataCache.organizationsByFilter || typeof window.__dataCache.organizationsByFilter !== 'object') {
       window.__dataCache.organizationsByFilter = {};
@@ -1057,6 +1181,7 @@
           organization_id: row && (row.organization_id || row.id) || orgId,
           members_count: toCountOrNull(row && (row.members_count !== undefined ? row.members_count : row.membersCount)),
           active_members_count: toCountOrNull(row && (row.active_members_count !== undefined ? row.active_members_count : row.activeMembersCount)),
+          legal_entities_count: toCountOrNull(row && (row.legal_entities_count !== undefined ? row.legal_entities_count : row.legalEntitiesCount)),
           suppliers_count: toCountOrNull(row && (row.suppliers_count !== undefined ? row.suppliers_count : row.suppliersCount)),
           price_lists_count: toCountOrNull(row && (row.price_lists_count !== undefined ? row.price_lists_count : row.priceListsCount)),
           orders_count: toCountOrNull(row && (row.orders_count !== undefined ? row.orders_count : row.ordersCount)),
@@ -1073,6 +1198,7 @@
               summary: summary,
               membersCount: summary.members_count,
               activeMembersCount: summary.active_members_count,
+              legalEntitiesCount: summary.legal_entities_count,
               suppliersCount: summary.suppliers_count,
               priceListsCount: summary.price_lists_count,
               ordersCount: summary.orders_count,
@@ -1087,6 +1213,7 @@
             summary: summary,
             membersCount: summary.members_count,
             activeMembersCount: summary.active_members_count,
+            legalEntitiesCount: summary.legal_entities_count,
             suppliersCount: summary.suppliers_count,
             priceListsCount: summary.price_lists_count,
             ordersCount: summary.orders_count,
@@ -1098,6 +1225,7 @@
             summary: summary,
             membersCount: summary.members_count,
             activeMembersCount: summary.active_members_count,
+            legalEntitiesCount: summary.legal_entities_count,
             suppliersCount: summary.suppliers_count,
             priceListsCount: summary.price_lists_count,
             ordersCount: summary.orders_count,
@@ -1359,7 +1487,8 @@
       created_at: row.created_at || row.createdAt || '',
       updated_at: row.updated_at || row.updatedAt || '',
       membersCount: toCountOrNull(row.members_count !== undefined ? row.members_count : row.membersCount),
-      activeMembersCount: toCountOrNull(row.active_members_count !== undefined ? row.active_members_count : row.activeMembersCount)
+      activeMembersCount: toCountOrNull(row.active_members_count !== undefined ? row.active_members_count : row.activeMembersCount),
+      legalEntitiesCount: toCountOrNull(row.legal_entities_count !== undefined ? row.legal_entities_count : row.legalEntitiesCount)
     };
   }
 
@@ -1384,7 +1513,8 @@
       created_at: org.created_at || '',
       updated_at: org.updated_at || '',
       membersCount: toCountOrNull(org.membersCount),
-      activeMembersCount: toCountOrNull(org.activeMembersCount)
+      activeMembersCount: toCountOrNull(org.activeMembersCount),
+      legalEntitiesCount: toCountOrNull(org.legalEntitiesCount)
     };
     if (idx >= 0) window.__userSession.organizations[idx] = Object.assign({}, window.__userSession.organizations[idx], merged);
     else window.__userSession.organizations.push(merged);

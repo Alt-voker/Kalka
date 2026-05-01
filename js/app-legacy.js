@@ -3887,6 +3887,34 @@ function getOrganizationMembersLabelSafe(count) {
   return n + ' участников';
 }
 
+function canViewLegalEntitiesForRole(role) {
+  var normalized = normalizeLegacyRoleSafe(role);
+  var allowed = hasPermissionSafe('organization.view') || hasPermissionSafe('organization.edit');
+  if (!allowed) {
+    allowed = ['owner', 'admin', 'organization_owner', 'director', 'manager'].indexOf(normalized) >= 0;
+  }
+  console.info('organization permission check', {
+    action: 'legal-entities',
+    permission: 'organization.view|organization.edit',
+    allowed: !!allowed
+  });
+  return !!allowed;
+}
+
+function canManageLegalEntitiesForRole(role) {
+  var normalized = normalizeLegacyRoleSafe(role);
+  var allowed = hasPermissionSafe('organization.edit');
+  if (!allowed) {
+    allowed = ['owner', 'admin', 'organization_owner', 'director'].indexOf(normalized) >= 0;
+  }
+  console.info('organization permission check', {
+    action: 'legal-entities-manage',
+    permission: 'organization.edit',
+    allowed: !!allowed
+  });
+  return !!allowed;
+}
+
 function getOrganizationActionRolePermissions(role) {
   var normalized = normalizeLegacyRoleSafe(role);
   var canManageMembers = ['owner', 'admin', 'organization_owner'].indexOf(normalized) >= 0;
@@ -3901,6 +3929,8 @@ function getOrganizationActionRolePermissions(role) {
     canAddMembers: canRenderOrgAction('add-user', 'organization.members.invite', canManageMembers),
     canEditRole: canRenderOrgAction('change-role', 'organization.members.edit_role', canManageMembers),
     canDisableMember: canRenderOrgAction('disconnect', 'organization.members.disable', canManageMembers),
+    canViewLegalEntities: canViewLegalEntitiesForRole(normalized),
+    canManageLegalEntities: canManageLegalEntitiesForRole(normalized),
     canViewSuppliers: canRenderOrgAction('suppliers', 'suppliers.view', canViewSuppliers),
     canArchive: canRenderOrgAction('archive', 'organization.archive', canArchive),
     canRestore: canRenderOrgAction('restore', 'organization.archive', canArchive),
@@ -3933,7 +3963,10 @@ function normalizeOrganizationForRender(org) {
       : (org.members_count !== undefined && org.members_count !== null ? Number(org.members_count || 0) || 0 : null),
     activeMembersCount: (org.activeMembersCount !== undefined && org.activeMembersCount !== null)
       ? Number(org.activeMembersCount || 0) || 0
-      : (org.active_members_count !== undefined && org.active_members_count !== null ? Number(org.active_members_count || 0) || 0 : null)
+      : (org.active_members_count !== undefined && org.active_members_count !== null ? Number(org.active_members_count || 0) || 0 : null),
+    legalEntitiesCount: (org.legalEntitiesCount !== undefined && org.legalEntitiesCount !== null)
+      ? Number(org.legalEntitiesCount || 0) || 0
+      : (org.legal_entities_count !== undefined && org.legal_entities_count !== null ? Number(org.legal_entities_count || 0) || 0 : null)
   };
 }
 
@@ -4160,12 +4193,21 @@ function renderRestaurants(){
         null
       );
       var suppliersCount = (
-        summaryObj.suppliersCount !== undefined && summaryObj.suppliersCount !== null ? summaryObj.suppliersCount :
+        summaryObj.suppliersCount !== undefined && summaryObj.suppliersCount !== null ? summaryObj.suppliersCount : 
         summaryObj.suppliers_count !== undefined && summaryObj.suppliers_count !== null ? summaryObj.suppliers_count :
         summaryCache.suppliersCount !== undefined && summaryCache.suppliersCount !== null ? summaryCache.suppliersCount :
         summaryCache.suppliers_count !== undefined && summaryCache.suppliers_count !== null ? summaryCache.suppliers_count :
         normalizedOrg.suppliersCount !== undefined && normalizedOrg.suppliersCount !== null ? normalizedOrg.suppliersCount :
         normalizedOrg.suppliers_count !== undefined && normalizedOrg.suppliers_count !== null ? normalizedOrg.suppliers_count :
+        null
+      );
+      var legalEntitiesCount = (
+        summaryObj.legalEntitiesCount !== undefined && summaryObj.legalEntitiesCount !== null ? summaryObj.legalEntitiesCount :
+        summaryObj.legal_entities_count !== undefined && summaryObj.legal_entities_count !== null ? summaryObj.legal_entities_count :
+        summaryCache.legalEntitiesCount !== undefined && summaryCache.legalEntitiesCount !== null ? summaryCache.legalEntitiesCount :
+        summaryCache.legal_entities_count !== undefined && summaryCache.legal_entities_count !== null ? summaryCache.legal_entities_count :
+        normalizedOrg.legalEntitiesCount !== undefined && normalizedOrg.legalEntitiesCount !== null ? normalizedOrg.legalEntitiesCount :
+        normalizedOrg.legal_entities_count !== undefined && normalizedOrg.legal_entities_count !== null ? normalizedOrg.legal_entities_count :
         null
       );
       console.info('card member count resolved', {
@@ -4199,12 +4241,14 @@ function renderRestaurants(){
           +'<div class="org-card__metrics">'
             +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Участники: '+countLabel+'</span>'
             +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Поставщики: '+getOrganizationCountLabelSafe(suppliersCount, '—')+'</span>'
+            +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Юрлица: '+getOrganizationCountLabelSafe(legalEntitiesCount, '—')+'</span>'
             +'<span class="badge" style="background:#f8fafc;color:#334155;border:1px solid #e2e8f0;">Роль: '+getOrganizationRoleLabelSafe(normalizedOrg.role || currentRole)+'</span>'
           +'</div>'
           +'<div class="org-card__actions">'
             +'<div class="org-card__group org-card__group--main">'
               +'<button class="tbBtn acc" data-org-action="open" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Открыть</button>'
               +(perms.canViewSuppliers ? '<button class="tbBtn" data-org-action="suppliers" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Поставщики</button>' : '')
+              +(perms.canViewLegalEntities ? '<button class="tbBtn" data-org-action="legal-entities" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Юрлица</button>' : '')
               +(isActive ? '<span class="badge" style="background:var(--aD);color:var(--ac);border:1px solid var(--ac);">Текущая организация</span>' : '<button class="tbBtn" data-org-action="switch" data-org-id="'+_esc(normalizedOrg.id)+'" style="cursor:pointer;">Переключиться</button>')
             +'</div>'
             +'<div class="org-card__group">'
@@ -4267,6 +4311,16 @@ function renderRestaurants(){
           }
           if (typeof window.goPage === 'function') window.goPage('suppliers');
           else if (typeof window.renderSuppliers === 'function') window.renderSuppliers();
+        } else if (action === 'legal-entities') {
+          if (!hasPermissionSafe('organization.view') && !hasPermissionSafe('organization.edit') && ['owner', 'admin', 'organization_owner', 'director', 'manager'].indexOf(normalizeLegacyRoleSafe((window.__userSession && window.__userSession.role) || (window.CU && window.CU.role) || '')) < 0) {
+            if (typeof window.toast === 'function') window.toast('Недостаточно прав', 'err');
+            return;
+          }
+          if (typeof window.openOrganizationLegalEntitiesModal === 'function') {
+            window.openOrganizationLegalEntitiesModal(orgId);
+          } else {
+            if (typeof window.toast === 'function') window.toast('Раздел временно недоступен. Ошибка записана в консоль.', 'warn');
+          }
         } else if (action === 'archive' && hasPermissionSafe('organization.archive') && typeof window.archiveOrganizationFromCard === 'function') {
           window.archiveOrganizationFromCard(orgId);
         } else if (action === 'restore' && hasPermissionSafe('organization.archive') && typeof window.restoreOrganizationFromCard === 'function') {
@@ -4281,6 +4335,7 @@ function renderRestaurants(){
               action === 'members' ? 'organization.members.view' :
               action === 'add-user' ? 'organization.members.invite' :
               action === 'edit' ? 'organization.edit' :
+              action === 'legal-entities' ? 'organization.view' :
               action === 'archive' || action === 'restore' ? 'organization.archive' :
               'organization.delete'
             )) {
@@ -4318,12 +4373,14 @@ window.runOrganizationModuleSelfTest = async function () {
   if (firstOrgId) {
     try { ensureOrganizationDetailsModal(); openOrganizationDetailsModal(firstOrgId); } catch (error) {}
     try { ensureOrganizationEditModal(); openOrganizationEditor(firstOrgId); } catch (error) {}
+    try { ensureOrganizationLegalEntitiesModal(); openOrganizationLegalEntitiesModal(firstOrgId); renderOrganizationLegalEntitiesModal(firstOrgId); } catch (error) {}
     try { ensureOrganizationMembersModal(); openOrganizationMembers(firstOrgId); await renderOrganizationMembersModal(firstOrgId); } catch (error) {}
     try { ensureOrganizationAddMemberModal(); openOrganizationAddMemberModal(firstOrgId); await renderOrganizationAddMemberModal(firstOrgId); } catch (error) {}
   }
   var orgActionMap = [
     { action: 'open', rpcName: '', requiresOrgId: true, selector: '[data-org-action="open"]', handler: 'openOrganizationDetails' },
     { action: 'members', rpcName: 'owner_list_organization_members', requiresOrgId: true, selector: '[data-org-action="members"]', handler: 'openOrganizationMembers' },
+    { action: 'legal-entities', rpcName: 'owner_list_legal_entities + owner_create_legal_entity + owner_update_legal_entity + owner_archive_legal_entity', requiresOrgId: true, selector: '[data-org-action="legal-entities"]', handler: 'openOrganizationLegalEntitiesModal' },
     { action: 'add-user', rpcName: 'owner_list_users + owner_assign_user_to_organization', requiresOrgId: true, selector: '[data-org-action="add-user"]', handler: 'openOrganizationAddMemberModal' },
     { action: 'edit', rpcName: 'owner_update_organization', requiresOrgId: true, selector: '[data-org-action="edit"]', handler: 'openOrganizationEditor' },
     { action: 'save', rpcName: 'owner_update_organization', requiresOrgId: true, selector: '#ov-orgEdit [data-org-action="save"]', handler: 'submitOrganizationForm' },
@@ -4348,11 +4405,12 @@ window.runOrganizationModuleSelfTest = async function () {
     if (item.action === 'add-user' || item.action === 'submit-add') permissionAllowed = hasPermissionSafe('organization.members.invite');
     if (item.action === 'change-role') permissionAllowed = hasPermissionSafe('organization.members.edit_role');
     if (item.action === 'disconnect') permissionAllowed = hasPermissionSafe('organization.members.disable');
+    if (item.action === 'legal-entities') permissionAllowed = hasPermissionSafe('organization.view') || hasPermissionSafe('organization.edit') || ['owner', 'admin', 'organization_owner', 'director', 'manager'].indexOf(normalizeLegacyRoleSafe((window.__userSession && window.__userSession.role) || (window.CU && window.CU.role) || '')) >= 0;
     if (item.action === 'suppliers') permissionAllowed = hasPermissionSafe('suppliers.view');
     if (item.action === 'archive' || item.action === 'restore') permissionAllowed = hasPermissionSafe('organization.archive');
     if (item.action === 'delete') permissionAllowed = hasPermissionSafe('organization.delete');
     var status = ((!!button || (item.action === 'open' ? !!cardButtons.length : false)) && handlerAttached && permissionAllowed) ? 'OK' : 'FAIL';
-    if (!permissionAllowed && (item.action === 'edit' || item.action === 'members' || item.action === 'add-user' || item.action === 'submit-add' || item.action === 'change-role' || item.action === 'disconnect' || item.action === 'suppliers' || item.action === 'archive' || item.action === 'restore' || item.action === 'delete')) {
+    if (!permissionAllowed && (item.action === 'edit' || item.action === 'members' || item.action === 'legal-entities' || item.action === 'add-user' || item.action === 'submit-add' || item.action === 'change-role' || item.action === 'disconnect' || item.action === 'suppliers' || item.action === 'archive' || item.action === 'restore' || item.action === 'delete')) {
       status = 'SKIP';
     }
     if ((item.action === 'change-role' || item.action === 'disconnect') && !document.querySelector('#ov-orgMembers [data-member-action="'+item.action+'"]')) {
@@ -4416,6 +4474,31 @@ function setActiveOrganization(orgId){
 function getOrganizationMembersBucket(orgId){
   var cache = window.__dataCache && window.__dataCache.organizationMembersByOrg ? window.__dataCache.organizationMembersByOrg[String(orgId || '')] : null;
   return cache || null;
+}
+function getOrganizationLegalEntitiesBucket(orgId){
+  var cache = window.__dataCache && window.__dataCache.legalEntitiesByOrg ? window.__dataCache.legalEntitiesByOrg[String(orgId || '')] : null;
+  return cache || null;
+}
+function normalizeLegalEntityForRender(entity) {
+  if (!entity) return null;
+  var id = String(entity.id || entity.legal_entity_id || entity.legalEntityId || '').trim();
+  if (!id) return null;
+  return {
+    id: id,
+    organizationId: String(entity.organization_id || entity.organizationId || '').trim(),
+    name: entity.name || entity.legal_name || entity.legalName || 'Юридическое лицо',
+    inn: entity.inn || '',
+    kpp: entity.kpp || '',
+    ogrn: entity.ogrn || '',
+    legal_address: entity.legal_address || entity.legalAddress || '',
+    actual_address: entity.actual_address || entity.actualAddress || '',
+    contact_name: entity.contact_name || entity.contactName || '',
+    contact_phone: entity.contact_phone || entity.contactPhone || '',
+    contact_email: entity.contact_email || entity.contactEmail || '',
+    status: String(entity.status || 'active').trim().toLowerCase() || 'active',
+    created_at: entity.created_at || entity.createdAt || '',
+    updated_at: entity.updated_at || entity.updatedAt || ''
+  };
 }
 function setModalBusy(modalId, busy){
   var modal = document.getElementById(modalId);
@@ -4606,7 +4689,7 @@ async function renderOrganizationMembersModal(orgId){
             +'</select>')
           +'</div>'
         +'</div>'
-        +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">'
+            +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">'
           +(isReadonlyRole ? '' : '<button class="tbBtn" data-member-action="change-role" data-org-id="'+_esc(orgId)+'" data-profile-id="'+_esc(String(member.userProfileId || ''))+'" data-role-select-id="orgMemberRole-'+_esc(String(member.membershipId || member.userProfileId || member.authUserId || member.email))+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Изменить роль</button>')
           +'<button class="tbBtn" data-member-action="disconnect" data-org-id="'+_esc(orgId)+'" data-profile-id="'+_esc(String(member.userProfileId || ''))+'" style="cursor:pointer;">Отключить</button>'
         +'</div>'
@@ -4625,12 +4708,12 @@ async function renderOrganizationMembersModal(orgId){
       var targetUserProfileId = String(btn.dataset.profileId || btn.dataset.userProfileId || '').trim();
       console.info('organization action clicked', { action: action, orgId: targetOrgId });
       try {
-        if (action === 'retry-members') {
-          refreshOrganizationMembersForOrganization(targetOrgId);
-          return;
-        }
         if (action === 'add-user') {
           openOrganizationAddMemberModal(targetOrgId);
+          return;
+        }
+        if (action === 'retry-members') {
+          refreshOrganizationMembersForOrganization(targetOrgId);
           return;
         }
         if (action === 'change-role') {
@@ -4704,6 +4787,395 @@ window.removeOrganizationMemberFromOrganization = async function (userProfileId,
     return false;
   } finally {
     setModalBusy('ov-orgMembers', false);
+  }
+};
+
+function ensureOrganizationLegalEntitiesModal(){
+  var el = document.getElementById('ov-orgLegalEntities');
+  if (el) return el;
+  el = document.createElement('div');
+  el.className = 'ov';
+  el.id = 'ov-orgLegalEntities';
+  el.innerHTML = ''
+    +'<div class="modal xl" style="max-width:1080px;width:min(1080px,calc(100vw - 24px));">'
+      +'<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'
+        +'<div>'
+          +'<div class="m-title" id="orgLegalEntitiesTitle">🏛️ Юрлица организации</div>'
+          +'<div id="orgLegalEntitiesMeta" style="font-size:12px;color:var(--t2);margin-top:6px;"></div>'
+        +'</div>'
+        +'<button class="tbBtn" onclick="closeOrganizationLegalEntitiesModal()" style="cursor:pointer;">Закрыть</button>'
+      +'</div>'
+      +'<div id="orgLegalEntitiesStatus" style="margin-top:12px;font-size:12px;color:var(--t3);"></div>'
+      +'<div style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);gap:12px;margin-top:14px;align-items:start;">'
+        +'<div>'
+          +'<div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px;">'
+            +'<div style="font-size:13px;font-weight:700;">Список юрлиц</div>'
+            +'<button class="tbBtn" data-legal-action="add" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Добавить юрлицо</button>'
+          +'</div>'
+          +'<div id="orgLegalEntitiesBody" style="display:grid;gap:10px;max-height:56vh;overflow:auto;"></div>'
+        +'</div>'
+        +'<div style="background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:14px 16px;box-shadow:0 8px 20px rgba(15,23,42,.06);">'
+          +'<div id="orgLegalEntityFormTitle" style="font-size:15px;font-weight:800;margin-bottom:10px;">Добавить юрлицо</div>'
+          +'<div style="display:grid;gap:10px;">'
+            +'<label style="display:grid;gap:6px;"><span style="font-size:12px;color:var(--t2);">Название *</span><input id="orgLegalEntityName" class="fS" type="text" placeholder="ООО ..."></label>'
+            +'<label style="display:grid;gap:6px;"><span style="font-size:12px;color:var(--t2);">ИНН</span><input id="orgLegalEntityInn" class="fS" type="text"></label>'
+            +'<label style="display:grid;gap:6px;"><span style="font-size:12px;color:var(--t2);">КПП</span><input id="orgLegalEntityKpp" class="fS" type="text"></label>'
+            +'<label style="display:grid;gap:6px;"><span style="font-size:12px;color:var(--t2);">ОГРН</span><input id="orgLegalEntityOgrn" class="fS" type="text"></label>'
+            +'<label style="display:grid;gap:6px;"><span style="font-size:12px;color:var(--t2);">Юридический адрес</span><textarea id="orgLegalEntityLegalAddress" class="fS" rows="2" style="resize:vertical;"></textarea></label>'
+            +'<label style="display:grid;gap:6px;"><span style="font-size:12px;color:var(--t2);">Фактический адрес</span><textarea id="orgLegalEntityActualAddress" class="fS" rows="2" style="resize:vertical;"></textarea></label>'
+            +'<label style="display:grid;gap:6px;"><span style="font-size:12px;color:var(--t2);">Контактное лицо</span><input id="orgLegalEntityContactName" class="fS" type="text"></label>'
+            +'<label style="display:grid;gap:6px;"><span style="font-size:12px;color:var(--t2);">Телефон</span><input id="orgLegalEntityContactPhone" class="fS" type="text"></label>'
+            +'<label style="display:grid;gap:6px;"><span style="font-size:12px;color:var(--t2);">Email</span><input id="orgLegalEntityContactEmail" class="fS" type="email"></label>'
+            +'<label style="display:grid;gap:6px;"><span style="font-size:12px;color:var(--t2);">Статус</span><select id="orgLegalEntityStatus" class="fS" style="margin:0;">'
+              +'<option value="active">Активно</option>'
+              +'<option value="inactive">Неактивно</option>'
+              +'<option value="archived">В архиве</option>'
+            +'</select></label>'
+          +'</div>'
+          +'<input type="hidden" id="orgLegalEntityId" value="">'
+          +'<div id="orgLegalEntityFormStatus" style="margin-top:12px;font-size:12px;color:var(--t3);"></div>'
+          +'<div class="m-acts" style="margin-top:14px;">'
+            +'<button class="m-ok" data-legal-action="save" onclick="submitOrganizationLegalEntityForm()">💾 Сохранить</button>'
+            +'<button class="m-cancel" data-legal-action="add" onclick="openOrganizationLegalEntityCreateForm()">Новая форма</button>'
+          +'</div>'
+        +'</div>'
+      +'</div>'
+    +'</div>';
+  document.body.appendChild(el);
+  return el;
+}
+
+function closeOrganizationLegalEntitiesModal(){
+  var el = document.getElementById('ov-orgLegalEntities');
+  if (el) el.classList.remove('on');
+}
+
+function openOrganizationLegalEntityCreateForm(orgId) {
+  var modal = ensureOrganizationLegalEntitiesModal();
+  modal.dataset.orgId = String(orgId || modal.dataset.orgId || '').trim();
+  var entityId = document.getElementById('orgLegalEntityId');
+  if (entityId) entityId.value = '';
+  var title = document.getElementById('orgLegalEntityFormTitle');
+  if (title) title.textContent = 'Добавить юрлицо';
+  var formStatus = document.getElementById('orgLegalEntityFormStatus');
+  if (formStatus) formStatus.textContent = '';
+  var fields = {
+    name: document.getElementById('orgLegalEntityName'),
+    inn: document.getElementById('orgLegalEntityInn'),
+    kpp: document.getElementById('orgLegalEntityKpp'),
+    ogrn: document.getElementById('orgLegalEntityOgrn'),
+    legalAddress: document.getElementById('orgLegalEntityLegalAddress'),
+    actualAddress: document.getElementById('orgLegalEntityActualAddress'),
+    contactName: document.getElementById('orgLegalEntityContactName'),
+    contactPhone: document.getElementById('orgLegalEntityContactPhone'),
+    contactEmail: document.getElementById('orgLegalEntityContactEmail'),
+    status: document.getElementById('orgLegalEntityStatus')
+  };
+  Object.keys(fields).forEach(function (key) {
+    if (fields[key]) fields[key].value = key === 'status' ? 'active' : '';
+  });
+  setOrganizationLegalEntityFormDisabled(!canManageLegalEntitiesForRole((window.__userSession && window.__userSession.role) || (window.CU && window.CU.role) || 'unassigned'));
+}
+
+function openOrganizationLegalEntityEditForm(orgId, entityId) {
+  var entity = null;
+  var bucket = getOrganizationLegalEntitiesBucket(orgId);
+  var items = bucket && Array.isArray(bucket.items) ? bucket.items : [];
+  entity = items.find(function (item) { return String(item.id || '') === String(entityId || ''); }) || null;
+  if (!entity) return openOrganizationLegalEntityCreateForm(orgId);
+  var modal = ensureOrganizationLegalEntitiesModal();
+  modal.dataset.orgId = String(orgId || modal.dataset.orgId || '').trim();
+  var hidden = document.getElementById('orgLegalEntityId');
+  if (hidden) hidden.value = String(entity.id || '').trim();
+  var title = document.getElementById('orgLegalEntityFormTitle');
+  if (title) title.textContent = 'Редактировать юрлицо';
+  var status = document.getElementById('orgLegalEntityFormStatus');
+  if (status) status.textContent = 'Редактирование выбранного юрлица';
+  var fieldMap = {
+    orgLegalEntityName: entity.name || '',
+    orgLegalEntityInn: entity.inn || '',
+    orgLegalEntityKpp: entity.kpp || '',
+    orgLegalEntityOgrn: entity.ogrn || '',
+    orgLegalEntityLegalAddress: entity.legal_address || '',
+    orgLegalEntityActualAddress: entity.actual_address || '',
+    orgLegalEntityContactName: entity.contact_name || '',
+    orgLegalEntityContactPhone: entity.contact_phone || '',
+    orgLegalEntityContactEmail: entity.contact_email || '',
+    orgLegalEntityStatus: entity.status || 'active'
+  };
+  Object.keys(fieldMap).forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.value = fieldMap[id];
+  });
+  setOrganizationLegalEntityFormDisabled(!canManageLegalEntitiesForRole((window.__userSession && window.__userSession.role) || (window.CU && window.CU.role) || 'unassigned'));
+}
+
+function setOrganizationLegalEntityFormDisabled(disabled) {
+  var fields = [
+    'orgLegalEntityName',
+    'orgLegalEntityInn',
+    'orgLegalEntityKpp',
+    'orgLegalEntityOgrn',
+    'orgLegalEntityLegalAddress',
+    'orgLegalEntityActualAddress',
+    'orgLegalEntityContactName',
+    'orgLegalEntityContactPhone',
+    'orgLegalEntityContactEmail',
+    'orgLegalEntityStatus'
+  ];
+  fields.forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = !!disabled;
+  });
+  var saveBtn = document.querySelector('#ov-orgLegalEntities [data-legal-action="save"]');
+  if (saveBtn) {
+    saveBtn.disabled = !!disabled;
+    saveBtn.title = disabled ? 'Недостаточно прав' : '';
+  }
+  var addBtn = document.querySelector('#ov-orgLegalEntities [data-legal-action="add"]');
+  if (addBtn) {
+    addBtn.style.display = disabled ? 'none' : '';
+  }
+}
+
+function renderOrganizationLegalEntitiesModal(orgId) {
+  var modal = ensureOrganizationLegalEntitiesModal();
+  var statusEl = document.getElementById('orgLegalEntitiesStatus');
+  var body = document.getElementById('orgLegalEntitiesBody');
+  var title = document.getElementById('orgLegalEntitiesTitle');
+  var meta = document.getElementById('orgLegalEntitiesMeta');
+  if (!body || !statusEl) return;
+  var org = getOrganizationById(orgId);
+  var currentRole = normalizeLegacyRoleSafe((window.CU && window.CU.role) || (window.__userSession && window.__userSession.currentUser && window.__userSession.currentUser.role) || 'unassigned');
+  var canManageLegalEntities = canManageLegalEntitiesForRole(currentRole);
+  var orgName = org && org.name ? org.name : 'Организация без названия';
+  if (title) title.textContent = '🏛️ Юрлица · ' + orgName;
+  if (meta) meta.textContent = 'Юридические лица, которые привязаны к организации';
+  if (!orgId) {
+    statusEl.textContent = 'Организация не выбрана';
+    body.innerHTML = '';
+    return;
+  }
+  var cache = (window.getDataCache ? window.getDataCache() : getSafeDataCache());
+  var bucket = cache.legalEntitiesByOrg && cache.legalEntitiesByOrg[String(orgId || '')] ? cache.legalEntitiesByOrg[String(orgId || '')] : null;
+  var cacheFresh = bucket && bucket.loadedAt ? (Date.now() - bucket.loadedAt) < 30000 : false;
+  if (bucket && Array.isArray(bucket.items) && !cacheFresh && typeof window.loadLegalEntitiesForOrganization === 'function' && !bucket.promise) {
+    window.loadLegalEntitiesForOrganization(orgId).catch(function () {});
+  }
+  if (bucket && bucket.loading && !Array.isArray(bucket.items)) {
+    statusEl.textContent = 'Загрузка юрлиц...';
+    body.innerHTML = '<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">Загрузка юрлиц...</div>';
+    if (typeof window.loadLegalEntitiesForOrganization === 'function' && !bucket.promise) {
+      window.loadLegalEntitiesForOrganization(orgId).then(function () {
+        renderOrganizationLegalEntitiesModal(orgId);
+      }).catch(function () {
+        renderOrganizationLegalEntitiesModal(orgId);
+      });
+    }
+    openOrganizationLegalEntityCreateForm(orgId);
+    return;
+  }
+  if (!bucket || (!Array.isArray(bucket.items) && !bucket.promise)) {
+    statusEl.textContent = 'Загрузка юрлиц...';
+    body.innerHTML = '<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">Загрузка юрлиц...</div>';
+    if (typeof window.loadLegalEntitiesForOrganization === 'function') {
+      window.loadLegalEntitiesForOrganization(orgId).then(function () {
+        renderOrganizationLegalEntitiesModal(orgId);
+      }).catch(function () {
+        renderOrganizationLegalEntitiesModal(orgId);
+      });
+    }
+    openOrganizationLegalEntityCreateForm(orgId);
+    return;
+  }
+  if (bucket && bucket.error) {
+    console.error('organization legal entities load failed', {
+      orgId: String(orgId || ''),
+      code: bucket.error.code || '',
+      message: bucket.error.message || '',
+      details: bucket.error.details || '',
+      hint: bucket.error.hint || '',
+      raw: bucket.error.raw || bucket.error
+    });
+    statusEl.innerHTML = ''
+      +'<span style="color:var(--rd);">Не удалось загрузить юрлица</span>'
+      +'<div style="margin-top:6px;font-size:11px;color:var(--t3);white-space:pre-wrap;">'+_esc([bucket.error.message, bucket.error.details, bucket.error.hint].filter(Boolean).join(' · ') || 'Ошибка запроса юрлиц')+'</div>'
+      +'<button class="tbBtn" onclick="refreshLegalEntitiesForOrganization(\''+String(orgId).replace(/'/g, '\\\'')+'\'); renderOrganizationLegalEntitiesModal(\''+String(orgId).replace(/'/g, '\\\'')+'\');" style="cursor:pointer;margin-left:8px;margin-top:8px;">Повторить</button>';
+    body.innerHTML = '<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">Не удалось загрузить юрлица</div>';
+    openOrganizationLegalEntityCreateForm(orgId);
+    return;
+  }
+  var items = Array.isArray(bucket && bucket.items) ? bucket.items.map(normalizeLegalEntityForRender).filter(Boolean) : [];
+  setOrganizationLegalEntityFormDisabled(!canManageLegalEntities);
+  if (!items.length) {
+    statusEl.innerHTML = '<span>В организации пока нет юрлиц</span>';
+    body.innerHTML = '<div style="padding:22px;text-align:center;color:var(--t3);background:var(--bg3);border:1px solid var(--br);border-radius:14px;">В организации пока нет юрлиц</div>';
+    openOrganizationLegalEntityCreateForm(orgId);
+  } else {
+    statusEl.innerHTML = '<span>Всего юрлиц: '+items.length+'</span>';
+    body.innerHTML = items.map(function (entity) {
+      var status = String(entity.status || 'active').toLowerCase();
+      var canManage = canManageLegalEntities;
+      var cards = ''
+        +'<div style="background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:16px;box-shadow:0 8px 20px rgba(15,23,42,.06);padding:14px 16px;">'
+          +'<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">'
+            +'<div style="min-width:0;">'
+              +'<div style="font-size:15px;font-weight:800;word-break:break-word;">'+_esc(entity.name || 'Юридическое лицо')+'</div>'
+              +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">'
+                +'<span class="badge" style="background:#eef6ff;color:#2463eb;border:1px solid #cfe2ff;">ИНН: '+_esc(entity.inn || '—')+'</span>'
+                +'<span class="badge" style="background:#eef6ff;color:#2463eb;border:1px solid #cfe2ff;">КПП: '+_esc(entity.kpp || '—')+'</span>'
+                +'<span class="badge" style="'+(status === 'active' ? 'background:var(--grD);color:var(--gr);border:1px solid var(--gr);' : 'background:#eef2f7;color:#475569;border:1px solid #cbd5e1;')+'">'+getOrganizationStatusLabelSafe(status)+'</span>'
+              +'</div>'
+            +'</div>'
+            +'<div style="font-size:12px;color:var(--t3);text-align:right;">'
+              +'<div>ОГРН: '+_esc(entity.ogrn || '—')+'</div>'
+              +'<div style="margin-top:4px;">'+_esc(entity.legal_address || 'Не заполнено')+'</div>'
+            +'</div>'
+          +'</div>'
+          +'<div style="font-size:12px;color:var(--t3);margin-top:8px;">'
+            +'<div>Факт.: '+_esc(entity.actual_address || 'Не заполнено')+'</div>'
+            +'<div>Контакт: '+_esc(entity.contact_name || '—')+' · '+_esc(entity.contact_phone || '—')+' · '+_esc(entity.contact_email || '—')+'</div>'
+          +'</div>'
+          +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">'
+            +(canManage ? '<button class="tbBtn" data-legal-action="edit" data-org-id="'+_esc(String(orgId))+'" data-legal-id="'+_esc(String(entity.id))+'" style="cursor:pointer;">Редактировать</button>' : '')
+            +(canManage && status !== 'archived' && status !== 'deleted' ? '<button class="tbBtn danger" data-legal-action="archive" data-org-id="'+_esc(String(orgId))+'" data-legal-id="'+_esc(String(entity.id))+'" style="cursor:pointer;">Архивировать</button>' : '')
+          +'</div>'
+        +'</div>';
+      return cards;
+    }).join('');
+  }
+  openOrganizationLegalEntityCreateForm(orgId);
+  if (!modal.__legalActionsBound) {
+    modal.addEventListener('click', function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest('[data-legal-action]') : null;
+      if (!btn || !modal.contains(btn)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var action = String(btn.dataset.legalAction || '').trim();
+      var targetOrgId = String(btn.dataset.orgId || orgId || '').trim();
+      var targetLegalId = String(btn.dataset.legalId || '').trim();
+      console.info('organization action clicked', { action: action, orgId: targetOrgId });
+      try {
+        if (action === 'add') {
+          openOrganizationLegalEntityCreateForm(targetOrgId);
+          return;
+        }
+        if (action === 'edit') {
+          openOrganizationLegalEntityEditForm(targetOrgId, targetLegalId);
+          return;
+        }
+        if (action === 'archive') {
+          if (!confirm('Архивировать юрлицо? Оно будет скрыто, но данные сохранятся.')) return;
+          if (typeof window.ownerArchiveLegalEntity !== 'function') {
+            if (typeof window.toast === 'function') window.toast('Не удалось архивировать юрлицо', 'err');
+            return;
+          }
+          setModalBusy('ov-orgLegalEntities', true);
+          window.ownerArchiveLegalEntity({
+            target_legal_entity_id: targetLegalId,
+            target_organization_id: targetOrgId
+          }).then(function () {
+            return refreshLegalEntitiesForOrganization(targetOrgId);
+          }).then(function () {
+            if (typeof window.toast === 'function') window.toast('Юрлицо архивировано', 'ok');
+            renderOrganizationLegalEntitiesModal(targetOrgId);
+          }).catch(function (error) {
+            console.error('archive legal entity failed', error);
+            if (typeof window.toast === 'function') window.toast('Не удалось архивировать юрлицо', 'err');
+            var errEl = document.getElementById('orgLegalEntityFormStatus');
+            if (errEl) {
+              errEl.innerHTML = '<span style="color:var(--rd);">Не удалось архивировать юрлицо</span>'
+                + '<div style="margin-top:6px;font-size:11px;color:var(--t3);white-space:pre-wrap;">'+_esc([error && error.message, error && error.details, error && error.hint].filter(Boolean).join(' · ') || 'Ошибка запроса')+'</div>';
+            }
+          }).finally(function () {
+            setModalBusy('ov-orgLegalEntities', false);
+          });
+          return;
+        }
+      } catch (error) {
+        console.error('organization legal entity action failed', {
+          action: action,
+          orgId: targetOrgId,
+          error: error,
+          message: error && error.message,
+          stack: error && error.stack
+        });
+        if (typeof window.toast === 'function') window.toast('Не удалось выполнить действие', 'err');
+      }
+    });
+    modal.__legalActionsBound = true;
+  }
+}
+
+window.openOrganizationLegalEntitiesModal = function (orgId) {
+  logOrganizationAction('legal-entities', orgId);
+  var modal = ensureOrganizationLegalEntitiesModal();
+  modal.dataset.orgId = String(orgId || '').trim();
+  modal.classList.add('on');
+  renderOrganizationLegalEntitiesModal(orgId);
+};
+window.closeOrganizationLegalEntitiesModal = closeOrganizationLegalEntitiesModal;
+window.renderOrganizationLegalEntitiesModal = renderOrganizationLegalEntitiesModal;
+
+window.submitOrganizationLegalEntityForm = async function () {
+  var modal = document.getElementById('ov-orgLegalEntities');
+  var orgId = String((modal && modal.dataset.orgId) || '').trim();
+  var legalEntityId = String((document.getElementById('orgLegalEntityId') || { value: '' }).value || '').trim();
+  var name = String((document.getElementById('orgLegalEntityName') || { value: '' }).value || '').trim();
+  var payload = {
+    target_organization_id: orgId,
+    target_name: name,
+    target_inn: String((document.getElementById('orgLegalEntityInn') || { value: '' }).value || '').trim(),
+    target_kpp: String((document.getElementById('orgLegalEntityKpp') || { value: '' }).value || '').trim(),
+    target_ogrn: String((document.getElementById('orgLegalEntityOgrn') || { value: '' }).value || '').trim(),
+    target_legal_address: String((document.getElementById('orgLegalEntityLegalAddress') || { value: '' }).value || '').trim(),
+    target_actual_address: String((document.getElementById('orgLegalEntityActualAddress') || { value: '' }).value || '').trim(),
+    target_contact_name: String((document.getElementById('orgLegalEntityContactName') || { value: '' }).value || '').trim(),
+    target_contact_phone: String((document.getElementById('orgLegalEntityContactPhone') || { value: '' }).value || '').trim(),
+    target_contact_email: String((document.getElementById('orgLegalEntityContactEmail') || { value: '' }).value || '').trim(),
+    target_status: String((document.getElementById('orgLegalEntityStatus') || { value: 'active' }).value || 'active').trim() || 'active'
+  };
+  try {
+    if (!orgId) throw new Error('Организация не выбрана');
+    if (!name) throw new Error('Название юрлица обязательно');
+    setModalBusy('ov-orgLegalEntities', true);
+    if (legalEntityId) {
+      payload.target_legal_entity_id = legalEntityId;
+      if (typeof window.ownerUpdateLegalEntity !== 'function') throw new Error('RPC для обновления юрлица недоступен');
+      await window.ownerUpdateLegalEntity(payload);
+      if (typeof window.toast === 'function') window.toast('Юрлицо сохранено', 'ok');
+    } else {
+      if (typeof window.ownerCreateLegalEntity !== 'function') throw new Error('RPC для создания юрлица недоступен');
+      await window.ownerCreateLegalEntity(payload);
+      if (typeof window.toast === 'function') window.toast('Юрлицо создано', 'ok');
+    }
+    if (typeof window.refreshLegalEntitiesForOrganization === 'function') {
+      await window.refreshLegalEntitiesForOrganization(orgId);
+    } else if (typeof window.loadLegalEntitiesForOrganization === 'function') {
+      await window.loadLegalEntitiesForOrganization(orgId);
+    }
+    if (typeof window.refreshOrganizationSummaryForOrganization === 'function') {
+      await window.refreshOrganizationSummaryForOrganization(orgId).catch(function () {});
+    }
+    renderOrganizationLegalEntitiesModal(orgId);
+    return true;
+  } catch (error) {
+    console.error('submitOrganizationLegalEntityForm failed:', error);
+    var tech = [];
+    if (error && error.code) tech.push('code: ' + error.code);
+    if (error && error.message) tech.push('message: ' + error.message);
+    if (error && error.details) tech.push('details: ' + error.details);
+    if (error && error.hint) tech.push('hint: ' + error.hint);
+    var statusEl = document.getElementById('orgLegalEntityFormStatus');
+    if (statusEl) {
+      statusEl.innerHTML = '<span style="color:var(--rd);">'+_esc(error && error.message ? error.message : 'Не удалось сохранить юрлицо')+'</span>'
+        + (tech.length ? '<div style="margin-top:6px;font-size:11px;color:var(--t3);white-space:pre-wrap;">'+_esc(tech.join(' · '))+'</div>' : '');
+    }
+    if (typeof window.toast === 'function') window.toast(error && error.message ? error.message : 'Не удалось сохранить юрлицо', 'err');
+    return false;
+  } finally {
+    setModalBusy('ov-orgLegalEntities', false);
   }
 };
 
@@ -4977,6 +5449,11 @@ function renderOrganizationDetailsModal(orgId){
   var suppliersCount = (summary && summary.suppliers_count !== undefined && summary.suppliers_count !== null)
     ? Number(summary.suppliers_count) || 0
     : null;
+  var legalEntitiesCount = (summary && summary.legal_entities_count !== undefined && summary.legal_entities_count !== null)
+    ? Number(summary.legal_entities_count) || 0
+    : ((org.legalEntitiesCount !== undefined && org.legalEntitiesCount !== null)
+      ? Number(org.legalEntitiesCount) || 0
+      : (org.legal_entities_count !== undefined && org.legal_entities_count !== null ? Number(org.legal_entities_count) || 0 : null));
   var suppliersBucket = window.__dataCache && window.__dataCache.suppliersByOrg ? window.__dataCache.suppliersByOrg[String(orgId || '')] : null;
   if (suppliersCount === null && Array.isArray(suppliersBucket)) suppliersCount = suppliersBucket.length;
   var membersBucket = getOrganizationMembersBucket(orgId);
@@ -4987,6 +5464,8 @@ function renderOrganizationDetailsModal(orgId){
     }).length : (org.activeMembersCount !== undefined && org.activeMembersCount !== null ? Number(org.activeMembersCount) || 0 : null));
   var currentRole = normalizeLegacyRoleSafe((window.CU && window.CU.role) || (window.__userSession && window.__userSession.currentUser && window.__userSession.currentUser.role) || 'unassigned');
   var canManageMembers = ['owner','admin','organization_owner'].indexOf(currentRole) >= 0;
+  var canViewLegalEntities = canViewLegalEntitiesForRole(currentRole);
+  var canManageLegalEntities = canManageLegalEntitiesForRole(currentRole);
   if(title) title.textContent='🏢 '+(orgName || 'Организация без названия');
   if(meta) meta.textContent='Статус: '+getOrganizationStatusLabelSafe(orgStatus)+' · Роль: '+getOrganizationRoleLabelSafe(org.role || (window.CU && window.CU.role));
   body.innerHTML=''
@@ -5010,6 +5489,10 @@ function renderOrganizationDetailsModal(orgId){
       +'<div style="background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:14px 16px;box-shadow:0 8px 20px rgba(15,23,42,.06);">'
         +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;">Поставщики</div>'
         +'<div style="font-size:15px;font-weight:800;margin-top:6px;">'+Number(suppliersCount || 0)+'</div>'
+      +'</div>'
+      +'<div style="background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:14px 16px;box-shadow:0 8px 20px rgba(15,23,42,.06);">'
+        +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;">Юрлица</div>'
+        +'<div style="font-size:15px;font-weight:800;margin-top:6px;">'+getOrganizationCountLabelSafe(legalEntitiesCount, '—')+'</div>'
       +'</div>'
       +'<div style="background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:14px 16px;box-shadow:0 8px 20px rgba(15,23,42,.06);">'
         +'<div style="font-size:11px;color:var(--t3);text-transform:uppercase;">Активные участники</div>'
@@ -5039,6 +5522,7 @@ function renderOrganizationDetailsModal(orgId){
       +(canManageMembers ? '<button class="tbBtn" data-org-action="add-user" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;">Добавить участника</button>' : '<button class="tbBtn" data-org-action="add-user" data-org-id="'+_esc(String(org.id))+'" disabled title="Недостаточно прав для добавления участников" style="cursor:pointer;">Добавить участника</button>')
       +(canManageMembers ? '<button class="tbBtn" data-org-action="edit" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;">Редактировать</button>' : '<button class="tbBtn" data-org-action="edit" data-org-id="'+_esc(String(org.id))+'" disabled title="Недостаточно прав для редактирования" style="cursor:pointer;">Редактировать</button>')
       +(hasPermissionSafe('suppliers.view') ? '<button class="tbBtn" data-org-action="suppliers" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;">Поставщики</button>' : '')
+      +(canViewLegalEntitiesForRole(currentRole) ? '<button class="tbBtn" data-org-action="legal-entities" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;">Юрлица</button>' : '')
     +'</div>'
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
       +'<button class="tbBtn" data-org-action="switch" data-org-id="'+_esc(String(org.id))+'" style="cursor:pointer;background:#5ba3f5;color:#fff;border-color:#5ba3f5;">Переключиться</button>'
@@ -5084,6 +5568,18 @@ function renderOrganizationDetailsModal(orgId){
           }
           if (typeof window.goPage === 'function') window.goPage('suppliers');
           else if (typeof window.renderSuppliers === 'function') window.renderSuppliers();
+          return;
+        }
+        if (action === 'legal-entities') {
+          if (!canViewLegalEntities && !canManageLegalEntities) {
+            if (typeof window.toast === 'function') window.toast('Недостаточно прав', 'err');
+            return;
+          }
+          if (typeof window.openOrganizationLegalEntitiesModal === 'function') {
+            window.openOrganizationLegalEntitiesModal(targetOrgId);
+          } else if (typeof window.toast === 'function') {
+            window.toast('Раздел временно недоступен. Ошибка записана в консоль.', 'warn');
+          }
           return;
         }
         if (action === 'archive' && typeof window.archiveOrganizationFromCard === 'function') {
