@@ -162,6 +162,25 @@ input[type=number]::-webkit-inner-spin-button{opacity:.3;}
 .tbBtn.acc{background:var(--ac);border-color:var(--ac);color:#000;font-weight:700;}
 .tbBtn.acc:hover{background:var(--ac2);}
 .tbBtn.danger{background:var(--rdD);border-color:var(--rd);color:var(--rd);}
+.org-card{background:#fff;border:1px solid rgba(148,163,184,.16);border-radius:18px;box-shadow:0 10px 28px rgba(15,23,42,.08);overflow:hidden;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease}
+.org-card:hover{transform:translateY(-1px);box-shadow:0 14px 32px rgba(15,23,42,.10);border-color:rgba(91,163,245,.30)}
+.org-card__body{padding:16px 18px 14px}
+.org-card__top{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
+.org-card__title{font-size:18px;font-weight:800;line-height:1.15;word-break:break-word;min-width:0;flex:1}
+.org-card__badges,.org-card__meta,.org-card__metrics,.org-card__actions,.org-card__group{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.org-card__meta{margin-top:8px;font-size:13px;color:var(--t2);line-height:1.4}
+.org-card__metrics{margin-top:10px;padding-top:10px;border-top:1px solid rgba(148,163,184,.12)}
+.org-card__actions{margin-top:12px}
+.org-card__group--danger .tbBtn{opacity:.88}
+.org-card__group--danger .tbBtn:hover{opacity:1}
+.org-card__group--main .tbBtn.acc{background:#5ba3f5;color:#fff;border-color:#5ba3f5}
+.org-card__group--main .tbBtn.acc:hover{background:#4b96ee}
+@media (max-width: 640px){
+  .org-card__body{padding:14px}
+  .org-card__top,.org-card__actions,.org-card__group{flex-direction:column;align-items:stretch}
+  .org-card__badges,.org-card__meta,.org-card__metrics{width:100%}
+  .org-card .tbBtn{width:100%;justify-content:center}
+}
 .cdot{background:var(--or);color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:10px;}
 .cdot.y{background:var(--yl);color:#000;}
 .rbtn{display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:6px 10px;cursor:pointer;font-size:12px;font-weight:600;transition:all .15s;}
