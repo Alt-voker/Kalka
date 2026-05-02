@@ -1912,6 +1912,9 @@ function renderSuppliers(){
       return;
     }
     ensureSupplierGridActionBinding();
+    var listFilter = String(window.__supplierListFilter || 'active').toLowerCase();
+    if (listFilter !== 'active' && listFilter !== 'archived') listFilter = 'active';
+    window.__supplierListFilter = listFilter;
     var activeOrgId = String((window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
     var cache = window.__dataCache || {};
     var sessionSuppliers = (window.__userSession && Array.isArray(window.__userSession.suppliers)) ? window.__userSession.suppliers : [];
@@ -1971,9 +1974,19 @@ function renderSuppliers(){
       });
       return;
     }
-    if(supSub) supSub.textContent=visible.length ? visible.length+' поставщиков в вашей текущей организации' : 'Поставщики пока не добавлены';
-    if(!visible.length){
-      grid.innerHTML='<div class="empty"><div class="empty-ico">🏭</div><div class="empty-txt">Поставщики пока не добавлены</div></div>';
+    var filteredVisible = visible.filter(function (item) {
+      var status = String((item && item.status) || 'active').toLowerCase();
+      if (listFilter === 'archived') return status === 'archived';
+      return !status || status === 'active' || status === 'null' || status === 'undefined';
+    });
+    if(supSub) supSub.textContent=filteredVisible.length ? filteredVisible.length+' поставщиков в разделе '+(listFilter === 'archived' ? 'архив' : 'активные') : 'Поставщики пока не добавлены';
+    var tabs = ''
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">'
+        +'<button class="tbBtn" onclick="window.__supplierListFilter=\'active\';renderSuppliers()" style="cursor:pointer;'+(listFilter === 'active' ? 'background:#5ba3f5;color:#fff;border-color:#5ba3f5;' : '')+'">Активные</button>'
+        +'<button class="tbBtn" onclick="window.__supplierListFilter=\'archived\';renderSuppliers()" style="cursor:pointer;'+(listFilter === 'archived' ? 'background:#5ba3f5;color:#fff;border-color:#5ba3f5;' : '')+'">Архив</button>'
+      +'</div>';
+    if(!filteredVisible.length){
+      grid.innerHTML=tabs+'<div class="empty"><div class="empty-ico">🏭</div><div class="empty-txt">Поставщики пока не добавлены</div></div>';
       return;
     }
     var safeText = window.safeSupplierText || safeSupplierText;
@@ -1988,7 +2001,7 @@ function renderSuppliers(){
     var favoriteSuppliers=(fav.suppliers||[]);
     var db=dbGet();
     var visibleOrders=getUserVisibleOrders(CU);
-    var normalizedVisible = visible.map(function(s){
+    var normalizedVisible = filteredVisible.map(function(s){
       var item = Object.assign({}, s || {});
       item._id = String(item._id || item.id || item.supplier_id || item.supplierId || '').trim();
       return item;
@@ -2006,8 +2019,11 @@ function renderSuppliers(){
       var manageBtn=canManageSupplier?(
         '<button data-supplier-action="edit" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg4);border:1px solid var(--br2);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Редактировать</button>'
       ):'';
-      var archiveBtn=(canDeleteSupplier || canManageSupplier)?(
+      var archiveBtn=(listFilter === 'active' && (canDeleteSupplier || canManageSupplier))?(
         '<button data-supplier-action="archive" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);opacity:.85;">Архивировать</button>'
+      ):'';
+      var restoreBtn=(listFilter === 'archived' && (canDeleteSupplier || canManageSupplier || canEditSupplier))?(
+        '<button data-supplier-action="restore" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Восстановить</button>'
       ):'';
       var deleteBtn=canDeleteSupplier?(
         '<button data-supplier-action="delete" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);opacity:.7;">Удалить</button>'
@@ -2035,14 +2051,15 @@ function renderSuppliers(){
         +extraPriceBtn
         +manageBtn
         +archiveBtn
+        +restoreBtn
         +deleteBtn
         +favoriteBtn
         +'</div>'
         +'</div>';
     }).join('');
-    grid.innerHTML = cards;
+    grid.innerHTML = tabs + cards;
     var addBtn=canCreateSupplier?'<div class="sup-card dsh" onclick="openSupplierModal()" style="display:flex;align-items:center;justify-content:center;min-height:170px;"><div style="text-align:center;color:var(--t3);"><div style="font-size:26px;margin-bottom:7px;">➕</div><div style="font-size:13px;font-weight:600;">Добавить поставщика</div></div></div>':'';
-    grid.innerHTML=cards+addBtn;
+    grid.innerHTML=tabs+cards+addBtn;
     console.info('supplier cards rendered', normalizedVisible.length);
   } catch (error) {
       console.error('renderSuppliers failed', error, error && error.stack);
@@ -2073,6 +2090,7 @@ window.runSupplierModuleSelfTest = function () {
   var actionButtons = page ? page.querySelectorAll('[data-supplier-action]') : [];
   var extraPriceButtons = page ? page.querySelectorAll('[data-supplier-action="extra-price"]') : [];
   var deleteButtons = page ? page.querySelectorAll('[data-supplier-action="delete"]') : [];
+  var restoreButtons = page ? page.querySelectorAll('[data-supplier-action="restore"]') : [];
   var runtime = ensureSupplierRuntime();
   return {
     suppliersPageVisible: !!(page && (page.classList.contains('on') || page.classList.contains('active'))),
@@ -2081,6 +2099,7 @@ window.runSupplierModuleSelfTest = function () {
     hasActionButtons: !!actionButtons.length,
     hasExtraPriceButton: !!extraPriceButtons.length,
     hasDeleteButton: !!deleteButtons.length,
+    hasRestoreButton: !!restoreButtons.length,
     safeSupplierTextAvailable: typeof window.safeSupplierText === 'function',
     runtimeIds: runtime.byId instanceof Map ? Array.from(runtime.byId.keys()) : []
   };
@@ -2217,6 +2236,42 @@ window.archiveSupplierFromCard = async function(index){
   } catch (error) {
     console.error('archiveSupplierFromCard failed', { index: index, error: error, message: error && error.message, stack: error && error.stack });
     if (typeof window.toast === 'function') window.toast(error && error.message ? error.message : 'Не удалось архивировать поставщика', 'err');
+    return false;
+  }
+};
+window.restoreSupplierFromCard = async function(index){
+  var runtime = ensureSupplierRuntime();
+  var supplier = Array.isArray(runtime.suppliers) ? runtime.suppliers[index] : null;
+  if(!supplier && Array.isArray(SUPS_DATA)) supplier = SUPS_DATA[index] || null;
+  if(!supplier) { toast('Поставщик не найден','err'); return false; }
+  var activeOrgId = String((window.__userSession && window.__userSession.activeOrganizationId) || supplier.organizationId || supplier.organization_id || '').trim();
+  try {
+    if (!hasPermissionSafe('suppliers.edit') && !hasPermissionSafe('suppliers.delete') && !['owner','admin','director','organization_owner'].includes(normalizeLegacyRoleSafe((window.__userSession && window.__userSession.role) || (window.CU && window.CU.role) || ''))) {
+      throw new Error('Недостаточно прав');
+    }
+    if (typeof window.ownerRestoreSupplier !== 'function') throw new Error('RPC восстановления поставщика недоступен');
+    var supplierPk = String((supplier && (supplier._id || supplier.id || supplier.supplier_id || supplier.supplierId)) || '').trim();
+    var result = await window.ownerRestoreSupplier({ target_supplier_id: supplierPk, target_organization_id: activeOrgId });
+    if (!result || !result.length) {}
+    var refreshed = typeof window.refreshSuppliersForOrganization === 'function'
+      ? await window.refreshSuppliersForOrganization(activeOrgId)
+      : (typeof window.loadSuppliersForOrganization === 'function' ? await window.loadSuppliersForOrganization(activeOrgId) : []);
+    if (window.__userSession) window.__userSession.suppliers = Array.isArray(refreshed) ? refreshed.slice() : [];
+    if (typeof window.syncSupplierRuntime === 'function') {
+      window.syncSupplierRuntime(Array.isArray(refreshed) ? refreshed : []);
+    }
+    var summary = null;
+    if (typeof window.refreshOrganizationSummaryForOrganization === 'function' && activeOrgId) {
+      summary = await window.refreshOrganizationSummaryForOrganization(activeOrgId).catch(function(){ return null; });
+      console.info('organization summary after supplier mutation', { orgId: activeOrgId, summary: summary });
+    }
+    renderSuppliers();
+    if (typeof window.toast === 'function') window.toast('Поставщик восстановлен', 'ok');
+    console.info('supplier mutation success', { action: 'restore', supplierId: supplierPk });
+    return true;
+  } catch (error) {
+    console.error('restoreSupplierFromCard failed', { index: index, error: error, message: error && error.message, stack: error && error.stack });
+    if (typeof window.toast === 'function') window.toast(error && error.message ? error.message : 'Не удалось восстановить поставщика', 'err');
     return false;
   }
 };
@@ -3754,6 +3809,11 @@ function ensureSupplierGridActionBinding(){
       if(action === 'archive'){
         if(index >= 0) return archiveSupplierFromCard(index);
         if (supplier) return archiveSupplierFromCard(index);
+        throw new Error('Поставщик не найден');
+      }
+      if(action === 'restore'){
+        if(index >= 0) return restoreSupplierFromCard(index);
+        if (supplier) return restoreSupplierFromCard(index);
         throw new Error('Поставщик не найден');
       }
       if(action === 'prices'){

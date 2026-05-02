@@ -985,6 +985,12 @@
     return rpcSupplierAction(client, 'owner_delete_supplier', payload || {}, 'Не удалось удалить поставщика');
   };
 
+  window.ownerRestoreSupplier = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcSupplierAction(client, 'owner_restore_supplier', payload || {}, 'Не удалось восстановить поставщика');
+  };
+
   window.ownerLinkSupplierLegalEntities = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
