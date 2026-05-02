@@ -1806,6 +1806,13 @@ function repeatVisibleOrder(orderId){
   };
   openCreateOrder({restId:order.restId||'',supplierNames:[getOrderSupplierName(order)].filter(Boolean)});
 }
+function safeSupplierText(value, fallback) {
+  if (fallback === undefined) fallback = '—';
+  if (value === null || value === undefined) return fallback;
+  var text = String(value).trim();
+  if (!text || text === 'undefined' || text === 'null') return fallback;
+  return text;
+}
 function renderSuppliers(){
   try {
     var page = document.querySelector('#pg-suppliers');
@@ -1897,6 +1904,7 @@ function renderSuppliers(){
       grid.innerHTML='<div class="empty"><div class="empty-ico">🏭</div><div class="empty-txt">Поставщики пока не добавлены</div></div>';
       return;
     }
+    var safeText = window.safeSupplierText || safeSupplierText;
     var sm={active:'bg',contract:'by',new:'bb'};
     var sl={active:'Активен',contract:'Контракт',new:'Новый'};
     var canAdmin=CU&&['owner','admin'].includes(CU.role);
@@ -1932,17 +1940,17 @@ function renderSuppliers(){
         +'<div class="sup-card" style="padding:14px 14px 12px;min-height:unset;">'
         +'<div class="sup-hd" style="gap:8px;align-items:flex-start;">'
         +'<div style="min-width:0;flex:1;">'
-        +'<div class="sup-name" style="font-size:15px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+safeSupplierText(s.name)+'</div>'
-        +'<div class="sup-type" style="font-size:11px;color:var(--t3);margin-top:3px;">'+safeSupplierText(s.kind || s.type, 'Поставщик')+'</div>'
+        +'<div class="sup-name" style="font-size:15px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+safeText(s.name)+'</div>'
+        +'<div class="sup-type" style="font-size:11px;color:var(--t3);margin-top:3px;">'+safeText(s.kind || s.type, 'Поставщик')+'</div>'
         +'</div>'
         +'<span class="badge '+(s.status === 'archived' ? 'by' : (s.status === 'inactive' ? 'bb' : 'bg'))+'" style="margin-left:auto;">'+(s.status === 'archived' ? 'В архиве' : (s.status === 'inactive' ? 'Не активен' : 'Активен'))+'</span>'
         +'</div>'
         +'<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 10px;margin-top:10px;font-size:11px;color:var(--t3);">'
-        +'<div>ИНН: <b style="color:var(--tx);font-weight:700;">'+safeSupplierText(s.inn)+'</b></div>'
-        +'<div>Контакт: <b style="color:var(--tx);font-weight:700;">'+safeSupplierText(s.contactName || s.contact_name || s.contact)+'</b></div>'
-        +'<div>Телефон: <b style="color:var(--tx);font-weight:700;">'+safeSupplierText(s.phone)+'</b></div>'
-        +'<div>Email: <b style="color:var(--tx);font-weight:700;">'+safeSupplierText(s.email)+'</b></div>'
-        +'<div style="grid-column:1 / -1;">Юрлица: <b style="color:var(--tx);font-weight:700;">'+safeSupplierText((Array.isArray(s.legalEntityNames) && s.legalEntityNames.length) ? s.legalEntityNames.join(', ') : (Array.isArray(s.legal_entity_names) && s.legal_entity_names.length ? s.legal_entity_names.join(', ') : ''))+'</b></div>'
+        +'<div>ИНН: <b style="color:var(--tx);font-weight:700;">'+safeText(s.inn)+'</b></div>'
+        +'<div>Контакт: <b style="color:var(--tx);font-weight:700;">'+safeText(s.contactName || s.contact_name || s.contact)+'</b></div>'
+        +'<div>Телефон: <b style="color:var(--tx);font-weight:700;">'+safeText(s.phone)+'</b></div>'
+        +'<div>Email: <b style="color:var(--tx);font-weight:700;">'+safeText(s.email)+'</b></div>'
+        +'<div style="grid-column:1 / -1;">Юрлица: <b style="color:var(--tx);font-weight:700;">'+safeText((Array.isArray(s.legalEntityNames) && s.legalEntityNames.length) ? s.legalEntityNames.join(', ') : (Array.isArray(s.legal_entity_names) && s.legal_entity_names.length ? s.legal_entity_names.join(', ') : ''))+'</b></div>'
         +'</div>'
         +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;border-top:1px solid var(--br);padding-top:10px;">'
         +openBtn
@@ -1980,6 +1988,18 @@ function renderSuppliers(){
       +'</div>';
   }
 }
+window.runSupplierModuleSelfTest = function () {
+  var page = document.querySelector('#pg-suppliers');
+  var cards = page ? page.querySelectorAll('.sup-card') : [];
+  var actionButtons = page ? page.querySelectorAll('[data-supplier-action]') : [];
+  return {
+    suppliersPageVisible: !!(page && (page.classList.contains('on') || page.classList.contains('active'))),
+    suppliersCount: Array.isArray(window.SUPS_DATA) ? window.SUPS_DATA.length : 0,
+    hasSupplierCards: !!cards.length,
+    hasActionButtons: !!actionButtons.length,
+    safeSupplierTextAvailable: typeof window.safeSupplierText === 'function'
+  };
+};
 
 function ensureSupplierDetailsModal(){
   var el=document.getElementById('ov-supDetails');
