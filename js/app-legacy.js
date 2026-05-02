@@ -208,6 +208,8 @@ var _supPriceAppend  = false;
 var _supPriceOrganizationId = '';
 var _supPriceLegalEntityIds = [];
 var _supPriceLegalEntityNames = [];
+var _supPriceSupplierContext = null;
+var _supPriceManagerContext = null;
 var _mcmRows = [], _mcmSupName = '', _mcmAppend = false, _mcmPriceName = '';
 var _priceLayoutMemory={};
 var _mcmSupName='';
@@ -2088,6 +2090,7 @@ window.runSupplierModuleSelfTest = function () {
   var page = document.querySelector('#pg-suppliers');
   var cards = page ? page.querySelectorAll('.sup-card') : [];
   var actionButtons = page ? page.querySelectorAll('[data-supplier-action]') : [];
+  var pricesButtons = page ? page.querySelectorAll('[data-supplier-action="prices"]') : [];
   var extraPriceButtons = page ? page.querySelectorAll('[data-supplier-action="extra-price"]') : [];
   var deleteButtons = page ? page.querySelectorAll('[data-supplier-action="delete"]') : [];
   var restoreButtons = page ? page.querySelectorAll('[data-supplier-action="restore"]') : [];
@@ -2097,6 +2100,7 @@ window.runSupplierModuleSelfTest = function () {
     suppliersCount: Array.isArray(runtime.suppliers) ? runtime.suppliers.length : 0,
     hasSupplierCards: !!cards.length,
     hasActionButtons: !!actionButtons.length,
+    hasPricesButton: !!pricesButtons.length,
     hasExtraPriceButton: !!extraPriceButtons.length,
     hasDeleteButton: !!deleteButtons.length,
     hasRestoreButton: !!restoreButtons.length,
@@ -2120,8 +2124,8 @@ function ensureSupplierDetailsModal(){
       +'<div id="supDetailsBody" style="display:grid;gap:12px;margin-top:14px;"></div>'
       +'<div class="m-acts" style="margin-top:18px;">'
         +'<button class="m-ok" data-supplier-action="edit" onclick="openSupplierModal(window.__supplierDetailsIndex)">Редактировать</button>'
-        +'<button class="m-ok" data-supplier-action="prices" style="background:#5ba3f5;color:#fff;" onclick="if(window.__supplierDetailsIndex!==undefined){var rt=(window.__supplierRuntime&&Array.isArray(window.__supplierRuntime.suppliers))?window.__supplierRuntime.suppliers:[];var s=rt[window.__supplierDetailsIndex]||((Array.isArray(SUPS_DATA)?SUPS_DATA:[])[window.__supplierDetailsIndex])||null;if(s&&typeof openSupPriceUpload===\'function\'){openSupPriceUpload(s.name,false);}else{toast(\'Прайсы будут подключены на следующем этапе\',\'warn\');}}">Прайсы</button>'
-        +'<button class="m-ok" data-supplier-action="extra-price" style="background:var(--bg3);color:var(--tx);border-color:var(--br);" onclick="openSupplierExtraPriceModal(window.__supplierDetailsIndex)">Доп. прайс</button>'
+        +'<button class="m-ok" data-supplier-action="prices" style="background:#5ba3f5;color:#fff;" onclick="if(window.__supplierDetailsIndex!==undefined){var rt=(window.__supplierRuntime&&Array.isArray(window.__supplierRuntime.suppliers))?window.__supplierRuntime.suppliers:[];var s=rt[window.__supplierDetailsIndex]||((Array.isArray(SUPS_DATA)?SUPS_DATA:[])[window.__supplierDetailsIndex])||null;if(s){setSupplierPriceContext(s,{mode:&quot;main&quot;,source:&quot;details&quot;});openSupplierPriceManager(s,{mode:&quot;main&quot;});} }">Прайсы</button>'
+        +'<button class="m-ok" data-supplier-action="extra-price" style="background:var(--bg3);color:var(--tx);border-color:var(--br);" onclick="if(window.__supplierDetailsIndex!==undefined){var rt=(window.__supplierRuntime&&Array.isArray(window.__supplierRuntime.suppliers))?window.__supplierRuntime.suppliers:[];var s=rt[window.__supplierDetailsIndex]||((Array.isArray(SUPS_DATA)?SUPS_DATA:[])[window.__supplierDetailsIndex])||null;if(s){setSupplierPriceContext(s,{mode:&quot;extra&quot;,source:&quot;details&quot;});openSupPriceUpload(s.name,true);} }">Доп. прайс</button>'
         +'<button class="m-ok" data-supplier-action="archive" style="background:var(--bg3);color:var(--tx);border-color:var(--br);" onclick="archiveSupplierFromCard(window.__supplierDetailsIndex)">Архивировать</button>'
         +'<button class="m-ok" data-supplier-action="delete" style="background:var(--bg3);color:var(--tx);border-color:var(--br);" onclick="deleteSupplierFromCard(window.__supplierDetailsIndex)">Удалить</button>'
         +'<button class="m-cancel" onclick="closeSupplierDetailsModal()">Закрыть</button>'
@@ -3817,15 +3821,18 @@ function ensureSupplierGridActionBinding(){
         throw new Error('Поставщик не найден');
       }
       if(action === 'prices'){
-        if(supplier && typeof openSupPriceUpload === 'function') return openSupPriceUpload(supplier.name, false);
         if (supplier) {
-          toast('Прайсы будут подключены на следующем этапе', 'warn');
-          return;
+          setSupplierPriceContext(supplier, { mode: 'main', source: 'card-action' });
+          return openSupplierPriceManager(supplier, { mode: 'main' });
         }
         throw new Error('Поставщик не найден');
       }
       if(action === 'extra-price'){
-        if(supplier) return openSupplierExtraPriceModal(index);
+        if(supplier) {
+          setSupplierPriceContext(supplier, { mode: 'extra', source: 'card-action' });
+          if (typeof openSupPriceUpload === 'function') return openSupPriceUpload(supplier.name, true);
+          return;
+        }
         throw new Error('Поставщик не найден');
       }
       if(action === 'delete'){
@@ -7920,6 +7927,76 @@ function saveCurrentSupPriceTemplate(){
   toast('Шаблон импорта сохранён','ok');
 }
 
+function _supplierPriceToNumeric(value){
+  if (value === null || value === undefined) return null;
+  var text = String(value).replace(/\s+/g, '').replace(/[₽рР]/g, '').replace(/,/g, '.').trim();
+  if (!text) return null;
+  var num = Number(text);
+  return Number.isFinite(num) ? num : null;
+}
+
+function _supplierPriceBuildImportRows(rows){
+  var out = [];
+  (Array.isArray(rows) ? rows : []).forEach(function (row, idx) {
+    var name = String((row && row.name) || '').trim();
+    var price = _supplierPriceToNumeric(row && (row.price1 !== undefined ? row.price1 : row.price));
+    var unit = String((row && row.unit) || '').trim() || null;
+    if (!name || price === null) return;
+    out.push({
+      raw_name: name,
+      normalized_name: name.toLowerCase(),
+      unit: unit,
+      price: price,
+      currency: 'RUB',
+      raw_row: row && row.rawRow ? row.rawRow : row && row.raw_row ? row.raw_row : row || null,
+      row_index: Number(row && row.sourceRow ? row.sourceRow : idx + 1) || idx + 1,
+      status: 'active'
+    });
+  });
+  return out;
+}
+
+async function persistSupplierPriceImportToSupabase(importRows){
+  var ctx = resolveSupplierPriceContext();
+  if (!ctx) throw new Error('Поставщик не найден');
+  var supplierId = String(ctx._id || ctx.id || ctx.supplier_id || ctx.supplierId || '').trim();
+  var organizationId = String(ctx.organization_id || ctx.organizationId || _supPriceOrganizationId || (window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
+  if (!supplierId) throw new Error('Поставщик не найден');
+  if (!organizationId) throw new Error('Не выбрана организация');
+  var legalEntityIds = Array.isArray(_supPriceLegalEntityIds) ? _supPriceLegalEntityIds.slice() : [];
+  var title = String((document.getElementById('supPriceName') || { value: '' }).value || '').trim() || (_supPriceAppend ? 'Дополнительный прайс' : 'Основной прайс');
+  var sourceFilename = String(_supPriceImportFileName || (window.__supplierPriceContext && window.__supplierPriceContext.source_filename) || '').trim();
+  var uploadedBy = String((window.__userSession && window.__userSession.profileId) || (window.__userSession && window.__userSession.currentUser && window.__userSession.currentUser.profileId) || '').trim();
+  var rows = _supplierPriceBuildImportRows(importRows);
+  if (!rows.length) throw new Error('Нет строк для импорта прайса');
+  if (typeof window.ownerCreateSupplierPriceList !== 'function' || typeof window.ownerImportSupplierPriceItems !== 'function') {
+    throw new Error('RPC прайсов недоступен');
+  }
+  var createdRows = await window.ownerCreateSupplierPriceList({
+    target_organization_id: organizationId,
+    target_supplier_id: supplierId,
+    target_title: title,
+    target_status: 'active',
+    target_source_filename: sourceFilename,
+    target_uploaded_by: uploadedBy,
+    target_legal_entity_ids: legalEntityIds.slice()
+  });
+  var created = Array.isArray(createdRows) ? createdRows[0] : createdRows;
+  if (!created || !created.id) throw new Error('Не удалось создать прайс-лист');
+  var importedRows = await window.ownerImportSupplierPriceItems({
+    target_price_list_id: created.id,
+    target_items: rows
+  });
+  if (typeof window.refreshOrganizationSummaryForOrganization === 'function') {
+    await window.refreshOrganizationSummaryForOrganization(organizationId).catch(function(){});
+  }
+  return {
+    priceList: created,
+    imported: Array.isArray(importedRows) ? importedRows.length : rows.length,
+    skippedRows: Math.max(0, (importRows || []).length - rows.length)
+  };
+}
+
 function prepareSupPriceImportPreview(){
   var errEl = document.getElementById('supPriceErr');
   if(errEl) errEl.textContent = '';
@@ -8064,6 +8141,319 @@ function syncSupPriceLegalSelection(){
   });
   _supPriceLegalEntityIds = ids;
   _supPriceLegalEntityNames = names;
+}
+
+function resolveSupplierRuntimeById(supplierId){
+  var supplier = window.findSupplierByIdFromRuntime ? window.findSupplierByIdFromRuntime(supplierId) : null;
+  if (supplier) return supplier;
+  var runtime = ensureSupplierRuntime();
+  if (runtime.byId && typeof runtime.byId.get === 'function') {
+    var fromMap = runtime.byId.get(String(supplierId || '').trim());
+    if (fromMap) return fromMap;
+  }
+  return null;
+}
+
+function resolveSupplierRuntimeByName(supplierName){
+  var name = String(supplierName || '').trim().toLowerCase();
+  var runtime = ensureSupplierRuntime();
+  var lists = [
+    runtime.suppliers,
+    window.SUPPLIERS,
+    window.SUPS_DATA
+  ];
+  for (var li = 0; li < lists.length; li++) {
+    var list = Array.isArray(lists[li]) ? lists[li] : [];
+    for (var i = 0; i < list.length; i++) {
+      var row = list[i] || {};
+      var rowName = String(row.name || row.supplier_name || '').trim().toLowerCase();
+      if (rowName === name) return row;
+    }
+  }
+  return null;
+}
+
+function setSupplierPriceContext(supplier, opts){
+  opts = opts || {};
+  _supPriceSupplierContext = supplier || null;
+  window.__supplierPriceContext = supplier || null;
+  window.__supplierPriceMode = opts.mode || 'main';
+  window.__supplierPriceSource = opts.source || '';
+}
+
+function getSupplierPriceContext(){
+  return _supPriceSupplierContext || window.__supplierPriceContext || null;
+}
+
+function resolveSupplierPriceContext(){
+  var ctx = getSupplierPriceContext();
+  if (ctx && (ctx._id || ctx.id || ctx.supplier_id || ctx.supplierId)) return ctx;
+  if (ctx && ctx.name) {
+    var byName = resolveSupplierRuntimeByName(ctx.name);
+    if (byName) return byName;
+  }
+  return null;
+}
+
+function ensureSupplierPriceManagerActionsBinding(){
+  var modal = document.getElementById('ov-supPriceManager');
+  if (!modal || modal.dataset.priceManagerActionBound === '1') return;
+  modal.dataset.priceManagerActionBound = '1';
+  modal.addEventListener('click', function(e){
+    var btn = e.target && typeof e.target.closest === 'function' ? e.target.closest('[data-price-list-action]') : null;
+    if (!btn || !modal.contains(btn)) return;
+    var action = String(btn.dataset.priceListAction || '').trim();
+    var priceListId = String(btn.dataset.priceListId || '').trim();
+    var ctx = resolveSupplierPriceContext();
+    var orgId = String((ctx && (ctx.organization_id || ctx.organizationId)) || (window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
+    if (!priceListId) {
+      toast('Прайс-лист не найден', 'err');
+      return;
+    }
+    if (action === 'open') {
+      openSupplierPriceListItems(priceListId);
+      return;
+    }
+    if (action === 'archive') {
+      if (!confirm('Архивировать прайс-лист? Он будет скрыт из активных, данные сохранятся.')) return;
+      if (typeof window.ownerArchiveSupplierPriceList !== 'function') {
+        toast('Не удалось архивировать прайс-лист', 'err');
+        return;
+      }
+      btn.disabled = true;
+      window.ownerArchiveSupplierPriceList({
+        target_price_list_id: priceListId,
+        target_organization_id: orgId || null
+      }).then(function () {
+        toast('Прайс-лист архивирован', 'ok');
+        if (typeof window.refreshOrganizationSummaryForOrganization === 'function' && orgId) {
+          window.refreshOrganizationSummaryForOrganization(orgId).catch(function(){});
+        }
+        renderSupplierPriceManager();
+      }).catch(function (error) {
+        console.error('ownerArchiveSupplierPriceList failed', error, error && error.stack);
+        toast('Не удалось архивировать прайс-лист', 'err');
+      }).finally(function () {
+        btn.disabled = false;
+      });
+      return;
+    }
+  });
+}
+
+function ensureSupplierPriceItemsModal(){
+  var el = document.getElementById('ov-supPriceItems');
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = 'ov-supPriceItems';
+  el.className = 'ov';
+  el.innerHTML = ''
+    +'<div class="modal xl" style="max-width:980px;width:min(980px,calc(100vw - 24px));">'
+      +'<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">'
+        +'<div>'
+          +'<div class="m-title" id="supPriceItemsTitle">Прайс-лист</div>'
+          +'<div id="supPriceItemsMeta" style="font-size:12px;color:var(--t2);margin-top:6px;"></div>'
+        +'</div>'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+          +'<button class="tbBtn" onclick="closeSupplierPriceItemsModal()" style="cursor:pointer;">Закрыть</button>'
+        +'</div>'
+      +'</div>'
+      +'<div id="supPriceItemsBody" style="margin-top:14px;display:grid;gap:12px;"></div>'
+    +'</div>';
+  document.body.appendChild(el);
+  return el;
+}
+
+function closeSupplierPriceItemsModal(){
+  var el = document.getElementById('ov-supPriceItems');
+  if (el) el.classList.remove('on');
+}
+window.closeSupplierPriceItemsModal = closeSupplierPriceItemsModal;
+
+function openSupplierPriceListItems(priceListId){
+  var supplier = resolveSupplierPriceContext();
+  if (!supplier) {
+    toast('Поставщик не найден', 'err');
+    return;
+  }
+  var modal = ensureSupplierPriceItemsModal();
+  modal.classList.add('on');
+  renderSupplierPriceItemsModal(priceListId);
+}
+window.openSupplierPriceListItems = openSupplierPriceListItems;
+
+function renderSupplierPriceItemsModal(priceListId){
+  var modal = document.getElementById('ov-supPriceItems');
+  var body = document.getElementById('supPriceItemsBody');
+  var title = document.getElementById('supPriceItemsTitle');
+  var meta = document.getElementById('supPriceItemsMeta');
+  var supplier = resolveSupplierPriceContext();
+  var orgId = String((supplier && (supplier.organization_id || supplier.organizationId)) || (window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
+  if (!modal || !body || !supplier || !priceListId) return;
+  if (title) title.textContent = 'Прайс-лист';
+  if (meta) meta.textContent = [
+    supplier.name || 'Поставщик без названия',
+    orgId ? 'Организация: ' + orgId : ''
+  ].filter(Boolean).join(' · ');
+  body.innerHTML = '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);color:var(--t2);">Загрузка позиций прайс-листа...</div>';
+  if (typeof window.ownerListSupplierPriceItems !== 'function') {
+    body.innerHTML = '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);color:var(--t2);">Список позиций прайс-листа недоступен.</div>';
+    return;
+  }
+  window.ownerListSupplierPriceItems({
+    target_price_list_id: priceListId,
+    target_organization_id: orgId || null
+  }).then(function(rows){
+    rows = Array.isArray(rows) ? rows : [];
+    if (!rows.length) {
+      body.innerHTML = '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);text-align:center;color:var(--t2);">'
+        +'<div style="font-size:18px;font-weight:700;margin-bottom:8px;">У прайс-листа пока нет позиций</div>'
+        +'<div style="font-size:13px;">Вернитесь к загрузке и импортируйте строки Excel.</div>'
+      +'</div>';
+      return;
+    }
+    body.innerHTML = '<div style="overflow:auto;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);">'
+      +'<table style="width:100%;border-collapse:collapse;min-width:780px;">'
+        +'<thead><tr style="background:var(--bg3);">'
+          +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Наименование</th>'
+          +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Ед.</th>'
+          +'<th style="padding:10px 12px;text-align:right;border-bottom:1px solid var(--br);">Цена</th>'
+          +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Статус</th>'
+        +'</tr></thead><tbody>'
+        +rows.map(function(item){
+          return '<tr>'
+            +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(item.raw_name || item.normalized_name || '—')+'</td>'
+            +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(item.unit || '—')+'</td>'
+            +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);text-align:right;font-weight:700;">'+_esc(item.price === null || item.price === undefined ? '—' : String(item.price))+'</td>'
+            +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(item.status || 'active')+'</td>'
+          +'</tr>';
+        }).join('')
+      +'</tbody></table></div>';
+  }).catch(function(error){
+    console.error('ownerListSupplierPriceItems failed', error, error && error.stack);
+    body.innerHTML = '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);text-align:center;color:var(--t2);">'
+      +'<div style="font-size:18px;font-weight:700;margin-bottom:8px;">Не удалось загрузить позиции прайс-листа</div>'
+      +'<div style="font-size:13px;white-space:pre-wrap;">'+_esc((error && error.message) || 'Ошибка загрузки')+'</div>'
+    +'</div>';
+  });
+}
+
+function openSupplierPriceManager(supplier, opts){
+  opts = opts || {};
+  var supplierRow = supplier && typeof supplier === 'object' ? supplier : null;
+  if (!supplierRow && typeof supplier === 'string') {
+    supplierRow = resolveSupplierRuntimeById(supplier) || resolveSupplierRuntimeByName(supplier);
+  }
+  if (!supplierRow) {
+    supplierRow = resolveSupplierPriceContext();
+  }
+  if (!supplierRow) {
+    toast('Поставщик не найден', 'err');
+    return;
+  }
+  setSupplierPriceContext(supplierRow, { mode: opts.mode || 'main', source: 'manager' });
+  var modal = document.getElementById('ov-supPriceManager');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'ov-supPriceManager';
+    modal.className = 'ov';
+    modal.innerHTML = ''
+      +'<div class="modal xl" style="max-width:980px;width:min(980px,calc(100vw - 24px));">'
+        +'<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">'
+          +'<div>'
+            +'<div class="m-title" id="supPriceManagerTitle">Прайсы поставщика</div>'
+            +'<div id="supPriceManagerMeta" style="font-size:12px;color:var(--t2);margin-top:6px;"></div>'
+          +'</div>'
+          +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+            +'<button class="tbBtn" onclick="openSupplierUploadFromManager(false)" style="cursor:pointer;">Загрузить прайс</button>'
+            +'<button class="tbBtn" onclick="openSupplierUploadFromManager(true)" style="cursor:pointer;">Доп. прайс</button>'
+            +'<button class="tbBtn" onclick="closeSupplierPriceManager()" style="cursor:pointer;">Закрыть</button>'
+          +'</div>'
+        +'</div>'
+        +'<div id="supPriceManagerBody" style="margin-top:14px;display:grid;gap:12px;"></div>'
+      +'</div>';
+    document.body.appendChild(modal);
+  }
+  modal.classList.add('on');
+  ensureSupplierPriceManagerActionsBinding();
+  renderSupplierPriceManager();
+}
+window.openSupplierPriceManager = openSupplierPriceManager;
+function closeSupplierPriceManager(){
+  var modal = document.getElementById('ov-supPriceManager');
+  if (modal) modal.classList.remove('on');
+}
+window.closeSupplierPriceManager = closeSupplierPriceManager;
+function openSupplierUploadFromManager(append){
+  var supplier = resolveSupplierPriceContext();
+  if (!supplier) {
+    toast('Поставщик не найден', 'err');
+    return;
+  }
+  openSupPriceUpload(supplier.name || 'Поставщик', !!append);
+}
+window.openSupplierUploadFromManager = openSupplierUploadFromManager;
+function renderSupplierPriceManager(){
+  var modal = document.getElementById('ov-supPriceManager');
+  var body = document.getElementById('supPriceManagerBody');
+  var title = document.getElementById('supPriceManagerTitle');
+  var meta = document.getElementById('supPriceManagerMeta');
+  var supplier = resolveSupplierPriceContext();
+  if (!modal || !body || !supplier) return;
+  modal.classList.add('on');
+  ensureSupplierPriceManagerActionsBinding();
+  if (title) title.textContent = 'Прайсы поставщика';
+  if (meta) meta.textContent = [
+    supplier.name || 'Поставщик без названия',
+    supplier.inn ? 'ИНН: ' + supplier.inn : '',
+    supplier.status ? 'Статус: ' + supplier.status : ''
+  ].filter(Boolean).join(' · ');
+  body.innerHTML = '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);color:var(--t2);">Загрузка прайс-листов...</div>';
+  if (typeof window.ownerListSupplierPriceLists !== 'function') {
+    body.innerHTML = '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);color:var(--t2);">Список прайсов недоступен.</div>';
+    return;
+  }
+  var orgId = String((supplier && (supplier.organization_id || supplier.organizationId)) || (window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
+  window.ownerListSupplierPriceLists({
+    target_supplier_id: supplier._id || supplier.id || supplier.supplier_id || supplier.supplierId,
+    target_organization_id: orgId
+  }).then(function(rows){
+    rows = Array.isArray(rows) ? rows : [];
+    if (!rows.length) {
+      body.innerHTML = '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);text-align:center;color:var(--t2);">'
+        +'<div style="font-size:18px;font-weight:700;margin-bottom:8px;">Прайсы пока не добавлены</div>'
+        +'<div style="font-size:13px;">Нажмите «Загрузить прайс», чтобы создать первый прайс-лист.</div>'
+      +'</div>';
+      return;
+    }
+    body.innerHTML = rows.map(function(pl){
+      var itemCount = pl.item_count !== undefined ? pl.item_count : pl.items_count;
+      return '<div style="padding:16px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);display:grid;gap:10px;">'
+        +'<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'
+          +'<div style="min-width:0;flex:1;">'
+            +'<div style="font-size:15px;font-weight:800;">'+_esc(pl.title || pl.name || 'Прайс-лист')+'</div>'
+            +'<div style="font-size:12px;color:var(--t2);margin-top:4px;">'+_esc(pl.source_filename || pl.file_path || '—')+'</div>'
+          +'</div>'
+          +'<span class="badge '+(String(pl.status || 'active') === 'archived' ? 'by' : 'bg')+'">'+_esc(String(pl.status || 'active'))+'</span>'
+        +'</div>'
+        +'<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--t3);">'
+          +'<div>Дата загрузки: <b style="color:var(--tx);">'+_esc(pl.created_at || '—')+'</b></div>'
+          +'<div>Позиций: <b style="color:var(--tx);">'+_esc(itemCount === undefined || itemCount === null ? '—' : String(itemCount))+'</b></div>'
+        +'</div>'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+          +'<button class="tbBtn" data-price-list-action="open" data-price-list-id="'+_esc(String(pl.id || ''))+'" style="cursor:pointer;">Открыть</button>'
+          +(String(pl.status || 'active') !== 'archived' ? '<button class="tbBtn danger" data-price-list-action="archive" data-price-list-id="'+_esc(String(pl.id || ''))+'" style="cursor:pointer;">Архивировать</button>' : '')
+        +'</div>'
+      +'</div>';
+    }).join('');
+  }).catch(function(error){
+    console.error('ownerListSupplierPriceLists failed', error, error && error.stack);
+    body.innerHTML = '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);text-align:center;color:var(--t2);">'
+      +'<div style="font-size:18px;font-weight:700;margin-bottom:8px;">Не удалось загрузить прайсы</div>'
+      +'<div style="font-size:13px;white-space:pre-wrap;">'+_esc((error && error.message) || 'Ошибка загрузки')+'</div>'
+      +'<button class="btnA" style="margin-top:12px;" onclick="renderSupplierPriceManager()">Повторить</button>'
+    +'</div>';
+  });
 }
 
 function renderSupPriceLegalList(orgId, db){
@@ -11419,7 +11809,7 @@ function priceAddRow(){
 }
 
 // Сохранить отредактированный прайс
-function priceSaveEdited(){
+async function priceSaveEdited(){
   if(!_priceEditContext) return;
   var ctx = _priceEditContext;
   var layout = _priceEditLayout;
@@ -12299,7 +12689,7 @@ function _saveSupplierImportRowsDirect(rows, supName, append, priceName, allowed
   return { added: added, updated: updated, skipped: Math.max(0, items.length - added - updated), needsReview: 0 };
 }
 
-function priceSaveEdited(){
+async function priceSaveEdited(){
   if(!_priceEditContext) return;
   var ctx = _priceEditContext;
   var startRowInput = document.getElementById('mcm-start-row');
@@ -12365,6 +12755,25 @@ function priceSaveEdited(){
       }
     }
 
+    var supPersistResult = null;
+    try {
+      supPersistResult = await persistSupplierPriceImportToSupabase(validRows);
+      console.info('supplier price import persisted', supPersistResult);
+      if (supPersistResult) {
+        var importedCount = Number(supPersistResult.imported || 0);
+        var skippedCount = Number(supPersistResult.skippedRows || 0);
+        toast('Прайс сохранён: ' + importedCount + ' строк' + (skippedCount ? ', пропущено ' + skippedCount : ''), 'ok');
+      }
+      if (supPersistResult && supPersistResult.priceList && supPersistResult.priceList.id && typeof window.openSupplierPriceListItems === 'function') {
+        window.openSupplierPriceListItems(supPersistResult.priceList.id);
+      }
+    } catch (persistError) {
+      console.error('persistSupplierPriceImportToSupabase failed:', persistError, persistError && persistError.stack);
+      var persistErr = document.getElementById('mcm-err');
+      if (persistErr) persistErr.textContent = 'Не удалось сохранить прайс в Supabase: ' + ((persistError && persistError.message) || 'ошибка');
+      toast('Не удалось сохранить прайс в Supabase', 'err');
+    }
+
     if(invalidCount > 0){
       toast('Загружено с пропуском строк: ' + invalidCount, 'ok');
     }
@@ -12373,6 +12782,7 @@ function priceSaveEdited(){
     if(previewSec) previewSec.style.display = 'none';
     closeModal('manualColumnMap');
     closeModal('supPriceUpload');
+    if (typeof window.renderSupplierPriceManager === 'function') window.renderSupplierPriceManager();
   } catch(e){
     console.error('priceSaveEdited failed:', e);
     toast('Ошибка загрузки прайса: ' + (e && e.message ? e.message : 'неизвестная ошибка'), 'err');

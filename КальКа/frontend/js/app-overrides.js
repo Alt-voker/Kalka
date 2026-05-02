@@ -991,6 +991,36 @@
     return rpcSupplierAction(client, 'owner_restore_supplier', payload || {}, 'Не удалось восстановить поставщика');
   };
 
+  window.ownerListSupplierPriceLists = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcSupplierAction(client, 'owner_list_supplier_price_lists', payload || {}, 'Не удалось загрузить прайсы поставщика');
+  };
+
+  window.ownerCreateSupplierPriceList = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcSupplierAction(client, 'owner_create_supplier_price_list', payload || {}, 'Не удалось создать прайс-лист');
+  };
+
+  window.ownerArchiveSupplierPriceList = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcSupplierAction(client, 'owner_archive_supplier_price_list', payload || {}, 'Не удалось архивировать прайс-лист');
+  };
+
+  window.ownerListSupplierPriceItems = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcSupplierAction(client, 'owner_list_supplier_price_items', payload || {}, 'Не удалось загрузить позиции прайс-листа');
+  };
+
+  window.ownerImportSupplierPriceItems = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcSupplierAction(client, 'owner_import_supplier_price_items', payload || {}, 'Не удалось импортировать позиции прайс-листа');
+  };
+
   window.ownerLinkSupplierLegalEntities = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
