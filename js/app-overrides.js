@@ -919,6 +919,43 @@
 
   window.refreshSupplierLegalEntitiesForOrganization = refreshSupplierLegalEntitiesForOrganization;
 
+  function rpcWithPortability(name, payload, timeoutMessage) {
+    var params = payload || {};
+    if (window.KalkaApi && typeof window.KalkaApi.rpc === 'function') {
+      return withTimeout(window.KalkaApi.rpc(name, params), 8000, timeoutMessage || 'RPC недоступен').then(function (response) {
+        if (response && response.error) {
+          console.error('rpc ' + name + ' failed', {
+            request: name,
+            code: response.error.code || '',
+            message: response.error.message || '',
+            details: response.error.details || '',
+            hint: response.error.hint || '',
+            raw: response.error
+          });
+          throw response.error;
+        }
+        var data = response && response.data;
+        return Array.isArray(data) ? data.slice() : (data ? [data] : []);
+      }).catch(function (error) {
+        console.error('rpc ' + name + ' failed', {
+          request: name,
+          code: error && error.code ? error.code : '',
+          message: error && error.message ? error.message : '',
+          details: error && error.details ? error.details : '',
+          hint: error && error.hint ? error.hint : '',
+          raw: error
+        });
+        throw error;
+      });
+    }
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client || typeof client.rpc !== 'function') {
+      return Promise.reject(new Error('Supabase не настроен'));
+    }
+    window.__directSupabaseRpcCount = (window.__directSupabaseRpcCount || 0) + 1;
+    return rpcSupplierAction(client, name, params, timeoutMessage);
+  }
+
   function rpcSupplierAction(client, name, payload, timeoutMessage) {
     console.info('supabase request start', name);
     return withTimeout(
@@ -956,7 +993,7 @@
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     var orgId = String(targetOrganizationId || '').trim();
     if (!client || !orgId) return Promise.resolve([]);
-    return rpcSupplierAction(client, 'owner_list_suppliers', {
+    return rpcWithPortability('owner_list_suppliers', {
       target_organization_id: orgId
     }, 'Не удалось загрузить поставщиков');
   };
@@ -964,67 +1001,67 @@
   window.ownerCreateSupplier = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcSupplierAction(client, 'owner_create_supplier', payload || {}, 'Не удалось создать поставщика');
+    return rpcWithPortability('owner_create_supplier', payload || {}, 'Не удалось создать поставщика');
   };
 
   window.ownerUpdateSupplier = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcSupplierAction(client, 'owner_update_supplier', payload || {}, 'Не удалось сохранить поставщика');
+    return rpcWithPortability('owner_update_supplier', payload || {}, 'Не удалось сохранить поставщика');
   };
 
   window.ownerArchiveSupplier = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcSupplierAction(client, 'owner_archive_supplier', payload || {}, 'Не удалось архивировать поставщика');
+    return rpcWithPortability('owner_archive_supplier', payload || {}, 'Не удалось архивировать поставщика');
   };
 
   window.ownerDeleteSupplier = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcSupplierAction(client, 'owner_delete_supplier', payload || {}, 'Не удалось удалить поставщика');
+    return rpcWithPortability('owner_delete_supplier', payload || {}, 'Не удалось удалить поставщика');
   };
 
   window.ownerRestoreSupplier = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcSupplierAction(client, 'owner_restore_supplier', payload || {}, 'Не удалось восстановить поставщика');
+    return rpcWithPortability('owner_restore_supplier', payload || {}, 'Не удалось восстановить поставщика');
   };
 
   window.ownerListSupplierPriceLists = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcSupplierAction(client, 'owner_list_supplier_price_lists', payload || {}, 'Не удалось загрузить прайсы поставщика');
+    return rpcWithPortability('owner_list_supplier_price_lists', payload || {}, 'Не удалось загрузить прайсы поставщика');
   };
 
   window.ownerCreateSupplierPriceList = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcSupplierAction(client, 'owner_create_supplier_price_list', payload || {}, 'Не удалось создать прайс-лист');
+    return rpcWithPortability('owner_create_supplier_price_list', payload || {}, 'Не удалось создать прайс-лист');
   };
 
   window.ownerArchiveSupplierPriceList = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcSupplierAction(client, 'owner_archive_supplier_price_list', payload || {}, 'Не удалось архивировать прайс-лист');
+    return rpcWithPortability('owner_archive_supplier_price_list', payload || {}, 'Не удалось архивировать прайс-лист');
   };
 
   window.ownerListSupplierPriceItems = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcSupplierAction(client, 'owner_list_supplier_price_items', payload || {}, 'Не удалось загрузить позиции прайс-листа');
+    return rpcWithPortability('owner_list_supplier_price_items', payload || {}, 'Не удалось загрузить позиции прайс-листа');
   };
 
   window.ownerImportSupplierPriceItems = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcSupplierAction(client, 'owner_import_supplier_price_items', payload || {}, 'Не удалось импортировать позиции прайс-листа');
+    return rpcWithPortability('owner_import_supplier_price_items', payload || {}, 'Не удалось импортировать позиции прайс-листа');
   };
 
   window.ownerLinkSupplierLegalEntities = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcSupplierAction(client, 'owner_link_supplier_legal_entities', payload || {}, 'Не удалось сохранить привязку юрлиц');
+    return rpcWithPortability('owner_link_supplier_legal_entities', payload || {}, 'Не удалось сохранить привязку юрлиц');
   };
 
   async function loadOwnerUsers() {
@@ -3913,6 +3950,27 @@
 
     return legacy.processSupPriceRows(preparedRows, effectiveCols, supName, append, priceName, allowedUserIds);
   };
+
+  window.runPortabilityAudit = function () {
+    var hasConfig = !!window.KalkaConfig;
+    var hasApi = !!(window.KalkaApi && typeof window.KalkaApi.rpc === 'function' && typeof window.KalkaApi.select === 'function' && typeof window.KalkaApi.insert === 'function' && typeof window.KalkaApi.update === 'function');
+    var hasAuth = !!(window.KalkaAuth && typeof window.KalkaAuth.signIn === 'function' && typeof window.KalkaAuth.signOut === 'function' && typeof window.KalkaAuth.getCurrentUser === 'function' && typeof window.KalkaAuth.getSession === 'function');
+    var hasStorage = !!(window.KalkaStorage && typeof window.KalkaStorage.uploadFile === 'function' && typeof window.KalkaStorage.downloadFile === 'function' && typeof window.KalkaStorage.getPublicUrl === 'function');
+    return {
+      directSupabaseRpcCount: Number(window.__directSupabaseRpcCount || 0),
+      directSupabaseAuthCount: Number(window.__directSupabaseAuthCount || 0),
+      directLocalStorageAuthorityCount: Number(window.__directLocalStorageAuthorityCount || 0),
+      missingProviders: [
+        !hasConfig ? 'KalkaConfig' : null,
+        !hasApi ? 'KalkaApi' : null,
+        !hasAuth ? 'KalkaAuth' : null,
+        !hasStorage ? 'KalkaStorage' : null
+      ].filter(Boolean),
+      status: (hasConfig && hasApi && hasAuth && hasStorage) ? 'OK' : 'FAIL'
+    };
+  };
+  console.info('portability audit ready');
+  try { console.table(window.runPortabilityAudit()); } catch (auditError) { console.warn('runPortabilityAudit failed', auditError); }
 
   document.addEventListener('DOMContentLoaded', function () {
     function tryRestore() {

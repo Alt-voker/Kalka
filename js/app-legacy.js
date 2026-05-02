@@ -7969,7 +7969,7 @@ async function persistSupplierPriceImportToSupabase(importRows){
   var uploadedBy = String((window.__userSession && window.__userSession.profileId) || (window.__userSession && window.__userSession.currentUser && window.__userSession.currentUser.profileId) || '').trim();
   var rows = _supplierPriceBuildImportRows(importRows);
   if (!rows.length) throw new Error('Нет строк для импорта прайса');
-  if (typeof window.ownerCreateSupplierPriceList !== 'function' || typeof window.ownerImportSupplierPriceItems !== 'function') {
+  if (!window.KalkaApi || typeof window.KalkaApi.rpc !== 'function' || typeof window.ownerCreateSupplierPriceList !== 'function' || typeof window.ownerImportSupplierPriceItems !== 'function') {
     throw new Error('RPC прайсов недоступен');
   }
   var createdRows = await window.ownerCreateSupplierPriceList({
