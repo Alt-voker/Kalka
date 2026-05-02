@@ -319,7 +319,7 @@
             }).length
           });
         }
-        if (typeof window.renderRestaurants === 'function') window.renderRestaurants();
+        if (typeof window.renderRestaurants === 'function' && typeof window.getCurrentPageId === 'function' && window.getCurrentPageId() === 'restaurants') window.renderRestaurants();
         return items.slice();
       } catch (error) {
         bucket.error = {
@@ -1248,7 +1248,7 @@
     if (typeof window.loadOrganizationSummaryForOrganization === 'function') {
       window.loadOrganizationSummaryForOrganization(orgId).catch(function () {});
     }
-    if (typeof window.renderRestaurants === 'function') window.renderRestaurants();
+    if (typeof window.renderRestaurants === 'function' && typeof window.getCurrentPageId === 'function' && window.getCurrentPageId() === 'restaurants') window.renderRestaurants();
     if (typeof window.renderOrganizationMembersModal === 'function') window.renderOrganizationMembersModal(orgId);
     var detailsModal = document.getElementById('ov-orgDetails');
     if (detailsModal && String(detailsModal.dataset.orgId || '').trim() === orgId && typeof window.renderOrganizationDetailsModal === 'function') {
@@ -1379,7 +1379,7 @@
             updated_at: summary.updated_at
           });
         }
-        if (typeof window.renderRestaurants === 'function' && String(window.__orgListFilter || 'active').trim() === 'active') {
+        if (typeof window.renderRestaurants === 'function' && typeof window.getCurrentPageId === 'function' && window.getCurrentPageId() === 'restaurants' && String(window.__orgListFilter || 'active').trim() === 'active') {
           window.renderRestaurants();
         }
         return Object.assign({}, summary);
@@ -1412,7 +1412,7 @@
         window.renderOrganizationDetailsModal(orgId);
       }
     }
-    if (typeof window.renderRestaurants === 'function') window.renderRestaurants();
+    if (typeof window.renderRestaurants === 'function' && typeof window.getCurrentPageId === 'function' && window.getCurrentPageId() === 'restaurants') window.renderRestaurants();
     return result;
   }
 
@@ -1551,7 +1551,7 @@
             }
           }
         }
-        if (typeof window.renderRestaurants === 'function' && String(window.__orgListFilter || 'active').trim() === filter) {
+        if (typeof window.renderRestaurants === 'function' && typeof window.getCurrentPageId === 'function' && window.getCurrentPageId() === 'restaurants' && String(window.__orgListFilter || 'active').trim() === filter) {
           window.renderRestaurants();
         }
         items.forEach(function (org) {
@@ -1585,7 +1585,7 @@
               });
             }).filter(Boolean)
           : [];
-        if (typeof window.renderRestaurants === 'function' && String(window.__orgListFilter || 'active').trim() === filter) {
+        if (typeof window.renderRestaurants === 'function' && typeof window.getCurrentPageId === 'function' && window.getCurrentPageId() === 'restaurants' && String(window.__orgListFilter || 'active').trim() === filter) {
           window.renderRestaurants();
         }
         bucket.items.forEach(function (org) {
@@ -1607,7 +1607,7 @@
     var cache = getDataCache();
     delete cache.organizationsByFilter[filter];
     var items = await loadOrganizationsForRestaurants(filter);
-    if (typeof window.renderRestaurants === 'function') window.renderRestaurants();
+    if (typeof window.renderRestaurants === 'function' && typeof window.getCurrentPageId === 'function' && window.getCurrentPageId() === 'restaurants') window.renderRestaurants();
     return items;
   }
 
@@ -2316,8 +2316,6 @@
     applyServerSession(session);
 
     if (typeof window.renderDash === 'function') window.renderDash();
-    if (typeof window.renderRestaurants === 'function') window.renderRestaurants();
-    if (typeof window.renderSuppliers === 'function') window.renderSuppliers();
     if (typeof window.renderAdmin === 'function') window.renderAdmin();
     if (typeof window.renderOrders === 'function') window.renderOrders();
     if (typeof window.renderBudget === 'function') window.renderBudget();

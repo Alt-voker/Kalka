@@ -816,6 +816,35 @@ function getPageRenderer(pg){
     owner: renderOwner
   }[pg] || null;
 }
+function getActivePageId(){
+  var current=document.querySelector('.page.on, .page.active');
+  if(!current || !current.id) return 'dashboard';
+  return String(current.id).replace(/^pg-/, '') || 'dashboard';
+}
+function pageIsCurrentlyVisible(pageId){
+  var current = getActivePageId();
+  return current === String(pageId || '').trim();
+}
+function cleanupLeakedOrganizationBlocks(activePageId){
+  if (String(activePageId || '') === 'restaurants') return;
+  document.querySelectorAll('#orgsStableRoot').forEach(function (el) {
+    var page = el.closest('.page');
+    if (!page || page.id !== 'pg-restaurants') {
+      el.remove();
+    }
+  });
+  document.querySelectorAll('[data-org-shell="true"], [data-org-shell-root="true"]').forEach(function (el) {
+    var page = el.closest('.page');
+    if (!page || page.id !== 'pg-restaurants') {
+      el.remove();
+    }
+  });
+  document.querySelectorAll('.page:not(#pg-restaurants) [data-org-action], .page:not(#pg-restaurants) [data-org-id]').forEach(function (el) {
+    if (el && el.parentNode) {
+      el.remove();
+    }
+  });
+}
 function rerenderCurrentPage(){
   var pg = getCurrentPageId();
   var renderer = getPageRenderer(pg);
@@ -825,11 +854,24 @@ function rerenderCurrentPage(){
 function goPage(pg){
   if(!CU)return;
   if(!canAccessPage(CU, pg)){toast('🚫 Нет доступа к этому разделу','err');return;}
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
-  document.querySelectorAll('.sb-item').forEach(i=>i.classList.remove('on'));
-  document.getElementById('pg-'+pg)?.classList.add('on');
-  document.querySelectorAll(`[data-page="${pg}"]`).forEach(i=>i.classList.add('on'));
-  document.getElementById('topTitle').textContent=PT[pg]||pg;
+  document.querySelectorAll('.page').forEach(function(p){
+    p.classList.add('gone');
+    p.classList.remove('on', 'active', 'hidden');
+    p.style.display = 'none';
+  });
+  document.querySelectorAll('.sb-item').forEach(function(i){ i.classList.remove('on'); });
+  var page = document.getElementById('pg-'+pg);
+  if (page) {
+    page.classList.remove('gone', 'hidden');
+    page.classList.add('on', 'active');
+    page.style.display = '';
+    page.style.visibility = 'visible';
+    page.style.opacity = '1';
+  }
+  document.querySelectorAll(`[data-page="${pg}"]`).forEach(function(i){ i.classList.add('on'); });
+  var titleEl = document.getElementById('topTitle');
+  if (titleEl) titleEl.textContent = PT[pg] || pg;
+  cleanupLeakedOrganizationBlocks(pg);
   var renderer = getPageRenderer(pg);
   if(renderer) renderer();
 }
@@ -1765,131 +1807,178 @@ function repeatVisibleOrder(orderId){
   openCreateOrder({restId:order.restId||'',supplierNames:[getOrderSupplierName(order)].filter(Boolean)});
 }
 function renderSuppliers(){
-  var el=document.getElementById('supGrid');if(!el)return;
-  ensureSupplierGridActionBinding();
-  var activeOrgId = String((window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
-  var cache = window.__dataCache || {};
-  var sessionSuppliers = (window.__userSession && Array.isArray(window.__userSession.suppliers)) ? window.__userSession.suppliers : [];
-  var visible=getUserVisibleSuppliers(CU);
-  var supSub=document.getElementById('supSub');
-  var cachedSuppliers = activeOrgId && cache.suppliersByOrg ? cache.suppliersByOrg[activeOrgId] : null;
-  var loading = !!(activeOrgId && cache.suppliersLoadingByOrg && cache.suppliersLoadingByOrg[activeOrgId]);
-  var errorInfo = activeOrgId && cache.suppliersErrorsByOrg ? cache.suppliersErrorsByOrg[activeOrgId] : null;
-  if(!activeOrgId){
-    if(supSub) supSub.textContent='Организация не выбрана';
-    el.innerHTML='<div class="empty"><div class="empty-ico">🔒</div><div class="empty-txt">Организация не выбрана</div></div>';
-    return;
-  }
-  if(visible.length){
-    sessionSuppliers = visible.slice();
-  } else if(Array.isArray(cachedSuppliers) && cachedSuppliers.length){
-    sessionSuppliers = cachedSuppliers.slice();
-  }
-  if(!sessionSuppliers.length && loading){
-    if(supSub) supSub.textContent='Загрузка поставщиков...';
-    el.innerHTML='<div class="empty"><div class="empty-ico">🏭</div><div class="empty-txt">Загрузка поставщиков...</div></div>';
-    return;
-  }
-  if(!sessionSuppliers.length && errorInfo){
-    if(supSub) supSub.textContent='Не удалось загрузить поставщиков';
-    el.innerHTML='<div class="empty"><div class="empty-ico">⚠️</div><div class="empty-txt">Не удалось загрузить поставщиков. Повторить</div><div style="margin-top:10px;"><button class="btnA" style="width:auto;min-width:170px;" onclick="window.retrySuppliersLoad && window.retrySuppliersLoad(\''+activeOrgId.replace(/'/g,"\\'")+'\')">Повторить</button></div></div>';
-    return;
-  }
-  if(!sessionSuppliers.length && activeOrgId && window.loadSuppliersForOrganization && !window.__loginInProgress && !window.__restoreInProgress){
-    if(supSub) supSub.textContent='Загрузка поставщиков...';
-    el.innerHTML='<div class="empty"><div class="empty-ico">🏭</div><div class="empty-txt">Загрузка поставщиков...</div></div>';
-    window.loadSuppliersForOrganization(activeOrgId).then(function(items){
-      if(window.__userSession){
-        window.__userSession.suppliers = Array.isArray(items) ? items.slice() : [];
-      }
-      if(window.__dataCache && window.__dataCache.suppliersByOrg){
-        window.__dataCache.suppliersByOrg[activeOrgId] = Array.isArray(items) ? items.slice() : [];
-      }
-      renderSuppliers();
-    }).catch(function(error){
-      console.error('loadSuppliersForOrganization failed for suppliers page:', error);
-      if(window.__dataCache){
-        window.__dataCache.suppliersErrorsByOrg = window.__dataCache.suppliersErrorsByOrg || {};
-        window.__dataCache.suppliersErrorsByOrg[activeOrgId] = {
-          code: error && error.code ? error.code : '',
-          message: error && error.message ? error.message : '',
-          details: error && error.details ? error.details : '',
-          hint: error && error.hint ? error.hint : '',
-          raw: error
-        };
-      }
+  try {
+    var page = document.querySelector('#pg-suppliers');
+    if (!page) {
+      console.error('renderSuppliers failed: pg-suppliers container not found');
+      return;
+    }
+    page.classList.add('on');
+    page.classList.remove('gone', 'hidden');
+    page.style.display = 'block';
+    page.style.visibility = 'visible';
+    page.style.opacity = '1';
+    var grid = page.querySelector('#supGrid');
+    if (!grid) {
+      page.innerHTML = ''
+        +'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">'
+          +'<div>'
+            +'<div style="font-size:28px;font-weight:800;line-height:1.1;">Поставщики</div>'
+            +'<div style="margin-top:6px;color:var(--t3);font-size:13px;">Поставщики вашей текущей организации</div>'
+          +'</div>'
+        +'</div>'
+        +'<div id="supSub" style="margin-bottom:12px;color:var(--t3);font-size:13px;"></div>'
+        +'<div id="supGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;"></div>';
+      grid = page.querySelector('#supGrid');
+    }
+    if (!grid) {
+      console.error('renderSuppliers failed: supGrid not found');
+      return;
+    }
+    ensureSupplierGridActionBinding();
+    var activeOrgId = String((window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
+    var cache = window.__dataCache || {};
+    var sessionSuppliers = (window.__userSession && Array.isArray(window.__userSession.suppliers)) ? window.__userSession.suppliers : [];
+    var visible=getUserVisibleSuppliers(CU);
+    var supSub=page.querySelector('#supSub');
+    var cachedSuppliers = activeOrgId && cache.suppliersByOrg ? cache.suppliersByOrg[activeOrgId] : null;
+    var loading = !!(activeOrgId && cache.suppliersLoadingByOrg && cache.suppliersLoadingByOrg[activeOrgId]);
+    var errorInfo = activeOrgId && cache.suppliersErrorsByOrg ? cache.suppliersErrorsByOrg[activeOrgId] : null;
+    if(!activeOrgId){
+      if(supSub) supSub.textContent='Организация не выбрана';
+      grid.innerHTML='<div class="empty"><div class="empty-ico">🔒</div><div class="empty-txt">Организация не выбрана</div></div>';
+      return;
+    }
+    if(visible.length){
+      sessionSuppliers = visible.slice();
+    } else if(Array.isArray(cachedSuppliers) && cachedSuppliers.length){
+      sessionSuppliers = cachedSuppliers.slice();
+    }
+    if(!sessionSuppliers.length && loading){
+      if(supSub) supSub.textContent='Загрузка поставщиков...';
+      grid.innerHTML='<div class="empty"><div class="empty-ico">🏭</div><div class="empty-txt">Загрузка поставщиков...</div></div>';
+      return;
+    }
+    if(!sessionSuppliers.length && errorInfo){
       if(supSub) supSub.textContent='Не удалось загрузить поставщиков';
-      el.innerHTML='<div class="empty"><div class="empty-ico">⚠️</div><div class="empty-txt">Не удалось загрузить поставщиков. Повторить</div><div style="margin-top:10px;"><button class="btnA" style="width:auto;min-width:170px;" onclick="window.retrySuppliersLoad && window.retrySuppliersLoad(\''+activeOrgId.replace(/'/g,"\\'")+'\')">Повторить</button></div></div>';
+      grid.innerHTML='<div class="empty"><div class="empty-ico">⚠️</div><div class="empty-txt">Не удалось загрузить поставщиков</div><div style="margin-top:10px;"><button class="btnA" style="width:auto;min-width:170px;" onclick="window.retrySuppliersLoad && window.retrySuppliersLoad(\''+activeOrgId.replace(/'/g,"\\'")+'\')">Повторить</button></div><div style="margin-top:8px;font-size:12px;color:var(--t3);white-space:pre-wrap;">'+_esc((errorInfo.message || '') + (errorInfo.details ? '\n' + errorInfo.details : '') + (errorInfo.hint ? '\n' + errorInfo.hint : ''))+'</div></div>';
+      return;
+    }
+    if(!sessionSuppliers.length && activeOrgId && window.loadSuppliersForOrganization && !window.__loginInProgress && !window.__restoreInProgress){
+      if(supSub) supSub.textContent='Загрузка поставщиков...';
+      grid.innerHTML='<div class="empty"><div class="empty-ico">🏭</div><div class="empty-txt">Загрузка поставщиков...</div></div>';
+      window.loadSuppliersForOrganization(activeOrgId).then(function(items){
+        if(window.__userSession){
+          window.__userSession.suppliers = Array.isArray(items) ? items.slice() : [];
+        }
+        if(window.__dataCache && window.__dataCache.suppliersByOrg){
+          window.__dataCache.suppliersByOrg[activeOrgId] = Array.isArray(items) ? items.slice() : [];
+        }
+        renderSuppliers();
+      }).catch(function(error){
+        console.error('loadSuppliersForOrganization failed for suppliers page:', error);
+        if(window.__dataCache){
+          window.__dataCache.suppliersErrorsByOrg = window.__dataCache.suppliersErrorsByOrg || {};
+          window.__dataCache.suppliersErrorsByOrg[activeOrgId] = {
+            code: error && error.code ? error.code : '',
+            message: error && error.message ? error.message : '',
+            details: error && error.details ? error.details : '',
+            hint: error && error.hint ? error.hint : '',
+            raw: error
+          };
+        }
+        if(supSub) supSub.textContent='Не удалось загрузить поставщиков';
+        grid.innerHTML='<div class="empty"><div class="empty-ico">⚠️</div><div class="empty-txt">Не удалось загрузить поставщиков</div><div style="margin-top:10px;"><button class="btnA" style="width:auto;min-width:170px;" onclick="window.retrySuppliersLoad && window.retrySuppliersLoad(\''+activeOrgId.replace(/'/g,"\\'")+'\')">Повторить</button></div><div style="margin-top:8px;font-size:12px;color:var(--t3);white-space:pre-wrap;">'+_esc((error && error.message) || 'Ошибка загрузки')+'</div></div>';
+      });
+      return;
+    }
+    if(supSub) supSub.textContent=visible.length ? visible.length+' поставщиков в вашей текущей организации' : 'Поставщики пока не добавлены';
+    if(!visible.length){
+      grid.innerHTML='<div class="empty"><div class="empty-ico">🏭</div><div class="empty-txt">Поставщики пока не добавлены</div></div>';
+      return;
+    }
+    var sm={active:'bg',contract:'by',new:'bb'};
+    var sl={active:'Активен',contract:'Контракт',new:'Новый'};
+    var canAdmin=CU&&['owner','admin'].includes(CU.role);
+    var canManagePrices=hasPermissionSafe('price_lists.view') || hasPermissionSafe('price_lists.upload') || canAdmin;
+    var canCreateSupplier=hasPermissionSafe('suppliers.create') || canAdmin || (CU && ['owner','admin','director','organization_owner'].indexOf(normalizeLegacyRoleSafe(CU.role)) >= 0);
+    var canEditSupplier=hasPermissionSafe('suppliers.edit') || canAdmin || (CU && ['owner','admin','director','organization_owner'].indexOf(normalizeLegacyRoleSafe(CU.role)) >= 0);
+    var canDeleteSupplier=hasPermissionSafe('suppliers.delete') || canAdmin || (CU && ['owner','admin','director','organization_owner'].indexOf(normalizeLegacyRoleSafe(CU.role)) >= 0);
+    var fav=getUserFavorites(CU);
+    var favoriteSuppliers=(fav.suppliers||[]);
+    var db=dbGet();
+    var visibleOrders=getUserVisibleOrders(CU);
+    var normalizedVisible = visible.map(function(s){
+      var item = Object.assign({}, s || {});
+      item._id = String(item._id || item.id || item.supplier_id || item.supplierId || '').trim();
+      return item;
     });
-    return;
-  }
-  if(supSub) supSub.textContent=visible.length ? visible.length+' поставщиков в вашем личном кабинете' : 'Нет поставщиков';
-
-  if(!visible.length){
-    el.innerHTML='<div class="empty"><div class="empty-ico">🏭</div><div class="empty-txt">Нет поставщиков</div></div>';
-    return;
-  }
-
-  var sm={active:'bg',contract:'by',new:'bb'};
-  var sl={active:'Активен',contract:'Контракт',new:'Новый'};
-  var canAdmin=CU&&['owner','admin'].includes(CU.role);
-  var canManagePrices=hasPermissionSafe('price_lists.view') || hasPermissionSafe('price_lists.upload') || canAdmin;
-  var canCreateSupplier=hasPermissionSafe('suppliers.create') || canAdmin || (CU && ['owner','admin','director','organization_owner'].indexOf(normalizeLegacyRoleSafe(CU.role)) >= 0);
-  var canEditSupplier=hasPermissionSafe('suppliers.edit') || canAdmin || (CU && ['owner','admin','director','organization_owner'].indexOf(normalizeLegacyRoleSafe(CU.role)) >= 0);
-  var canDeleteSupplier=hasPermissionSafe('suppliers.delete') || canAdmin || (CU && ['owner','admin','director','organization_owner'].indexOf(normalizeLegacyRoleSafe(CU.role)) >= 0);
-  var fav=getUserFavorites(CU);
-  var favoriteSuppliers=(fav.suppliers||[]);
-  var db=dbGet();
-  var visibleOrders=getUserVisibleOrders(CU);
-
-  var normalizedVisible = visible.map(function(s){
-    var item = Object.assign({}, s || {});
-    item._id = String(item._id || item.id || item.supplier_id || item.supplierId || '').trim();
-    return item;
-  });
-  var cards=normalizedVisible.map(function(s){
-    var i=Array.isArray(sessionSuppliers) ? sessionSuppliers.findIndex(function(item){
-      var itemId = String((item && (item._id || item.id || item.supplier_id || item.supplierId)) || '').trim();
-      return itemId === s._id;
-    }) : -1;
-    var canManageSupplier=canEditSupplier && canManageSupplierRecord(CU, s, db);
-    var openBtn='<button data-supplier-action="open" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Открыть</button>';
-    var pricesMainBtn=canManagePrices?('<button data-supplier-action="prices" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Прайсы</button>'):'';
-    var manageBtn=canManageSupplier?(
-      '<button data-supplier-action="edit" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg4);border:1px solid var(--br2);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Редактировать</button>'
-    ):'';
-    var archiveBtn=(canDeleteSupplier || canManageSupplier)?(
-      '<button data-supplier-action="archive" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);opacity:.85;">Архивировать</button>'
-    ):'';
-    var favoriteBtn='<button onclick="toggleFavoriteSupplier(\''+String(s.name||'').replace(/'/g,"\\'")+'\')" style="flex:1;background:'+(favoriteSuppliers.indexOf(s.name)>=0?'var(--aD)':'var(--bg3)')+';border:1px solid '+(favoriteSuppliers.indexOf(s.name)>=0?'var(--ac)':'var(--br)')+';border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:'+(favoriteSuppliers.indexOf(s.name)>=0?'var(--ac)':'var(--t2)')+';">'+(favoriteSuppliers.indexOf(s.name)>=0?'★ В избранном':'☆ В избранное')+'</button>';
-    return ''
-      +'<div class="sup-card" style="padding:14px 14px 12px;min-height:unset;">'
-      +'<div class="sup-hd" style="gap:8px;align-items:flex-start;">'
-      +'<div style="min-width:0;flex:1;">'
-      +'<div class="sup-name" style="font-size:15px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+safeSupplierText(s.name)+'</div>'
-      +'<div class="sup-type" style="font-size:11px;color:var(--t3);margin-top:3px;">'+safeSupplierText(s.kind || s.type, 'Поставщик')+'</div>'
+    var cards=normalizedVisible.map(function(s){
+      var i=Array.isArray(sessionSuppliers) ? sessionSuppliers.findIndex(function(item){
+        var itemId = String((item && (item._id || item.id || item.supplier_id || item.supplierId)) || '').trim();
+        return itemId === s._id;
+      }) : -1;
+      var canManageSupplier=canEditSupplier && canManageSupplierRecord(CU, s, db);
+      var openBtn='<button data-supplier-action="open" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Открыть</button>';
+      var pricesMainBtn=canManagePrices?('<button data-supplier-action="prices" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Прайсы</button>'):'';
+      var manageBtn=canManageSupplier?(
+        '<button data-supplier-action="edit" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg4);border:1px solid var(--br2);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Редактировать</button>'
+      ):'';
+      var archiveBtn=(canDeleteSupplier || canManageSupplier)?(
+        '<button data-supplier-action="archive" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);opacity:.85;">Архивировать</button>'
+      ):'';
+      var favoriteBtn='<button onclick="toggleFavoriteSupplier(\''+String(s.name||'').replace(/'/g,"\\'")+'\')" style="flex:1;background:'+(favoriteSuppliers.indexOf(s.name)>=0?'var(--aD)':'var(--bg3)')+';border:1px solid '+(favoriteSuppliers.indexOf(s.name)>=0?'var(--ac)':'var(--br)')+';border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:'+(favoriteSuppliers.indexOf(s.name)>=0?'var(--ac)':'var(--t2)')+';">'+(favoriteSuppliers.indexOf(s.name)>=0?'★ В избранном':'☆ В избранное')+'</button>';
+      return ''
+        +'<div class="sup-card" style="padding:14px 14px 12px;min-height:unset;">'
+        +'<div class="sup-hd" style="gap:8px;align-items:flex-start;">'
+        +'<div style="min-width:0;flex:1;">'
+        +'<div class="sup-name" style="font-size:15px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+safeSupplierText(s.name)+'</div>'
+        +'<div class="sup-type" style="font-size:11px;color:var(--t3);margin-top:3px;">'+safeSupplierText(s.kind || s.type, 'Поставщик')+'</div>'
+        +'</div>'
+        +'<span class="badge '+(s.status === 'archived' ? 'by' : (s.status === 'inactive' ? 'bb' : 'bg'))+'" style="margin-left:auto;">'+(s.status === 'archived' ? 'В архиве' : (s.status === 'inactive' ? 'Не активен' : 'Активен'))+'</span>'
+        +'</div>'
+        +'<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 10px;margin-top:10px;font-size:11px;color:var(--t3);">'
+        +'<div>ИНН: <b style="color:var(--tx);font-weight:700;">'+safeSupplierText(s.inn)+'</b></div>'
+        +'<div>Контакт: <b style="color:var(--tx);font-weight:700;">'+safeSupplierText(s.contactName || s.contact_name || s.contact)+'</b></div>'
+        +'<div>Телефон: <b style="color:var(--tx);font-weight:700;">'+safeSupplierText(s.phone)+'</b></div>'
+        +'<div>Email: <b style="color:var(--tx);font-weight:700;">'+safeSupplierText(s.email)+'</b></div>'
+        +'<div style="grid-column:1 / -1;">Юрлица: <b style="color:var(--tx);font-weight:700;">'+safeSupplierText((Array.isArray(s.legalEntityNames) && s.legalEntityNames.length) ? s.legalEntityNames.join(', ') : (Array.isArray(s.legal_entity_names) && s.legal_entity_names.length ? s.legal_entity_names.join(', ') : ''))+'</b></div>'
+        +'</div>'
+        +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;border-top:1px solid var(--br);padding-top:10px;">'
+        +openBtn
+        +pricesMainBtn
+        +manageBtn
+        +archiveBtn
+        +favoriteBtn
+        +'</div>'
+        +'</div>';
+    }).join('');
+    grid.innerHTML = cards;
+    var addBtn=canCreateSupplier?'<div class="sup-card dsh" onclick="openSupplierModal()" style="display:flex;align-items:center;justify-content:center;min-height:170px;"><div style="text-align:center;color:var(--t3);"><div style="font-size:26px;margin-bottom:7px;">➕</div><div style="font-size:13px;font-weight:600;">Добавить поставщика</div></div></div>':'';
+    grid.innerHTML=cards+addBtn;
+    console.info('supplier cards rendered', normalizedVisible.length);
+  } catch (error) {
+    console.error('renderSuppliers failed', error, error && error.stack);
+    var page = document.querySelector('#pg-suppliers');
+    if (!page) return;
+    page.classList.add('on');
+    page.classList.remove('gone', 'hidden');
+    page.style.display = 'block';
+    page.style.visibility = 'visible';
+    page.style.opacity = '1';
+    page.innerHTML = ''
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">'
+        +'<div>'
+          +'<div style="font-size:28px;font-weight:800;line-height:1.1;">Поставщики</div>'
+          +'<div style="margin-top:6px;color:var(--t3);font-size:13px;">Поставщики вашей текущей организации</div>'
+        +'</div>'
       +'</div>'
-      +'<span class="badge '+(s.status === 'archived' ? 'by' : (s.status === 'inactive' ? 'bb' : 'bg'))+'" style="margin-left:auto;">'+(s.status === 'archived' ? 'В архиве' : (s.status === 'inactive' ? 'Не активен' : 'Активен'))+'</span>'
-      +'</div>'
-      +'<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 10px;margin-top:10px;font-size:11px;color:var(--t3);">'
-      +'<div>ИНН: <b style="color:var(--tx);font-weight:700;">'+safeSupplierText(s.inn)+'</b></div>'
-      +'<div>Контакт: <b style="color:var(--tx);font-weight:700;">'+safeSupplierText(s.contactName || s.contact_name || s.contact)+'</b></div>'
-      +'<div>Телефон: <b style="color:var(--tx);font-weight:700;">'+safeSupplierText(s.phone)+'</b></div>'
-      +'<div>Email: <b style="color:var(--tx);font-weight:700;">'+safeSupplierText(s.email)+'</b></div>'
-      +'<div style="grid-column:1 / -1;">Юрлица: <b style="color:var(--tx);font-weight:700;">'+safeSupplierText((Array.isArray(s.legalEntityNames) && s.legalEntityNames.length) ? s.legalEntityNames.join(', ') : (Array.isArray(s.legal_entity_names) && s.legal_entity_names.length ? s.legal_entity_names.join(', ') : ''))+'</b></div>'
-      +'</div>'
-      +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;border-top:1px solid var(--br);padding-top:10px;">'
-      +openBtn
-      +pricesMainBtn
-      +manageBtn
-      +archiveBtn
-      +favoriteBtn
-      +'</div>'
+      +'<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);">'
+        +'<div style="font-size:18px;font-weight:700;margin-bottom:8px;">Не удалось загрузить поставщиков</div>'
+        +'<div style="font-size:13px;color:var(--t2);white-space:pre-wrap;">'+_esc((error && error.message) || 'Ошибка загрузки')+'</div>'
+        +'<button class="btnA" style="margin-top:12px;" onclick="renderSuppliers()">Повторить</button>'
       +'</div>';
-  }).join('');
-
-  var addBtn=canCreateSupplier?'<div class="sup-card dsh" onclick="openSupplierModal()" style="display:flex;align-items:center;justify-content:center;min-height:170px;"><div style="text-align:center;color:var(--t3);"><div style="font-size:26px;margin-bottom:7px;">➕</div><div style="font-size:13px;font-weight:600;">Добавить поставщика</div></div></div>':'';
-  el.innerHTML=cards+addBtn;
+  }
 }
 
 function ensureSupplierDetailsModal(){
@@ -4239,6 +4328,10 @@ function renderRestaurants(){
     console.error('renderRestaurants: pg-restaurants container not found');
     return;
   }
+  if (!pageContainer.classList.contains('on') && !pageContainer.classList.contains('active') && !pageIsCurrentlyVisible('restaurants')) {
+    console.warn('renderRestaurants blocked because restaurants page is not active');
+    return;
+  }
 
   var session = window.__userSession || {};
   var sessionOrgsRaw = Array.isArray(session.organizations) ? session.organizations.slice() : [];
@@ -4261,12 +4354,14 @@ function renderRestaurants(){
   });
 
   pageContainer.classList.add('on');
+  pageContainer.classList.add('active');
   pageContainer.classList.remove('gone', 'hidden');
   pageContainer.style.display = 'block';
   pageContainer.style.visibility = 'visible';
   pageContainer.style.opacity = '1';
 
   pageContainer.innerHTML = ''
+    +'<div data-org-shell="true">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">'
       +'<div>'
         +'<div style="font-size:28px;font-weight:800;line-height:1.1;">Организации</div>'
@@ -4279,7 +4374,8 @@ function renderRestaurants(){
       +'<button class="tbBtn" onclick="setOrganizationListFilter(\'archived\')" style="cursor:pointer;'+(orgFilter === 'archived' ? 'background:#5ba3f5;color:#fff;border-color:#5ba3f5;' : '')+'">Архив</button>'
       +'<button class="tbBtn" onclick="setOrganizationListFilter(\'deleted\')" style="cursor:pointer;'+(orgFilter === 'deleted' ? 'background:#5ba3f5;color:#fff;border-color:#5ba3f5;' : '')+'">Удалённые</button>'
     +'</div>'
-    +'<div id="orgsStableRoot" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px;"></div>';
+    +'<div data-org-shell-root="true" id="orgsStableRoot" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px;"></div>'
+    +'</div>';
 
   var root = pageContainer.querySelector('#orgsStableRoot');
   if (!root) {
@@ -12132,8 +12228,21 @@ document.addEventListener('DOMContentLoaded',function(){
   }
 
   wrapSafe('renderRestaurants', '#pg-restaurants', 'Организации');
-  wrapSafe('renderSuppliers', '#pg-suppliers', 'Поставщики');
   wrapSafe('renderOwner', '#pg-owner', 'Панель владельца');
   wrapSafe('buildNav');
   wrapSafe('setupUI');
 })();
+
+window.runPageIsolationTest = function() {
+  return {
+    activePage: typeof getActivePageId === 'function' ? getActivePageId() : (document.querySelector('.page.on, .page.active') ? String((document.querySelector('.page.on, .page.active').id || '')).replace(/^pg-/, '') : ''),
+    orgBlocks: Array.prototype.map.call(document.querySelectorAll('#orgsStableRoot'), function (el) {
+      var page = el.closest('.page');
+      return page ? page.id : null;
+    }),
+    suppliersPageHasOrganizations: !!document.querySelector('#pg-suppliers #orgsStableRoot'),
+    catalogPageHasOrganizations: !!document.querySelector('#pg-catalog #orgsStableRoot'),
+    cartPageHasOrganizations: !!document.querySelector('#pg-cart #orgsStableRoot'),
+    restaurantsPageHasOrganizations: !!document.querySelector('#pg-restaurants #orgsStableRoot')
+  };
+};
