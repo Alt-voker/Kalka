@@ -1892,6 +1892,15 @@ function normalizeLegalEntityIds(values) {
     });
 }
 window.normalizeLegalEntityIds = normalizeLegalEntityIds;
+function setSupplierPriceSaveEnabled(enabled, reason) {
+  var btn = document.getElementById('supPriceUploadBtn');
+  if (!btn) return;
+  btn.disabled = !enabled;
+  btn.title = enabled ? '' : (reason || 'Сначала дождитесь загрузки юрлиц');
+  btn.style.opacity = enabled ? '' : '0.6';
+  btn.style.cursor = enabled ? 'pointer' : 'not-allowed';
+}
+window.setSupplierPriceSaveEnabled = setSupplierPriceSaveEnabled;
 function renderSuppliers(){
   try {
     var page = document.querySelector('#pg-suppliers');
@@ -7973,6 +7982,10 @@ async function persistSupplierPriceImportToSupabase(importRows){
   if (!organizationId) throw new Error('Не выбрана организация');
   var rawLegalEntityValues = Array.isArray(_supPriceLegalEntityNames) ? _supPriceLegalEntityNames.slice() : [];
   var legalEntityIds = normalizeLegalEntityIds(Array.isArray(_supPriceLegalEntityIds) ? _supPriceLegalEntityIds.slice() : []);
+  console.info('price legal entity selection before save', {
+    raw: window._supPriceLegalEntityIds,
+    normalized: normalizeLegalEntityIds(window._supPriceLegalEntityIds)
+  });
   var title = String((document.getElementById('supPriceName') || { value: '' }).value || '').trim() || (_supPriceAppend ? 'Дополнительный прайс' : 'Основной прайс');
   var sourceFilename = String(_supPriceImportFileName || (window.__supplierPriceContext && window.__supplierPriceContext.source_filename) || '').trim();
   var uploadedBy = String((window.__userSession && window.__userSession.profileId) || (window.__userSession && window.__userSession.currentUser && window.__userSession.currentUser.profileId) || '').trim();
@@ -8083,6 +8096,7 @@ function selectSupPriceSheet(sheetName){
 function openSupPriceUpload(supName, append){
   _currentSupName = supName;
   _supPriceAppend = append;
+  setSupplierPriceSaveEnabled(false, 'Загрузка юрлиц...');
   var db = dbGet();
   var currentOrgId = getCurrentPriceOrganizationId(db);
   var orgs = getAccessibleOrganizations(db);
@@ -8127,7 +8141,20 @@ function openSupPriceUpload(supName, append){
       ? 'Выберите организацию, затем отметьте юр. лица, для которых действует этот прайс.'
       : 'Не найдено доступных организаций для загрузки прайса.';
   }
-  renderSupPriceLegalList(_supPriceOrganizationId, db);
+  if (_supPriceOrganizationId && typeof window.loadLegalEntitiesForOrganization === 'function') {
+    listEl.innerHTML = '<div style="color:var(--t3);padding:8px;font-size:12px;">Загрузка юр. лиц...</div>';
+    window.loadLegalEntitiesForOrganization(_supPriceOrganizationId).then(function (items) {
+      if (window.__userSession) {
+        window.__userSession.legalEntities = Array.isArray(items) ? items.slice() : [];
+      }
+      renderSupPriceLegalList(_supPriceOrganizationId, dbGet());
+    }).catch(function (error) {
+      console.warn('owner_list_legal_entities failed for price upload', error);
+      renderSupPriceLegalList(_supPriceOrganizationId, dbGet());
+    });
+  } else {
+    renderSupPriceLegalList(_supPriceOrganizationId, db);
+  }
   var fi=document.getElementById('supPriceFile'); if(fi)fi.value='';
   var err=document.getElementById('supPriceErr'); if(err)err.textContent='';
   _supPriceImportBook = null;
@@ -8146,6 +8173,10 @@ function openSupPriceUpload(supName, append){
 function selectAllSupPriceComps(val){
   document.querySelectorAll('.sup-price-comp-cb').forEach(function(cb){cb.checked=val;});
   syncSupPriceLegalSelection();
+  console.info('price legal entity selection changed', {
+    rawValues: Array.from(document.querySelectorAll('.sup-price-comp-cb:checked')).map(function (cb) { return String(cb.value || '').trim(); }),
+    normalizedIds: Array.isArray(_supPriceLegalEntityIds) ? _supPriceLegalEntityIds.slice() : []
+  });
 }
 
 function syncSupPriceLegalSelection(){
@@ -8479,31 +8510,31 @@ function renderSupPriceLegalList(orgId, db){
   var listEl = document.getElementById('supPriceCompList');
   if(!listEl) return;
   var legalEntities = getOrganizationLegalEntities(orgId || _supPriceOrganizationId, db);
+  var resolvedOrgId = String(orgId || _supPriceOrganizationId || '').trim();
   if(!legalEntities.length){
-    var lazyOrgId = String(orgId || _supPriceOrganizationId || '').trim();
-    if(window.loadLegalEntitiesForOrganization && lazyOrgId && !window.__loginInProgress && !window.__restoreInProgress){
+    if(window.loadLegalEntitiesForOrganization && resolvedOrgId && !window.__loginInProgress && !window.__restoreInProgress){
       listEl.innerHTML = '<div style="color:var(--t3);padding:8px;font-size:12px;">Загрузка юр. лиц...</div>';
-      window.loadLegalEntitiesForOrganization(lazyOrgId).then(function(items){
-        if(!Array.isArray(items) || !items.length) {
-          listEl.innerHTML = '<div style="color:var(--t3);padding:8px;font-size:12px;">У выбранной организации нет настроенных юр. лиц.</div>';
-          return;
-        }
+      setSupplierPriceSaveEnabled(false, 'Загрузка юрлиц...');
+      window.loadLegalEntitiesForOrganization(resolvedOrgId).then(function(items){
+        items = Array.isArray(items) ? items : [];
         if(window.__userSession){
           window.__userSession.legalEntities = items.slice();
           window.__userSession.activeLegalEntities = items.filter(function(item){
-            return String(item.organization_id || '') === String(lazyOrgId || '');
+            return String(item.organization_id || '') === String(resolvedOrgId || '');
           });
           window.__userSession.activeLegalEntityIds = window.__userSession.activeLegalEntities.map(function(item){ return item.id; });
           window.__userSession.activeLegalEntityNames = window.__userSession.activeLegalEntities.map(function(item){ return item.name; });
         }
-        renderSupPriceLegalList(lazyOrgId, dbGet());
+        renderSupPriceLegalList(resolvedOrgId, dbGet());
       }).catch(function(error){
-        console.warn('lazy legal_entities load failed for price upload', error);
-        listEl.innerHTML = '<div style="color:var(--t3);padding:8px;font-size:12px;">У выбранной организации нет настроенных юр. лиц.</div>';
+        console.warn('owner_list_legal_entities failed for price upload', error);
+        listEl.innerHTML = '<div style="color:var(--t3);padding:8px;font-size:12px;">Сначала добавьте юрлицо в карточке организации</div>';
+        setSupplierPriceSaveEnabled(false, 'Сначала добавьте юрлицо в карточке организации');
       });
       return;
     }
-    listEl.innerHTML = '<div style="color:var(--t3);padding:8px;font-size:12px;">У выбранной организации нет настроенных юр. лиц.</div>';
+    listEl.innerHTML = '<div style="color:var(--t3);padding:8px;font-size:12px;">Сначала добавьте юрлицо в карточке организации</div>';
+    setSupplierPriceSaveEnabled(false, 'Сначала добавьте юрлицо в карточке организации');
     return;
   }
   listEl.innerHTML = legalEntities.map(function(le){
@@ -8519,6 +8550,7 @@ function renderSupPriceLegalList(orgId, db){
     listEl.onchange = syncSupPriceLegalSelection;
   }
   syncSupPriceLegalSelection();
+  setSupplierPriceSaveEnabled(true);
 }
 
 
