@@ -779,6 +779,32 @@
         window.SUPPLIERS = suppliers.slice();
         window.SUPS_DATA = suppliers.slice();
       }
+      if (typeof window.findSupplierByIdFromRuntime !== 'function') {
+        window.findSupplierByIdFromRuntime = function (supplierId) {
+          var id = String(supplierId || '').trim();
+          if (!id) return null;
+          var runtime = window.__supplierRuntime || {};
+          var lists = [
+            runtime.byId instanceof Map ? runtime.byId : null,
+            Array.isArray(runtime.suppliers) ? runtime.suppliers : [],
+            Array.isArray(window.SUPPLIERS) ? window.SUPPLIERS : [],
+            Array.isArray(window.SUPS_DATA) ? window.SUPS_DATA : []
+          ];
+          if (lists[0] && typeof lists[0].get === 'function') {
+            var fromMap = lists[0].get(id);
+            if (fromMap) return fromMap;
+          }
+          for (var li = 1; li < lists.length; li++) {
+            var list = lists[li] || [];
+            for (var i = 0; i < list.length; i++) {
+              var row = list[i] || {};
+              var rowId = String(row._id || row.id || row.supplier_id || row.supplierId || '').trim();
+              if (rowId === id) return row;
+            }
+          }
+          return null;
+        };
+      }
       try {
         if (window.performance && window.performance.mark) window.performance.mark('suppliers_load_success');
       } catch (markError) {}
@@ -2634,6 +2660,32 @@
         } else {
           window.SUPS_DATA = runtimeDb.supsData.slice();
           window.SUPPLIERS = runtimeDb.supsData.slice();
+        }
+        if (typeof window.findSupplierByIdFromRuntime !== 'function') {
+          window.findSupplierByIdFromRuntime = function (supplierId) {
+            var id = String(supplierId || '').trim();
+            if (!id) return null;
+            var runtime = window.__supplierRuntime || {};
+            var lists = [
+              runtime.byId instanceof Map ? runtime.byId : null,
+              Array.isArray(runtime.suppliers) ? runtime.suppliers : [],
+              Array.isArray(window.SUPPLIERS) ? window.SUPPLIERS : [],
+              Array.isArray(window.SUPS_DATA) ? window.SUPS_DATA : []
+            ];
+            if (lists[0] && typeof lists[0].get === 'function') {
+              var fromMap = lists[0].get(id);
+              if (fromMap) return fromMap;
+            }
+            for (var li = 1; li < lists.length; li++) {
+              var list = lists[li] || [];
+              for (var i = 0; i < list.length; i++) {
+                var row = list[i] || {};
+                var rowId = String(row._id || row.id || row.supplier_id || row.supplierId || '').trim();
+                if (rowId === id) return row;
+              }
+            }
+            return null;
+          };
         }
       } catch (runtimeError) {
         console.error('Failed to refresh supplier runtime after save:', runtimeError);

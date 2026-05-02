@@ -2088,7 +2088,7 @@ function ensureSupplierDetailsModal(){
       +'<div id="supDetailsBody" style="display:grid;gap:12px;margin-top:14px;"></div>'
       +'<div class="m-acts" style="margin-top:18px;">'
         +'<button class="m-ok" data-supplier-action="edit" onclick="openSupplierModal(window.__supplierDetailsIndex)">Редактировать</button>'
-        +'<button class="m-ok" data-supplier-action="prices" style="background:#5ba3f5;color:#fff;" onclick="if(window.__supplierDetailsIndex!==undefined){var s=Array.isArray(SUPS_DATA)?SUPS_DATA[window.__supplierDetailsIndex]:null;if(s&&typeof openSupPriceUpload===\'function\'){openSupPriceUpload(s.name,false);} }">Прайсы</button>'
+        +'<button class="m-ok" data-supplier-action="prices" style="background:#5ba3f5;color:#fff;" onclick="if(window.__supplierDetailsIndex!==undefined){var rt=(window.__supplierRuntime&&Array.isArray(window.__supplierRuntime.suppliers))?window.__supplierRuntime.suppliers:[];var s=rt[window.__supplierDetailsIndex]||((Array.isArray(SUPS_DATA)?SUPS_DATA:[])[window.__supplierDetailsIndex])||null;if(s&&typeof openSupPriceUpload===\'function\'){openSupPriceUpload(s.name,false);}else{toast(\'Прайсы будут подключены на следующем этапе\',\'warn\');}}">Прайсы</button>'
         +'<button class="m-ok" data-supplier-action="archive" style="background:var(--bg3);color:var(--tx);border-color:var(--br);" onclick="archiveSupplierFromCard(window.__supplierDetailsIndex)">Архивировать</button>'
         +'<button class="m-cancel" onclick="closeSupplierDetailsModal()">Закрыть</button>'
       +'</div>'
@@ -2101,7 +2101,9 @@ function closeSupplierDetailsModal(){
   if(el) el.classList.remove('on');
 }
 function openSupplierDetailsModal(index){
-  var supplier = Array.isArray(SUPS_DATA) ? SUPS_DATA[index] : null;
+  var runtime = ensureSupplierRuntime();
+  var supplier = Array.isArray(runtime.suppliers) ? runtime.suppliers[index] : null;
+  if(!supplier && Array.isArray(SUPS_DATA)) supplier = SUPS_DATA[index] || null;
   if(!supplier){ toast('Поставщик не найден','err'); return; }
   window.__supplierDetailsIndex = index;
   var modal=ensureSupplierDetailsModal();
@@ -2135,7 +2137,9 @@ window.openSupplierDetailsModal = openSupplierDetailsModal;
 window.closeSupplierDetailsModal = closeSupplierDetailsModal;
 window.openSupplierDetails = function(index){ openSupplierDetailsModal(index); };
 window.archiveSupplierFromCard = async function(index){
-  var supplier = Array.isArray(SUPS_DATA) ? SUPS_DATA[index] : null;
+  var runtime = ensureSupplierRuntime();
+  var supplier = Array.isArray(runtime.suppliers) ? runtime.suppliers[index] : null;
+  if(!supplier && Array.isArray(SUPS_DATA)) supplier = SUPS_DATA[index] || null;
   if(!supplier) { toast('Поставщик не найден','err'); return false; }
   var activeOrgId = String((window.__userSession && window.__userSession.activeOrganizationId) || supplier.organizationId || supplier.organization_id || '').trim();
   try {
@@ -2143,7 +2147,8 @@ window.archiveSupplierFromCard = async function(index){
       throw new Error('Недостаточно прав');
     }
     if (typeof window.ownerArchiveSupplier !== 'function') throw new Error('RPC архивации поставщика недоступен');
-    var result = await window.ownerArchiveSupplier({ target_supplier_id: supplier.id, target_organization_id: activeOrgId });
+    var supplierPk = String((supplier && (supplier._id || supplier.id || supplier.supplier_id || supplier.supplierId)) || '').trim();
+    var result = await window.ownerArchiveSupplier({ target_supplier_id: supplierPk, target_organization_id: activeOrgId });
     if (!result || !result.length) {
       // keep silent if rpc returns single row as object
     }
@@ -2161,7 +2166,7 @@ window.archiveSupplierFromCard = async function(index){
     }
     renderSuppliers();
     if (typeof window.toast === 'function') window.toast('Поставщик архивирован', 'ok');
-    console.info('supplier mutation success', { action: 'archive', supplierId: supplier.id });
+    console.info('supplier mutation success', { action: 'archive', supplierId: supplierPk });
     return true;
   } catch (error) {
     console.error('archiveSupplierFromCard failed', { index: index, error: error, message: error && error.message, stack: error && error.stack });
@@ -3641,28 +3646,53 @@ function ensureSupplierGridActionBinding(){
     var action = String(btn.dataset.supplierAction || '').trim();
     var supplierId = String(btn.dataset.supplierId || '').trim();
     try {
-      var index = getSupplierActionSupplierIndex(action, supplierId);
-      var supplier = index >= 0 ? SUPS_DATA[index] : null;
-      console.info('supplier action clicked', { action: action, supplierId: supplierId, supplier: supplier });
+      var supplier = window.findSupplierByIdFromRuntime ? window.findSupplierByIdFromRuntime(supplierId) : null;
+      var runtimeList = window.__supplierRuntime && Array.isArray(window.__supplierRuntime.suppliers) ? window.__supplierRuntime.suppliers : [];
+      var index = supplier ? runtimeList.findIndex(function (item) {
+        var itemId = String(item && (item._id || item.id || item.supplier_id || item.supplierId) || '').trim();
+        return itemId === supplierId;
+      }) : -1;
+      console.info('supplier action clicked', {
+        action: action,
+        supplierId: supplierId,
+        supplier: supplier,
+        runtimeCount: runtimeList.length,
+        availableIds: runtimeList.map(function (item) { return String(item && (item._id || item.id || item.supplier_id || item.supplierId) || '').trim(); }).filter(Boolean)
+      });
       if(action === 'open'){
         if(index >= 0) return openSupplierDetailsModal(index);
+        if (supplier) return openSupplierDetailsModal(index);
         throw new Error('Поставщик не найден');
       }
       if(action === 'edit'){
         if(index >= 0) return openSupplierModal(index);
+        if (supplier) return openSupplierModal(index);
         throw new Error('Поставщик не найден');
       }
       if(action === 'archive'){
         if(index >= 0) return archiveSupplierFromCard(index);
+        if (supplier) return archiveSupplierFromCard(index);
         throw new Error('Поставщик не найден');
       }
       if(action === 'prices'){
-        var supplier = index >= 0 ? SUPS_DATA[index] : null;
         if(supplier && typeof openSupPriceUpload === 'function') return openSupPriceUpload(supplier.name, false);
-        throw new Error('Прайсы недоступны');
+        if (supplier) {
+          toast('Прайсы будут подключены на следующем этапе', 'warn');
+          return;
+        }
+        throw new Error('Поставщик не найден');
+      }
+      if(action === 'delete'){
+        if (window.CU && window.CU.role === 'owner' && supplier) {
+          if (confirm('Удалить поставщика? Он будет скрыт из платформы.')) {
+            return archiveSupplierFromCard(index);
+          }
+          return;
+        }
+        throw new Error('Недостаточно прав');
       }
     } catch (error) {
-      var ids = Array.isArray(SUPS_DATA) ? SUPS_DATA.map(function (item) {
+      var ids = window.__supplierRuntime && Array.isArray(window.__supplierRuntime.suppliers) ? window.__supplierRuntime.suppliers.map(function (item) {
         return String((item && (item._id || item.id || item.supplier_id || item.supplierId)) || '').trim();
       }).filter(Boolean) : [];
       var uiMessage = error && error.message === 'Поставщик не найден'
@@ -3711,7 +3741,10 @@ function closeSupplierModal(){
 }
 function openSupplierModal(index, presetRestId){
   var db=dbGet();
-  var supplier=(typeof index==='number' && index>=0)?SUPS_DATA[index]:null;
+  var runtime = ensureSupplierRuntime();
+  var supplier=(typeof index==='number' && index>=0)
+    ? (Array.isArray(runtime.suppliers) && runtime.suppliers[index]) || (Array.isArray(SUPS_DATA) && SUPS_DATA[index]) || null
+    : null;
   if(supplier && !canManageSupplierRecord(CU, supplier, db)){toast('У вас нет прав на редактирование этого поставщика','err');return;}
   var title=document.querySelector('#ov-addSup .m-title');
   if(title) title.textContent=supplier?'Редактировать поставщика':'Добавить поставщика';
@@ -3738,7 +3771,10 @@ function openSupplierModal(index, presetRestId){
 function submitSup(){
   var db=dbGet();
   var editId=(document.getElementById('as-edit-id')||{value:''}).value;
-  var existing=(editId!=='' && SUPS_DATA[Number(editId)])?SUPS_DATA[Number(editId)]:null;
+  var runtime = ensureSupplierRuntime();
+  var existing=(editId!=='' && Array.isArray(runtime.suppliers) && runtime.suppliers[Number(editId)])
+    ? runtime.suppliers[Number(editId)]
+    : ((editId!=='' && SUPS_DATA[Number(editId)]) ? SUPS_DATA[Number(editId)] : null);
   var n=(document.getElementById('as-n')||{value:''}).value.trim();
   if(!n){toast('Укажите название','err');return;}
   var emoji=(document.getElementById('as-em2')||{value:'🏭'}).value||'🏭';
