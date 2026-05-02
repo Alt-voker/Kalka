@@ -196,6 +196,7 @@ as $$
 declare
   v_org_id uuid;
   v_new_id uuid;
+  v_new_row public.supplier_price_lists%rowtype;
 begin
   select s.organization_id into v_org_id
   from public.suppliers s
@@ -261,9 +262,66 @@ begin
       status = 'active';
   end if;
 
+  select
+    spl.id,
+    spl.organization_id,
+    spl.supplier_id,
+    coalesce(nullif(spl.title, ''), nullif(spl.name, ''), 'Прайс-лист') as title,
+    coalesce(nullif(spl.name, ''), nullif(spl.title, ''), 'Прайс-лист') as name,
+    coalesce(spl.source_filename, '') as source_filename,
+    spl.uploaded_by,
+    coalesce(spl.status, 'active') as status,
+    spl.created_at,
+    spl.updated_at,
+    coalesce((
+      select count(*)::integer
+      from public.supplier_price_items spi
+      where spi.price_list_id = spl.id
+        and coalesce(spi.status, 'active') <> 'deleted'
+    ), 0) as item_count,
+    coalesce((
+      select array_agg(distinct le.id)
+      from public.supplier_price_list_legal_entities sple
+      join public.legal_entities le
+        on le.id = sple.legal_entity_id
+       and le.organization_id = v_org_id
+       and coalesce(le.status, 'active') <> 'deleted'
+      where sple.price_list_id = spl.id
+        and sple.organization_id = v_org_id
+        and coalesce(sple.status, 'active') <> 'deleted'
+    ), '{}'::uuid[]) as legal_entity_ids,
+    coalesce((
+      select array_agg(distinct le.name)
+      from public.supplier_price_list_legal_entities sple
+      join public.legal_entities le
+        on le.id = sple.legal_entity_id
+       and le.organization_id = v_org_id
+       and coalesce(le.status, 'active') <> 'deleted'
+      where sple.price_list_id = spl.id
+        and sple.organization_id = v_org_id
+        and coalesce(sple.status, 'active') <> 'deleted'
+    ), '{}'::text[]) as legal_entity_names
+  into v_new_row
+  from public.supplier_price_lists spl
+  where spl.id = v_new_id
+    and spl.organization_id = v_org_id
+    and coalesce(spl.status, 'active') <> 'deleted';
+
   return query
-  select * from public.owner_list_supplier_price_lists(target_supplier_id, v_org_id) pl
-  where pl.id = v_new_id;
+  select
+    v_new_row.id,
+    v_new_row.organization_id,
+    v_new_row.supplier_id,
+    v_new_row.title,
+    v_new_row.name,
+    v_new_row.source_filename,
+    v_new_row.uploaded_by,
+    v_new_row.status,
+    v_new_row.created_at,
+    v_new_row.updated_at,
+    v_new_row.item_count,
+    v_new_row.legal_entity_ids,
+    v_new_row.legal_entity_names;
 end;
 $$;
 
@@ -313,11 +371,38 @@ begin
    where spl.id = target_price_list_id
      and spl.organization_id = v_org_id;
   return query
-  select * from public.owner_list_supplier_price_lists(
-    (select spl.supplier_id from public.supplier_price_lists spl where spl.id = target_price_list_id),
-    v_org_id
-  ) pl
-  where pl.id = target_price_list_id;
+  select
+    spl.id,
+    spl.organization_id,
+    spl.supplier_id,
+    coalesce(nullif(spl.title, ''), nullif(spl.name, ''), 'Прайс-лист') as title,
+    coalesce(nullif(spl.name, ''), nullif(spl.title, ''), 'Прайс-лист') as name,
+    coalesce(spl.source_filename, '') as source_filename,
+    spl.uploaded_by,
+    coalesce(spl.status, 'active') as status,
+    spl.created_at,
+    spl.updated_at,
+    coalesce((
+      select count(*)::integer
+      from public.supplier_price_items spi
+      where spi.price_list_id = spl.id
+        and coalesce(spi.status, 'active') <> 'deleted'
+    ), 0) as item_count,
+    coalesce(array_agg(distinct le.id) filter (where le.id is not null), '{}'::uuid[]) as legal_entity_ids,
+    coalesce(array_agg(distinct le.name) filter (where le.id is not null), '{}'::text[]) as legal_entity_names
+  from public.supplier_price_lists spl
+  left join public.supplier_price_list_legal_entities sple
+    on sple.price_list_id = spl.id
+   and sple.organization_id = v_org_id
+   and coalesce(sple.status, 'active') <> 'deleted'
+  left join public.legal_entities le
+    on le.id = sple.legal_entity_id
+   and le.organization_id = v_org_id
+   and coalesce(le.status, 'active') <> 'deleted'
+  where spl.id = target_price_list_id
+    and spl.organization_id = v_org_id
+    and coalesce(spl.status, 'active') <> 'deleted'
+  group by spl.id, spl.organization_id, spl.supplier_id, spl.title, spl.name, spl.source_filename, spl.uploaded_by, spl.status, spl.created_at, spl.updated_at;
 end;
 $$;
 
