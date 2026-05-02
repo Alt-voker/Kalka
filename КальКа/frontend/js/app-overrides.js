@@ -768,6 +768,17 @@
       var suppliers = (Array.isArray(response.data) ? response.data : []).map(normalizeSupplierRow).filter(Boolean);
       cache.suppliersByOrg[orgId] = suppliers.slice();
       delete cache.suppliersErrorsByOrg[orgId];
+      if (typeof window.syncSupplierRuntime === 'function') {
+        window.syncSupplierRuntime(suppliers);
+      } else {
+        window.__supplierRuntime = window.__supplierRuntime || {};
+        window.__supplierRuntime.suppliers = suppliers.slice();
+        window.__supplierRuntime.byId = new Map(suppliers.map(function (item) {
+          return [String(item && (item._id || item.id || item.supplier_id || item.supplierId) || '').trim(), item];
+        }));
+        window.SUPPLIERS = suppliers.slice();
+        window.SUPS_DATA = suppliers.slice();
+      }
       try {
         if (window.performance && window.performance.mark) window.performance.mark('suppliers_load_success');
       } catch (markError) {}
@@ -2618,7 +2629,12 @@
         var runtimeDb = ensureArrays(window._dbCache || getDefaults());
         runtimeDb.supsData = refreshedSuppliers.map(mapSupplierRowToLegacy);
         syncRuntime(runtimeDb);
-        window.SUPS_DATA = runtimeDb.supsData.slice();
+        if (typeof window.syncSupplierRuntime === 'function') {
+          window.syncSupplierRuntime(refreshedSuppliers);
+        } else {
+          window.SUPS_DATA = runtimeDb.supsData.slice();
+          window.SUPPLIERS = runtimeDb.supsData.slice();
+        }
       } catch (runtimeError) {
         console.error('Failed to refresh supplier runtime after save:', runtimeError);
       }

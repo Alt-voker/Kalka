@@ -32,6 +32,26 @@
     return text;
   };
 
+  window.renderSupplierLegalEntityOptions ||= function (selectedIds) {
+    var legalEntities =
+      (window.__legalEntitiesRuntime && Array.isArray(window.__legalEntitiesRuntime.items) && window.__legalEntitiesRuntime.items) ||
+      (window.__userSession && Array.isArray(window.__userSession.legalEntities) && window.__userSession.legalEntities) ||
+      [];
+
+    if (!Array.isArray(legalEntities) || legalEntities.length === 0) {
+      return '<option value="">Юрлица не добавлены</option>';
+    }
+
+    var selectedSet = new Set((selectedIds || []).map(function (item) { return String(item); }));
+
+    return legalEntities.map(function (le) {
+      var id = le && (le.id || le.legal_entity_id || le.legalEntityId || '');
+      var name = le && (le.name || le.title) || 'Юрлицо без названия';
+      var selected = selectedSet.has(String(id)) ? 'selected' : '';
+      return '<option value="' + String(id).replace(/"/g, '&quot;') + '" ' + selected + '>' + String(name).replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</option>';
+    }).join('');
+  };
+
   window.safeRender ||= function(name, fn, onError) {
     try {
       return fn();
@@ -61,7 +81,8 @@
       hasPermissionHelper: typeof window.hasPermission === 'function',
       hasNormalizeRoleSafe: typeof window.normalizeRoleSafe === 'function',
       hasDataCache: typeof window.getDataCache === 'function',
-      hasSafeSupplierText: typeof window.safeSupplierText === 'function'
+      hasSafeSupplierText: typeof window.safeSupplierText === 'function',
+      hasRenderSupplierLegalEntityOptions: typeof window.renderSupplierLegalEntityOptions === 'function'
     };
   };
 

@@ -1813,6 +1813,75 @@ function safeSupplierText(value, fallback) {
   if (!text || text === 'undefined' || text === 'null') return fallback;
   return text;
 }
+function ensureSupplierRuntime() {
+  if (!window.__supplierRuntime || typeof window.__supplierRuntime !== 'object') {
+    window.__supplierRuntime = {};
+  }
+  if (!Array.isArray(window.__supplierRuntime.suppliers)) {
+    window.__supplierRuntime.suppliers = [];
+  }
+  if (!(window.__supplierRuntime.byId instanceof Map)) {
+    window.__supplierRuntime.byId = new Map();
+  }
+  return window.__supplierRuntime;
+}
+function syncSupplierRuntime(suppliers) {
+  var normalized = Array.isArray(suppliers) ? suppliers.map(function (item) {
+    var supplier = Object.assign({}, item || {});
+    supplier._id = String(supplier._id || supplier.id || supplier.supplier_id || supplier.supplierId || '').trim();
+    if (!supplier.id) supplier.id = supplier._id;
+    return supplier;
+  }).filter(function (item) { return !!String(item._id || '').trim(); }) : [];
+  var runtime = ensureSupplierRuntime();
+  runtime.suppliers = normalized.slice();
+  runtime.byId = new Map(normalized.map(function (item) {
+    return [String(item._id || '').trim(), item];
+  }));
+  window.SUPPLIERS = normalized.slice();
+  window.SUPS_DATA = normalized.slice();
+  return normalized;
+}
+window.ensureSupplierRuntime = ensureSupplierRuntime;
+window.syncSupplierRuntime = syncSupplierRuntime;
+window.findSupplierByIdFromRuntime = findSupplierByIdFromRuntime;
+function findSupplierByIdFromRuntime(supplierId) {
+  var id = String(supplierId || '').trim();
+  if (!id) return null;
+  var runtime = ensureSupplierRuntime();
+  if (runtime.byId && typeof runtime.byId.get === 'function') {
+    var fromMap = runtime.byId.get(id);
+    if (fromMap) return fromMap;
+  }
+  var sources = [
+    runtime.suppliers,
+    window.SUPPLIERS,
+    window.SUPS_DATA
+  ];
+  for (var s = 0; s < sources.length; s++) {
+    var list = Array.isArray(sources[s]) ? sources[s] : [];
+    for (var i = 0; i < list.length; i++) {
+      var row = list[i] || {};
+      var rowId = String(row._id || row.id || row.supplier_id || row.supplierId || '').trim();
+      if (rowId === id) return row;
+    }
+  }
+  return null;
+}
+function renderSupplierLegalEntityOptions(selectedIds) {
+  var legalEntities = (window.__legalEntitiesRuntime && Array.isArray(window.__legalEntitiesRuntime.items) && window.__legalEntitiesRuntime.items) ||
+    (window.__userSession && Array.isArray(window.__userSession.legalEntities) && window.__userSession.legalEntities) || [];
+  if (!Array.isArray(legalEntities) || !legalEntities.length) {
+    return '<option value="">Юрлица не добавлены</option>';
+  }
+  var selectedSet = new Set((selectedIds || []).map(function (item) { return String(item); }));
+  return legalEntities.map(function (le) {
+    var id = le && (le.id || le.legal_entity_id || le.legalEntityId || '');
+    var name = le && (le.name || le.title) || 'Юрлицо без названия';
+    var selected = selectedSet.has(String(id)) ? 'selected' : '';
+    return '<option value="'+_esc(String(id))+'" '+selected+'>'+_esc(String(name))+'</option>';
+  }).join('');
+}
+window.renderSupplierLegalEntityOptions = renderSupplierLegalEntityOptions;
 function renderSuppliers(){
   try {
     var page = document.querySelector('#pg-suppliers');
@@ -1921,6 +1990,7 @@ function renderSuppliers(){
       item._id = String(item._id || item.id || item.supplier_id || item.supplierId || '').trim();
       return item;
     });
+    syncSupplierRuntime(normalizedVisible);
     var cards=normalizedVisible.map(function(s){
       var i=Array.isArray(sessionSuppliers) ? sessionSuppliers.findIndex(function(item){
         var itemId = String((item && (item._id || item.id || item.supplier_id || item.supplierId)) || '').trim();
@@ -1966,7 +2036,7 @@ function renderSuppliers(){
     grid.innerHTML=cards+addBtn;
     console.info('supplier cards rendered', normalizedVisible.length);
   } catch (error) {
-    console.error('renderSuppliers failed', error, error && error.stack);
+      console.error('renderSuppliers failed', error, error && error.stack);
     var page = document.querySelector('#pg-suppliers');
     if (!page) return;
     page.classList.add('on');
@@ -1992,12 +2062,14 @@ window.runSupplierModuleSelfTest = function () {
   var page = document.querySelector('#pg-suppliers');
   var cards = page ? page.querySelectorAll('.sup-card') : [];
   var actionButtons = page ? page.querySelectorAll('[data-supplier-action]') : [];
+  var runtime = ensureSupplierRuntime();
   return {
     suppliersPageVisible: !!(page && (page.classList.contains('on') || page.classList.contains('active'))),
-    suppliersCount: Array.isArray(window.SUPS_DATA) ? window.SUPS_DATA.length : 0,
+    suppliersCount: Array.isArray(runtime.suppliers) ? runtime.suppliers.length : 0,
     hasSupplierCards: !!cards.length,
     hasActionButtons: !!actionButtons.length,
-    safeSupplierTextAvailable: typeof window.safeSupplierText === 'function'
+    safeSupplierTextAvailable: typeof window.safeSupplierText === 'function',
+    runtimeIds: runtime.byId instanceof Map ? Array.from(runtime.byId.keys()) : []
   };
 };
 
@@ -3542,11 +3614,19 @@ function normalizeSupplierLegalEntityIds(supplier){
 
 function getSupplierActionSupplierIndex(action, supplierId){
   var id = String(supplierId || '').trim();
-  if (!id || !Array.isArray(SUPS_DATA)) return -1;
-  for (var i = 0; i < SUPS_DATA.length; i++) {
-    var row = SUPS_DATA[i] || {};
-    var rowId = String(row._id || row.id || row.supplier_id || row.supplierId || '').trim();
-    if (rowId === id) return i;
+  var runtime = ensureSupplierRuntime();
+  var sources = [
+    runtime.suppliers,
+    window.SUPPLIERS,
+    window.SUPS_DATA
+  ];
+  for (var s = 0; s < sources.length; s++) {
+    var list = Array.isArray(sources[s]) ? sources[s] : [];
+    for (var i = 0; i < list.length; i++) {
+      var row = list[i] || {};
+      var rowId = String(row._id || row.id || row.supplier_id || row.supplierId || '').trim();
+      if (rowId === id) return i;
+    }
   }
   return -1;
 }
