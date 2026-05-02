@@ -8097,6 +8097,8 @@ function openSupPriceUpload(supName, append){
   _currentSupName = supName;
   _supPriceAppend = append;
   setSupplierPriceSaveEnabled(false, 'Загрузка юрлиц...');
+  window.__supPriceLegalEntities = [];
+  window.__supPriceLegalEntitiesLoading = true;
   var db = dbGet();
   var currentOrgId = getCurrentPriceOrganizationId(db);
   var orgs = getAccessibleOrganizations(db);
@@ -8133,7 +8135,35 @@ function openSupPriceUpload(supName, append){
     }).join('');
     orgSelect.onchange = function(){
       _supPriceOrganizationId = this.value || '';
+      window.__supPriceLegalEntities = [];
+      window.__supPriceLegalEntitiesLoading = true;
       renderSupPriceLegalList(_supPriceOrganizationId, dbGet());
+      if (_supPriceOrganizationId && typeof window.ownerListLegalEntities === 'function') {
+        setSupplierPriceSaveEnabled(false, 'Загрузка юрлиц...');
+        Promise.resolve(window.ownerListLegalEntities(_supPriceOrganizationId)).then(function (result) {
+          var loaded = Array.isArray(result && result.data)
+            ? result.data
+            : Array.isArray(result)
+              ? result
+              : [];
+          window.__supPriceLegalEntities = loaded.slice();
+          window.__supPriceLegalEntitiesLoading = false;
+          console.info('supplier price legal entities loaded', {
+            organizationId: _supPriceOrganizationId,
+            count: window.__supPriceLegalEntities.length,
+            legalEntities: window.__supPriceLegalEntities
+          });
+          if (window.__userSession) {
+            window.__userSession.legalEntities = loaded.slice();
+          }
+          renderSupPriceLegalList(_supPriceOrganizationId, dbGet());
+        }).catch(function (error) {
+          window.__supPriceLegalEntities = [];
+          window.__supPriceLegalEntitiesLoading = false;
+          console.warn('owner_list_legal_entities failed for price upload', error);
+          renderSupPriceLegalList(_supPriceOrganizationId, dbGet());
+        });
+      }
     };
   }
   if(orgHint){
@@ -8141,18 +8171,33 @@ function openSupPriceUpload(supName, append){
       ? 'Выберите организацию, затем отметьте юр. лица, для которых действует этот прайс.'
       : 'Не найдено доступных организаций для загрузки прайса.';
   }
-  if (_supPriceOrganizationId && typeof window.loadLegalEntitiesForOrganization === 'function') {
+  if (_supPriceOrganizationId && typeof window.ownerListLegalEntities === 'function') {
     listEl.innerHTML = '<div style="color:var(--t3);padding:8px;font-size:12px;">Загрузка юр. лиц...</div>';
-    window.loadLegalEntitiesForOrganization(_supPriceOrganizationId).then(function (items) {
+    Promise.resolve(window.ownerListLegalEntities(_supPriceOrganizationId)).then(function (result) {
+      var items = Array.isArray(result && result.data)
+        ? result.data
+        : Array.isArray(result)
+          ? result
+          : [];
+      window.__supPriceLegalEntities = items.slice();
+      window.__supPriceLegalEntitiesLoading = false;
+      console.info('supplier price legal entities loaded', {
+        organizationId: _supPriceOrganizationId,
+        count: window.__supPriceLegalEntities.length,
+        legalEntities: window.__supPriceLegalEntities
+      });
       if (window.__userSession) {
-        window.__userSession.legalEntities = Array.isArray(items) ? items.slice() : [];
+        window.__userSession.legalEntities = items.slice();
       }
       renderSupPriceLegalList(_supPriceOrganizationId, dbGet());
     }).catch(function (error) {
+      window.__supPriceLegalEntities = [];
+      window.__supPriceLegalEntitiesLoading = false;
       console.warn('owner_list_legal_entities failed for price upload', error);
       renderSupPriceLegalList(_supPriceOrganizationId, dbGet());
     });
   } else {
+    window.__supPriceLegalEntitiesLoading = false;
     renderSupPriceLegalList(_supPriceOrganizationId, db);
   }
   var fi=document.getElementById('supPriceFile'); if(fi)fi.value='';
@@ -8513,14 +8558,30 @@ function renderSupPriceLegalList(orgId, db){
   db=db||dbGet();
   var listEl = document.getElementById('supPriceCompList');
   if(!listEl) return;
-  var legalEntities = getOrganizationLegalEntities(orgId || _supPriceOrganizationId, db);
   var resolvedOrgId = String(orgId || _supPriceOrganizationId || '').trim();
+  var legalEntities = Array.isArray(window.__supPriceLegalEntities) ? window.__supPriceLegalEntities.slice() : [];
+  if (window.__supPriceLegalEntitiesLoading) {
+    listEl.innerHTML = '<div style="color:var(--t3);padding:8px;font-size:12px;">Загрузка юр. лиц...</div>';
+    setSupplierPriceSaveEnabled(false, 'Загрузка юрлиц...');
+    return;
+  }
   if(!legalEntities.length){
-    if(window.loadLegalEntitiesForOrganization && resolvedOrgId && !window.__loginInProgress && !window.__restoreInProgress){
+    if(window.ownerListLegalEntities && resolvedOrgId && !window.__loginInProgress && !window.__restoreInProgress){
       listEl.innerHTML = '<div style="color:var(--t3);padding:8px;font-size:12px;">Загрузка юр. лиц...</div>';
       setSupplierPriceSaveEnabled(false, 'Загрузка юрлиц...');
-      window.loadLegalEntitiesForOrganization(resolvedOrgId).then(function(items){
-        items = Array.isArray(items) ? items : [];
+      Promise.resolve(window.ownerListLegalEntities(resolvedOrgId)).then(function(result){
+        var items = Array.isArray(result && result.data)
+          ? result.data
+          : Array.isArray(result)
+            ? result
+            : [];
+        window.__supPriceLegalEntities = items.slice();
+        window.__supPriceLegalEntitiesLoading = false;
+        console.info('supplier price legal entities loaded', {
+          organizationId: resolvedOrgId,
+          count: window.__supPriceLegalEntities.length,
+          legalEntities: window.__supPriceLegalEntities
+        });
         if(window.__userSession){
           window.__userSession.legalEntities = items.slice();
           window.__userSession.activeLegalEntities = items.filter(function(item){
@@ -8531,6 +8592,8 @@ function renderSupPriceLegalList(orgId, db){
         }
         renderSupPriceLegalList(resolvedOrgId, dbGet());
       }).catch(function(error){
+        window.__supPriceLegalEntities = [];
+        window.__supPriceLegalEntitiesLoading = false;
         console.warn('owner_list_legal_entities failed for price upload', error);
         listEl.innerHTML = '<div style="color:var(--t3);padding:8px;font-size:12px;">Сначала добавьте юрлицо в карточке организации</div>';
         setSupplierPriceSaveEnabled(false, 'Сначала добавьте юрлицо в карточке организации');
@@ -8541,11 +8604,19 @@ function renderSupPriceLegalList(orgId, db){
     setSupplierPriceSaveEnabled(false, 'Сначала добавьте юрлицо в карточке организации');
     return;
   }
+  if (legalEntities.length === 1) {
+    var onlyId = String(legalEntities[0] && (legalEntities[0].id || legalEntities[0].legal_entity_id || legalEntities[0].legalEntityId || '')).trim();
+    if (onlyId) {
+      _supPriceLegalEntityIds = [onlyId];
+      _supPriceLegalEntityNames = [String(legalEntities[0] && (legalEntities[0].name || legalEntities[0].title) || 'Юрлицо без названия').trim()];
+    }
+  }
   listEl.innerHTML = legalEntities.map(function(le){
     var legalId = String(le && (le.id || le.legal_entity_id || le.legalEntityId || '')).trim();
     var legalName = String(le && (le.name || le.title) || 'Юрлицо без названия').trim();
+    var checked = (legalEntities.length === 1) || (Array.isArray(_supPriceLegalEntityIds) && _supPriceLegalEntityIds.indexOf(legalId) >= 0);
     return '<label style="display:flex;align-items:flex-start;gap:10px;padding:6px 4px;cursor:pointer;">'
-      +'<input type="checkbox" class="sup-price-comp-cb" value="'+_esc(legalId)+'" data-legal-name="'+_esc(legalName)+'" checked '
+      +'<input type="checkbox" class="sup-price-comp-cb" value="'+_esc(legalId)+'" data-legal-name="'+_esc(legalName)+'"'+(checked ? ' checked' : '')+' '
       +'style="width:16px;height:16px;cursor:pointer;accent-color:var(--ac);margin-top:2px;">'
       +'<div><div style="font-size:13px;font-weight:600;">'+_esc(legalName)+'</div>'
       +'<div style="font-size:11px;color:var(--t3);">Прайс будет доступен только этой организации и этим юр. лицам</div></div></label>';
@@ -8554,6 +8625,13 @@ function renderSupPriceLegalList(orgId, db){
     listEl.onchange = syncSupPriceLegalSelection;
   }
   syncSupPriceLegalSelection();
+  if (legalEntities.length === 1) {
+    console.info('supplier price legal entities auto selected', {
+      organizationId: resolvedOrgId,
+      selectedId: _supPriceLegalEntityIds[0] || null,
+      selectedName: _supPriceLegalEntityNames[0] || null
+    });
+  }
   setSupplierPriceSaveEnabled(true);
 }
 
