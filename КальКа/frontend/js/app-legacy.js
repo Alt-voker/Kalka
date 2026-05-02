@@ -8190,6 +8190,10 @@ function syncSupPriceLegalSelection(){
   });
   _supPriceLegalEntityIds = normalizeLegalEntityIds(ids);
   _supPriceLegalEntityNames = names;
+  console.info('price legal entity selection changed', {
+    rawValues: ids.slice(),
+    normalizedIds: _supPriceLegalEntityIds.slice()
+  });
 }
 
 function resolveSupplierRuntimeById(supplierId){
