@@ -366,10 +366,10 @@ begin
   limit 1;
   if v_org_id is null and target_organization_id is not null then
     v_org_id := target_organization_id;
-    update public.suppliers
+    update public.suppliers s
        set organization_id = v_org_id,
            updated_at = now()
-     where id = target_supplier_id
+     where s.id = target_supplier_id
        and organization_id is null;
   end if;
   if v_org_id is null then
@@ -378,14 +378,79 @@ begin
   if not public.has_permission(v_org_id, 'suppliers.delete') then
     raise exception 'Forbidden' using errcode = '42501';
   end if;
-  update public.suppliers
+  update public.suppliers s
      set status = 'archived',
          updated_at = now()
-   where id = target_supplier_id
+   where s.id = target_supplier_id
      and organization_id = v_org_id;
   return query
-  select * from public.owner_list_suppliers(v_org_id)
-  where id = target_supplier_id;
+  select * from public.owner_list_suppliers(v_org_id) s
+  where s.id = target_supplier_id;
+end;
+$$;
+
+create or replace function public.owner_delete_supplier(
+  target_supplier_id uuid,
+  target_organization_id uuid default null
+)
+returns table (
+  id uuid,
+  organization_id uuid,
+  name text,
+  inn text,
+  phone text,
+  email text,
+  contact_name text,
+  status text,
+  created_at timestamptz,
+  updated_at timestamptz,
+  emoji text,
+  kind text,
+  rating numeric,
+  orders_count integer,
+  delivery text,
+  min_order_text text,
+  tags text[],
+  hidden boolean,
+  legacy_key text,
+  legal_entity_ids uuid[],
+  legal_entity_names text[],
+  comment text
+)
+language plpgsql
+security definer
+set search_path = public
+set row_security = off
+as $$
+declare
+  v_org_id uuid;
+begin
+  select s.organization_id into v_org_id
+  from public.suppliers s
+  where s.id = target_supplier_id
+  limit 1;
+  if v_org_id is null and target_organization_id is not null then
+    v_org_id := target_organization_id;
+    update public.suppliers s
+       set organization_id = v_org_id,
+           updated_at = now()
+     where s.id = target_supplier_id
+       and organization_id is null;
+  end if;
+  if v_org_id is null then
+    raise exception 'Поставщик не найден' using errcode = '22023';
+  end if;
+  if not public.has_permission(v_org_id, 'suppliers.delete') then
+    raise exception 'Forbidden' using errcode = '42501';
+  end if;
+  update public.suppliers s
+     set status = 'deleted',
+         updated_at = now()
+   where s.id = target_supplier_id
+     and organization_id = v_org_id;
+  return query
+  select * from public.owner_list_suppliers(v_org_id) s
+  where s.id = target_supplier_id;
 end;
 $$;
 
@@ -480,16 +545,82 @@ begin
 end;
 $$;
 
+create or replace function public.owner_restore_supplier(
+  target_supplier_id uuid,
+  target_organization_id uuid default null
+)
+returns table (
+  id uuid,
+  organization_id uuid,
+  name text,
+  inn text,
+  phone text,
+  email text,
+  contact_name text,
+  status text,
+  created_at timestamptz,
+  updated_at timestamptz,
+  emoji text,
+  kind text,
+  rating numeric,
+  orders_count integer,
+  delivery text,
+  min_order_text text,
+  tags text[],
+  hidden boolean,
+  legacy_key text,
+  legal_entity_ids uuid[],
+  legal_entity_names text[],
+  comment text
+)
+language plpgsql
+security definer
+set search_path = public
+set row_security = off
+as $$
+declare
+  v_org_id uuid;
+begin
+  select s.organization_id into v_org_id
+  from public.suppliers s
+  where s.id = target_supplier_id
+  limit 1;
+  if v_org_id is null then
+    raise exception 'Поставщик не найден' using errcode = '22023';
+  end if;
+  if target_organization_id is not null and target_organization_id <> v_org_id then
+    raise exception 'Forbidden' using errcode = '42501';
+  end if;
+  if not public.has_permission(v_org_id, 'suppliers.edit')
+     and not public.has_permission(v_org_id, 'suppliers.delete') then
+    raise exception 'Forbidden' using errcode = '42501';
+  end if;
+
+  update public.suppliers s
+     set status = 'active',
+         updated_at = now()
+   where s.id = target_supplier_id
+     and s.organization_id = v_org_id;
+  return query
+  select * from public.owner_list_suppliers(v_org_id) s
+  where s.id = target_supplier_id;
+end;
+$$;
+
 revoke all on function public.owner_list_suppliers(uuid) from public;
 revoke all on function public.owner_create_supplier(uuid, text, text, text, text, text, text, uuid[]) from public;
 revoke all on function public.owner_update_supplier(uuid, uuid, text, text, text, text, text, text, uuid[]) from public;
 revoke all on function public.owner_archive_supplier(uuid, uuid) from public;
+revoke all on function public.owner_delete_supplier(uuid, uuid) from public;
+revoke all on function public.owner_restore_supplier(uuid, uuid) from public;
 revoke all on function public.owner_link_supplier_legal_entities(uuid, uuid[], uuid) from public;
 
 grant execute on function public.owner_list_suppliers(uuid) to authenticated;
 grant execute on function public.owner_create_supplier(uuid, text, text, text, text, text, text, uuid[]) to authenticated;
 grant execute on function public.owner_update_supplier(uuid, uuid, text, text, text, text, text, text, uuid[]) to authenticated;
 grant execute on function public.owner_archive_supplier(uuid, uuid) to authenticated;
+grant execute on function public.owner_delete_supplier(uuid, uuid) to authenticated;
+grant execute on function public.owner_restore_supplier(uuid, uuid) to authenticated;
 grant execute on function public.owner_link_supplier_legal_entities(uuid, uuid[], uuid) to authenticated;
 
 notify pgrst, 'reload schema';
