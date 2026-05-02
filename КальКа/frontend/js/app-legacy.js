@@ -1916,6 +1916,9 @@ function renderSuppliers(){
     var cache = window.__dataCache || {};
     var sessionSuppliers = (window.__userSession && Array.isArray(window.__userSession.suppliers)) ? window.__userSession.suppliers : [];
     var visible=getUserVisibleSuppliers(CU);
+    visible = Array.isArray(visible) ? visible.filter(function (item) {
+      return String((item && item.status) || 'active').toLowerCase() !== 'deleted';
+    }) : [];
     var supSub=page.querySelector('#supSub');
     var cachedSuppliers = activeOrgId && cache.suppliersByOrg ? cache.suppliersByOrg[activeOrgId] : null;
     var loading = !!(activeOrgId && cache.suppliersLoadingByOrg && cache.suppliersLoadingByOrg[activeOrgId]);
@@ -1999,11 +2002,15 @@ function renderSuppliers(){
       var canManageSupplier=canEditSupplier && canManageSupplierRecord(CU, s, db);
       var openBtn='<button data-supplier-action="open" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Открыть</button>';
       var pricesMainBtn=canManagePrices?('<button data-supplier-action="prices" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Прайсы</button>'):'';
+      var extraPriceBtn=canManagePrices?('<button data-supplier-action="extra-price" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Доп. прайс</button>'):'';
       var manageBtn=canManageSupplier?(
         '<button data-supplier-action="edit" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg4);border:1px solid var(--br2);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);">Редактировать</button>'
       ):'';
       var archiveBtn=(canDeleteSupplier || canManageSupplier)?(
         '<button data-supplier-action="archive" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);opacity:.85;">Архивировать</button>'
+      ):'';
+      var deleteBtn=canDeleteSupplier?(
+        '<button data-supplier-action="delete" data-supplier-id="'+_esc(String(s._id||''))+'" style="flex:1;background:var(--bg3);border:1px solid var(--br);border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:var(--t2);opacity:.7;">Удалить</button>'
       ):'';
       var favoriteBtn='<button onclick="toggleFavoriteSupplier(\''+String(s.name||'').replace(/'/g,"\\'")+'\')" style="flex:1;background:'+(favoriteSuppliers.indexOf(s.name)>=0?'var(--aD)':'var(--bg3)')+';border:1px solid '+(favoriteSuppliers.indexOf(s.name)>=0?'var(--ac)':'var(--br)')+';border-radius:6px;padding:6px 8px;font-size:11px;cursor:pointer;color:'+(favoriteSuppliers.indexOf(s.name)>=0?'var(--ac)':'var(--t2)')+';">'+(favoriteSuppliers.indexOf(s.name)>=0?'★ В избранном':'☆ В избранное')+'</button>';
       return ''
@@ -2025,8 +2032,10 @@ function renderSuppliers(){
         +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;border-top:1px solid var(--br);padding-top:10px;">'
         +openBtn
         +pricesMainBtn
+        +extraPriceBtn
         +manageBtn
         +archiveBtn
+        +deleteBtn
         +favoriteBtn
         +'</div>'
         +'</div>';
@@ -2062,12 +2071,16 @@ window.runSupplierModuleSelfTest = function () {
   var page = document.querySelector('#pg-suppliers');
   var cards = page ? page.querySelectorAll('.sup-card') : [];
   var actionButtons = page ? page.querySelectorAll('[data-supplier-action]') : [];
+  var extraPriceButtons = page ? page.querySelectorAll('[data-supplier-action="extra-price"]') : [];
+  var deleteButtons = page ? page.querySelectorAll('[data-supplier-action="delete"]') : [];
   var runtime = ensureSupplierRuntime();
   return {
     suppliersPageVisible: !!(page && (page.classList.contains('on') || page.classList.contains('active'))),
     suppliersCount: Array.isArray(runtime.suppliers) ? runtime.suppliers.length : 0,
     hasSupplierCards: !!cards.length,
     hasActionButtons: !!actionButtons.length,
+    hasExtraPriceButton: !!extraPriceButtons.length,
+    hasDeleteButton: !!deleteButtons.length,
     safeSupplierTextAvailable: typeof window.safeSupplierText === 'function',
     runtimeIds: runtime.byId instanceof Map ? Array.from(runtime.byId.keys()) : []
   };
@@ -2089,7 +2102,9 @@ function ensureSupplierDetailsModal(){
       +'<div class="m-acts" style="margin-top:18px;">'
         +'<button class="m-ok" data-supplier-action="edit" onclick="openSupplierModal(window.__supplierDetailsIndex)">Редактировать</button>'
         +'<button class="m-ok" data-supplier-action="prices" style="background:#5ba3f5;color:#fff;" onclick="if(window.__supplierDetailsIndex!==undefined){var rt=(window.__supplierRuntime&&Array.isArray(window.__supplierRuntime.suppliers))?window.__supplierRuntime.suppliers:[];var s=rt[window.__supplierDetailsIndex]||((Array.isArray(SUPS_DATA)?SUPS_DATA:[])[window.__supplierDetailsIndex])||null;if(s&&typeof openSupPriceUpload===\'function\'){openSupPriceUpload(s.name,false);}else{toast(\'Прайсы будут подключены на следующем этапе\',\'warn\');}}">Прайсы</button>'
+        +'<button class="m-ok" data-supplier-action="extra-price" style="background:var(--bg3);color:var(--tx);border-color:var(--br);" onclick="openSupplierExtraPriceModal(window.__supplierDetailsIndex)">Доп. прайс</button>'
         +'<button class="m-ok" data-supplier-action="archive" style="background:var(--bg3);color:var(--tx);border-color:var(--br);" onclick="archiveSupplierFromCard(window.__supplierDetailsIndex)">Архивировать</button>'
+        +'<button class="m-ok" data-supplier-action="delete" style="background:var(--bg3);color:var(--tx);border-color:var(--br);" onclick="deleteSupplierFromCard(window.__supplierDetailsIndex)">Удалить</button>'
         +'<button class="m-cancel" onclick="closeSupplierDetailsModal()">Закрыть</button>'
       +'</div>'
     +'</div>';
@@ -2136,6 +2151,37 @@ function openSupplierDetailsModal(index){
 window.openSupplierDetailsModal = openSupplierDetailsModal;
 window.closeSupplierDetailsModal = closeSupplierDetailsModal;
 window.openSupplierDetails = function(index){ openSupplierDetailsModal(index); };
+function openSupplierExtraPriceModal(index){
+  var runtime = ensureSupplierRuntime();
+  var supplier = Array.isArray(runtime.suppliers) ? runtime.suppliers[index] : null;
+  if(!supplier && Array.isArray(SUPS_DATA)) supplier = SUPS_DATA[index] || null;
+  if(!supplier){ toast('Поставщик не найден','err'); return; }
+  if (typeof openSupPriceUpload === 'function') {
+    openSupPriceUpload(supplier.name || 'Поставщик', true);
+    return;
+  }
+  var modal = document.getElementById('ov-supExtraPrice');
+  if(!modal){
+    modal = document.createElement('div');
+    modal.id = 'ov-supExtraPrice';
+    modal.className = 'ov';
+    modal.innerHTML = ''
+      +'<div class="modal" style="max-width:560px;width:min(560px,calc(100vw - 24px));">'
+        +'<div class="m-title">Доп. прайс</div>'
+        +'<div style="margin-top:10px;color:var(--t2);font-size:14px;">Дополнительный прайс будет подключён на этапе прайс-листов.</div>'
+        +'<div class="m-acts" style="margin-top:16px;">'
+          +'<button class="m-ok" onclick="closeSupplierExtraPriceModal()">Ок</button>'
+        +'</div>'
+      +'</div>';
+    document.body.appendChild(modal);
+  }
+  modal.classList.add('on');
+}
+window.openSupplierExtraPriceModal = openSupplierExtraPriceModal;
+window.closeSupplierExtraPriceModal = function(){
+  var el=document.getElementById('ov-supExtraPrice');
+  if(el) el.classList.remove('on');
+};
 window.archiveSupplierFromCard = async function(index){
   var runtime = ensureSupplierRuntime();
   var supplier = Array.isArray(runtime.suppliers) ? runtime.suppliers[index] : null;
@@ -2171,6 +2217,42 @@ window.archiveSupplierFromCard = async function(index){
   } catch (error) {
     console.error('archiveSupplierFromCard failed', { index: index, error: error, message: error && error.message, stack: error && error.stack });
     if (typeof window.toast === 'function') window.toast(error && error.message ? error.message : 'Не удалось архивировать поставщика', 'err');
+    return false;
+  }
+};
+window.deleteSupplierFromCard = async function(index){
+  var runtime = ensureSupplierRuntime();
+  var supplier = Array.isArray(runtime.suppliers) ? runtime.suppliers[index] : null;
+  if(!supplier && Array.isArray(SUPS_DATA)) supplier = SUPS_DATA[index] || null;
+  if(!supplier) { toast('Поставщик не найден','err'); return false; }
+  var activeOrgId = String((window.__userSession && window.__userSession.activeOrganizationId) || supplier.organizationId || supplier.organization_id || '').trim();
+  try {
+    if (!confirm('Удалить поставщика? Он будет скрыт из активных, данные сохранятся.')) return false;
+    if (!hasPermissionSafe('suppliers.delete') && !['owner','admin','director','organization_owner'].includes(normalizeLegacyRoleSafe((window.__userSession && window.__userSession.role) || (window.CU && window.CU.role) || ''))) {
+      throw new Error('Недостаточно прав');
+    }
+    if (typeof window.ownerDeleteSupplier !== 'function') throw new Error('RPC удаления поставщика недоступен');
+    var supplierPk = String((supplier && (supplier._id || supplier.id || supplier.supplier_id || supplier.supplierId)) || '').trim();
+    await window.ownerDeleteSupplier({ target_supplier_id: supplierPk, target_organization_id: activeOrgId });
+    var refreshed = typeof window.refreshSuppliersForOrganization === 'function'
+      ? await window.refreshSuppliersForOrganization(activeOrgId)
+      : (typeof window.loadSuppliersForOrganization === 'function' ? await window.loadSuppliersForOrganization(activeOrgId) : []);
+    if (window.__userSession) window.__userSession.suppliers = Array.isArray(refreshed) ? refreshed.slice() : [];
+    if (typeof window.syncSupplierRuntime === 'function') {
+      window.syncSupplierRuntime(Array.isArray(refreshed) ? refreshed : []);
+    }
+    var summary = null;
+    if (typeof window.refreshOrganizationSummaryForOrganization === 'function' && activeOrgId) {
+      summary = await window.refreshOrganizationSummaryForOrganization(activeOrgId).catch(function(){ return null; });
+      console.info('organization summary after supplier mutation', { orgId: activeOrgId, summary: summary });
+    }
+    renderSuppliers();
+    if (typeof window.toast === 'function') window.toast('Поставщик удалён', 'ok');
+    console.info('supplier mutation success', { action: 'delete', supplierId: supplierPk });
+    return true;
+  } catch (error) {
+    console.error('deleteSupplierFromCard failed', { index: index, error: error, message: error && error.message, stack: error && error.stack });
+    if (typeof window.toast === 'function') window.toast(error && error.message ? error.message : 'Не удалось удалить поставщика', 'err');
     return false;
   }
 };
@@ -3682,12 +3764,13 @@ function ensureSupplierGridActionBinding(){
         }
         throw new Error('Поставщик не найден');
       }
+      if(action === 'extra-price'){
+        if(supplier) return openSupplierExtraPriceModal(index);
+        throw new Error('Поставщик не найден');
+      }
       if(action === 'delete'){
-        if (window.CU && window.CU.role === 'owner' && supplier) {
-          if (confirm('Удалить поставщика? Он будет скрыт из платформы.')) {
-            return archiveSupplierFromCard(index);
-          }
-          return;
+        if (supplier && (hasPermissionSafe('suppliers.delete') || ['owner','admin','director','organization_owner'].includes(normalizeLegacyRoleSafe((window.__userSession && window.__userSession.role) || (window.CU && window.CU.role) || '')))) {
+          return deleteSupplierFromCard(index);
         }
         throw new Error('Недостаточно прав');
       }
