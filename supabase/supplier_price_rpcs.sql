@@ -214,29 +214,34 @@ begin
   if coalesce(trim(target_title), '') = '' then
     raise exception 'Название прайса обязательно' using errcode = '22023';
   end if;
-  insert into public.supplier_price_lists (
-    organization_id,
-    supplier_id,
-    title,
-    name,
-    source_filename,
-    uploaded_by,
-    status,
-    created_at,
-    updated_at
+  with inserted_price_list as (
+    insert into public.supplier_price_lists (
+      organization_id,
+      supplier_id,
+      title,
+      name,
+      source_filename,
+      uploaded_by,
+      status,
+      created_at,
+      updated_at
+    )
+    values (
+      v_org_id,
+      target_supplier_id,
+      trim(target_title),
+      trim(target_title),
+      coalesce(trim(target_source_filename), ''),
+      target_uploaded_by,
+      case when coalesce(lower(trim(target_status)), 'active') in ('active','archived','inactive') then lower(trim(target_status)) else 'active' end,
+      now(),
+      now()
+    )
+    returning public.supplier_price_lists.id
   )
-  values (
-    v_org_id,
-    target_supplier_id,
-    trim(target_title),
-    trim(target_title),
-    coalesce(trim(target_source_filename), ''),
-    target_uploaded_by,
-    case when coalesce(lower(trim(target_status)), 'active') in ('active','archived','inactive') then lower(trim(target_status)) else 'active' end,
-    now(),
-    now()
-  )
-  returning id into v_new_id;
+  select inserted_price_list.id
+    into v_new_id
+  from inserted_price_list;
 
   if coalesce(array_length(target_legal_entity_ids, 1), 0) > 0 then
     insert into public.supplier_price_list_legal_entities (
