@@ -1005,6 +1005,64 @@
     });
   }
 
+  function normalizeSupplierPriceRpcPayload(payload) {
+    payload = payload || {};
+    var supplierId = String(
+      payload.p_supplier_id ||
+      payload.target_supplier_id ||
+      payload.supplier_id ||
+      payload.supplierId ||
+      payload.id ||
+      ''
+    ).trim();
+    var organizationId = String(
+      payload.p_organization_id ||
+      payload.target_organization_id ||
+      payload.organization_id ||
+      payload.organizationId ||
+      ''
+    ).trim();
+    var priceListId = String(
+      payload.p_price_list_id ||
+      payload.target_price_list_id ||
+      payload.price_list_id ||
+      payload.priceListId ||
+      payload.id ||
+      ''
+    ).trim();
+    var title = String(payload.p_title || payload.target_title || payload.title || '').trim();
+    var sourceFilename = String(payload.p_source_filename || payload.target_source_filename || payload.source_filename || '').trim();
+    var uploadedBy = String(payload.p_uploaded_by || payload.target_uploaded_by || payload.uploaded_by || payload.uploadedBy || '').trim();
+    var status = String(payload.p_status || payload.target_status || payload.status || 'active').trim();
+    var legalEntityIds = Array.isArray(payload.p_legal_entity_ids)
+      ? payload.p_legal_entity_ids.slice()
+      : Array.isArray(payload.target_legal_entity_ids)
+        ? payload.target_legal_entity_ids.slice()
+        : Array.isArray(payload.legal_entity_ids)
+          ? payload.legal_entity_ids.slice()
+          : Array.isArray(payload.legalEntityIds)
+            ? payload.legalEntityIds.slice()
+            : [];
+    var items = Array.isArray(payload.p_items)
+      ? payload.p_items.slice()
+      : Array.isArray(payload.target_items)
+        ? payload.target_items.slice()
+        : Array.isArray(payload.items)
+          ? payload.items.slice()
+          : [];
+    return {
+      p_supplier_id: supplierId || null,
+      p_organization_id: organizationId || null,
+      p_price_list_id: priceListId || null,
+      p_title: title,
+      p_source_filename: sourceFilename,
+      p_uploaded_by: uploadedBy || null,
+      p_status: status || 'active',
+      p_legal_entity_ids: legalEntityIds,
+      p_items: items
+    };
+  }
+
   window.ownerListSuppliers = function (targetOrganizationId) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     var orgId = String(targetOrganizationId || '').trim();
@@ -1047,37 +1105,37 @@
   window.ownerListSupplierPriceLists = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcWithPortability('owner_list_supplier_price_lists', payload || {}, 'Не удалось загрузить прайсы поставщика');
+    return rpcWithPortability('owner_list_supplier_price_lists', normalizeSupplierPriceRpcPayload(payload), 'Не удалось загрузить прайсы поставщика');
   };
 
   window.ownerCreateSupplierPriceList = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcWithPortability('owner_create_supplier_price_list', payload || {}, 'Не удалось создать прайс-лист');
+    return rpcWithPortability('owner_create_supplier_price_list', normalizeSupplierPriceRpcPayload(payload), 'Не удалось создать прайс-лист');
   };
 
   window.ownerArchiveSupplierPriceList = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcWithPortability('owner_archive_supplier_price_list', payload || {}, 'Не удалось архивировать прайс-лист');
+    return rpcWithPortability('owner_archive_supplier_price_list', normalizeSupplierPriceRpcPayload(payload), 'Не удалось архивировать прайс-лист');
   };
 
   window.ownerDeleteSupplierPriceList = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcWithPortability('owner_delete_supplier_price_list', payload || {}, 'Не удалось удалить прайс-лист');
+    return rpcWithPortability('owner_delete_supplier_price_list', normalizeSupplierPriceRpcPayload(payload), 'Не удалось удалить прайс-лист');
   };
 
   window.ownerListSupplierPriceItems = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcWithPortability('owner_list_supplier_price_items', payload || {}, 'Не удалось загрузить позиции прайс-листа');
+    return rpcWithPortability('owner_list_supplier_price_items', normalizeSupplierPriceRpcPayload(payload), 'Не удалось загрузить позиции прайс-листа');
   };
 
   window.ownerImportSupplierPriceItems = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcWithPortability('owner_import_supplier_price_items', payload || {}, 'Не удалось импортировать позиции прайс-листа');
+    return rpcWithPortability('owner_import_supplier_price_items', normalizeSupplierPriceRpcPayload(payload), 'Не удалось импортировать позиции прайс-листа');
   };
 
   window.ownerLinkSupplierLegalEntities = function (payload) {
