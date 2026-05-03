@@ -8025,31 +8025,60 @@ async function persistSupplierPriceImportToSupabase(importRows){
   if (!created || !created.id) throw new Error('Не удалось создать прайс-лист');
   var chunks = chunkArray(rows, 200);
   var importedRows = [];
-  for (var i = 0; i < chunks.length; i++) {
-    var chunk = chunks[i];
-    var chunkRows = await window.ownerImportSupplierPriceItems({
-      target_price_list_id: created.id,
-      target_items: chunk
-    });
-    importedRows = importedRows.concat(Array.isArray(chunkRows) ? chunkRows : []);
-    var progressEl = document.getElementById('supPriceErr');
-    if (progressEl) {
-      progressEl.textContent = 'Импортировано ' + Math.min((i + 1) * 200, rows.length) + ' из ' + rows.length + ' строк';
+  try {
+    for (var i = 0; i < chunks.length; i++) {
+      var chunk = chunks[i];
+      console.info('supplier price import chunk payload sample', {
+        chunk: i + 1,
+        firstItem: chunk && chunk.length ? chunk[0] : null,
+        rows: chunk.length
+      });
+      if (chunk && chunk.length) {
+        for (var j = 0; j < chunk.length; j++) {
+          if (chunk[j]) {
+            var fullIndex = Number(chunk[j].row_index || chunk[j].rowIndex || chunk[j].sourceRow || chunk[j].source_row || 0);
+            if (!fullIndex || fullIndex < 1) {
+              fullIndex = i * 200 + j + 1;
+            }
+            chunk[j].row_index = fullIndex;
+          }
+        }
+      }
+      var chunkRows = await window.ownerImportSupplierPriceItems({
+        target_price_list_id: created.id,
+        target_items: chunk
+      });
+      importedRows = importedRows.concat(Array.isArray(chunkRows) ? chunkRows : []);
+      var progressEl = document.getElementById('supPriceErr');
+      if (progressEl) {
+        progressEl.textContent = 'Импортировано ' + Math.min((i + 1) * 200, rows.length) + ' из ' + rows.length + ' строк';
+      }
+      console.info('supplier price import chunk done', {
+        chunk: i + 1,
+        totalChunks: chunks.length,
+        rows: chunk.length
+      });
     }
-    console.info('supplier price import chunk done', {
-      chunk: i + 1,
-      totalChunks: chunks.length,
-      rows: chunk.length
-    });
+    if (typeof window.refreshOrganizationSummaryForOrganization === 'function') {
+      await window.refreshOrganizationSummaryForOrganization(organizationId).catch(function(){});
+    }
+    return {
+      priceList: created,
+      imported: Array.isArray(importedRows) ? importedRows.length : rows.length,
+      skippedRows: Math.max(0, (importRows || []).length - rows.length)
+    };
+  } catch (error) {
+    console.error('persistSupplierPriceImportToSupabase failed', error, error && error.stack);
+    if (created && created.id && typeof window.ownerDeleteSupplierPriceList === 'function') {
+      await window.ownerDeleteSupplierPriceList({
+        target_price_list_id: created.id,
+        target_organization_id: organizationId
+      }).catch(function (rollbackError) {
+        console.error('ownerDeleteSupplierPriceList rollback failed', rollbackError, rollbackError && rollbackError.stack);
+      });
+    }
+    throw error;
   }
-  if (typeof window.refreshOrganizationSummaryForOrganization === 'function') {
-    await window.refreshOrganizationSummaryForOrganization(organizationId).catch(function(){});
-  }
-  return {
-    priceList: created,
-    imported: Array.isArray(importedRows) ? importedRows.length : rows.length,
-    skippedRows: Math.max(0, (importRows || []).length - rows.length)
-  };
 }
 
 function prepareSupPriceImportPreview(){

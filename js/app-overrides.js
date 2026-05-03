@@ -924,6 +924,14 @@
     if (window.KalkaApi && typeof window.KalkaApi.rpc === 'function') {
       return withTimeout(window.KalkaApi.rpc(name, params), 8000, timeoutMessage || 'RPC недоступен').then(function (response) {
         if (response && response.error) {
+          console.error('rpc full error', {
+            request: name,
+            code: response.error.code || '',
+            message: response.error.message || '',
+            details: response.error.details || '',
+            hint: response.error.hint || '',
+            raw: response.error
+          });
           console.error('rpc ' + name + ' failed', {
             request: name,
             code: response.error.code || '',
@@ -937,6 +945,14 @@
         var data = response && response.data;
         return Array.isArray(data) ? data.slice() : (data ? [data] : []);
       }).catch(function (error) {
+        console.error('rpc full error', {
+          request: name,
+          code: error && error.code ? error.code : '',
+          message: error && error.message ? error.message : '',
+          details: error && error.details ? error.details : '',
+          hint: error && error.hint ? error.hint : '',
+          raw: error
+        });
         console.error('rpc ' + name + ' failed', {
           request: name,
           code: error && error.code ? error.code : '',
