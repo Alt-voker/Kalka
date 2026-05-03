@@ -1136,12 +1136,13 @@
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
     payload = payload || {};
-    var clean = rpcCleanPayload('owner_import_supplier_price_items', {
-      p_price_list_id: String(payload.p_price_list_id || payload.target_price_list_id || payload.price_list_id || payload.priceListId || payload.id || '').trim() || null,
+    var params = cleanDefinedParams({
+      p_target_price_list_id: String(payload.p_target_price_list_id || payload.target_price_list_id || payload.priceListId || payload.price_list_id || payload.id || '').trim() || null,
       p_items: Array.isArray(payload.p_items) ? payload.p_items.slice() : Array.isArray(payload.target_items) ? payload.target_items.slice() : Array.isArray(payload.items) ? payload.items.slice() : [],
-      p_organization_id: String(payload.p_organization_id || payload.target_organization_id || payload.organization_id || payload.organizationId || '').trim() || null
+      p_target_organization_id: String(payload.p_target_organization_id || payload.target_organization_id || payload.organizationId || payload.organization_id || '').trim() || null
     });
-    return rpcWithPortability('owner_import_supplier_price_items', clean, 'Не удалось импортировать позиции прайс-листа');
+    console.log('rpc correct payload', params);
+    return rpcWithPortability('owner_import_supplier_price_items', rpcCleanPayload('owner_import_supplier_price_items', params), 'Не удалось импортировать позиции прайс-листа');
   };
 
   window.ownerLinkSupplierLegalEntities = function (payload) {
