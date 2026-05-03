@@ -44,52 +44,73 @@ begin
   end if;
 
   return query
+  with list_rows as (
+    select
+      spl.id,
+      spl.organization_id,
+      spl.supplier_id,
+      coalesce(nullif(spl.title, ''), nullif(spl.name, ''), 'Прайс-лист') as title,
+      coalesce(nullif(spl.name, ''), nullif(spl.title, ''), 'Прайс-лист') as name,
+      coalesce(spl.source_filename, '') as source_filename,
+      spl.uploaded_by,
+      coalesce(spl.status, 'active') as status,
+      spl.created_at,
+      spl.updated_at
+    from public.supplier_price_lists spl
+    where spl.supplier_id = target_supplier_id
+      and spl.organization_id = v_org_id
+      and coalesce(spl.status, 'active') <> 'deleted'
+  ),
+  item_counts as (
+    select spi.price_list_id, count(*)::integer as item_count
+    from public.supplier_price_items spi
+    where spi.organization_id = v_org_id
+      and coalesce(spi.status, 'active') <> 'deleted'
+    group by spi.price_list_id
+  ),
+  legal_ids as (
+    select sple.price_list_id, array_agg(distinct le.id) as legal_entity_ids
+    from public.supplier_price_list_legal_entities sple
+    join public.legal_entities le
+      on le.id = sple.legal_entity_id
+     and le.organization_id = v_org_id
+     and coalesce(le.status, 'active') <> 'deleted'
+    where sple.organization_id = v_org_id
+      and coalesce(sple.status, 'active') <> 'deleted'
+    group by sple.price_list_id
+  ),
+  legal_names as (
+    select sple.price_list_id, array_agg(distinct le.name) as legal_entity_names
+    from public.supplier_price_list_legal_entities sple
+    join public.legal_entities le
+      on le.id = sple.legal_entity_id
+     and le.organization_id = v_org_id
+     and coalesce(le.status, 'active') <> 'deleted'
+    where sple.organization_id = v_org_id
+      and coalesce(sple.status, 'active') <> 'deleted'
+    group by sple.price_list_id
+  )
   select
-    spl.id,
-    spl.organization_id,
-    spl.supplier_id,
-    coalesce(nullif(spl.title, ''), nullif(spl.name, ''), 'Прайс-лист') as title,
-    coalesce(nullif(spl.name, ''), nullif(spl.title, ''), 'Прайс-лист') as name,
-    coalesce(spl.source_filename, '') as source_filename,
-    spl.uploaded_by,
-    coalesce(spl.status, 'active') as status,
-    spl.created_at,
-    spl.updated_at,
-    coalesce((
-      select count(*)::integer
-      from public.supplier_price_items spi
-      where spi.price_list_id = spl.id
-        and coalesce(spi.status, 'active') <> 'deleted'
-    ), 0) as item_count,
-    coalesce(array_agg(distinct le.id) filter (where le.id is not null), '{}'::uuid[]) as legal_entity_ids,
-    coalesce(array_agg(distinct le.name) filter (where le.id is not null), '{}'::text[]) as legal_entity_names
-  from public.supplier_price_lists spl
-  left join public.supplier_price_list_legal_entities sple
-    on sple.price_list_id = spl.id
-   and sple.organization_id = v_org_id
-   and coalesce(sple.status, 'active') <> 'deleted'
-  left join public.legal_entities le
-    on le.id = sple.legal_entity_id
-   and le.organization_id = v_org_id
-   and coalesce(le.status, 'active') <> 'deleted'
-  where spl.supplier_id = target_supplier_id
-    and spl.organization_id = v_org_id
-    and coalesce(spl.status, 'active') <> 'deleted'
-  group by
-    spl.id,
-    spl.organization_id,
-    spl.supplier_id,
-    spl.title,
-    spl.name,
-    spl.source_filename,
-    spl.uploaded_by,
-    spl.status,
-    spl.created_at,
-    spl.updated_at
-  order by spl.created_at desc;
+    lr.id,
+    lr.organization_id,
+    lr.supplier_id,
+    lr.title,
+    lr.name,
+    lr.source_filename,
+    lr.uploaded_by,
+    lr.status,
+    lr.created_at,
+    lr.updated_at,
+    coalesce(ic.item_count, 0) as item_count,
+    coalesce(li.legal_entity_ids, '{}'::uuid[]) as legal_entity_ids,
+    coalesce(ln.legal_entity_names, '{}'::text[]) as legal_entity_names
+  from list_rows lr
+  left join item_counts ic on ic.price_list_id = lr.id
+  left join legal_ids li on li.price_list_id = lr.id
+  left join legal_names ln on ln.price_list_id = lr.id
+  order by lr.created_at desc;
 end;
 $$;
-
 create or replace function public.owner_create_supplier_price_list(
   target_organization_id uuid,
   target_supplier_id uuid,
@@ -485,18 +506,28 @@ begin
   return query
   with incoming as (
     select
-      row_number() over () as rn,
-      nullif(trim(coalesce(item->>'raw_name', item->>'name', '')), '') as raw_name,
-      nullif(trim(coalesce(item->>'normalized_name', item->>'raw_name', item->>'name', '')), '') as normalized_name,
-      nullif(trim(coalesce(item->>'unit', '')), '') as unit,
-      nullif(trim(coalesce(item->>'currency', 'RUB')), '') as currency,
-      coalesce(item->'raw_row', '{}'::jsonb) as raw_row,
-      nullif(trim(coalesce(item->>'row_index', '')), '') as row_index_text,
-      nullif(trim(coalesce(item->>'status', 'active')), '') as status_text,
-      nullif(regexp_replace(coalesce(item->>'price', ''), '[^0-9,\.-]', '', 'g'), '') as price_text
-    from jsonb_array_elements(coalesce(target_items, '[]'::jsonb)) as item
+      row_number() over (order by src.row_index, src.raw_name) as rn,
+      nullif(trim(coalesce(src.raw_name, src.name, '')), '') as raw_name,
+      nullif(trim(coalesce(src.normalized_name, src.raw_name, src.name, '')), '') as normalized_name,
+      nullif(trim(coalesce(src.unit, '')), '') as unit,
+      nullif(trim(coalesce(src.currency, 'RUB')), '') as currency,
+      coalesce(src.raw_row, '{}'::jsonb) as raw_row,
+      nullif(trim(coalesce(src.row_index::text, '')), '') as row_index_text,
+      nullif(trim(coalesce(src.status, 'active')), '') as status_text,
+      nullif(regexp_replace(coalesce(src.price::text, ''), '[^0-9,.-]', '', 'g'), '') as price_text
+    from jsonb_to_recordset(coalesce(target_items, '[]'::jsonb)) as src(
+      raw_name text,
+      name text,
+      normalized_name text,
+      unit text,
+      currency text,
+      raw_row jsonb,
+      row_index integer,
+      status text,
+      price text
+    )
   ),
-  parsed as (
+  filtered as (
     select
       rn,
       raw_name,
@@ -507,10 +538,13 @@ begin
       row_index_text,
       status_text,
       case
-        when price_text is null then null
+        when price_text is null or trim(price_text) = '' then null
         else replace(price_text, ',', '.')
       end as price_value
     from incoming
+    where coalesce(raw_name, '') <> ''
+      and price_text is not null
+      and trim(price_text) <> ''
   )
   insert into public.supplier_price_items (
     price_list_id,
@@ -531,31 +565,24 @@ begin
     target_price_list_id,
     v_org_id,
     v_supplier_id,
-    coalesce(raw_name, '') as raw_name,
-    coalesce(normalized_name, lower(coalesce(raw_name, ''))) as normalized_name,
-    unit,
+    f.raw_name,
+    coalesce(f.normalized_name, lower(coalesce(f.raw_name, ''))) as normalized_name,
+    f.unit,
+    f.price_value::numeric,
+    coalesce(f.currency, 'RUB') as currency,
+    coalesce(f.raw_row, '{}'::jsonb) as raw_row,
+    coalesce(nullif(f.row_index_text, '')::integer, f.rn::integer) as row_index,
     case
-      when price_value is null or trim(price_value) = '' then null
-      else price_value::numeric
-    end as price,
-    coalesce(currency, 'RUB') as currency,
-    coalesce(raw_row, '{}'::jsonb) as raw_row,
-    coalesce(nullif(row_index_text, '')::integer, rn::integer) as row_index,
-    case
-      when lower(coalesce(status_text, 'active')) in ('active', 'inactive', 'archived', 'deleted')
-        then lower(coalesce(status_text, 'active'))
+      when lower(coalesce(f.status_text, 'active')) in ('active', 'inactive', 'archived', 'deleted')
+        then lower(coalesce(f.status_text, 'active'))
       else 'active'
     end as status,
     now(),
     now()
-  from parsed
-  where coalesce(raw_name, '') <> ''
-    and price_value is not null
-    and trim(price_value) <> ''
-  returning *;
+  from filtered f
+  returning public.supplier_price_items.*;
 end;
 $$;
-
 grant execute on function public.owner_list_supplier_price_lists(uuid, uuid) to authenticated;
 grant execute on function public.owner_create_supplier_price_list(uuid, uuid, text, text, uuid, uuid[], text) to authenticated;
 grant execute on function public.owner_archive_supplier_price_list(uuid, uuid) to authenticated;

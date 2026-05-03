@@ -1891,6 +1891,15 @@ function normalizeLegalEntityIds(values) {
       return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
     });
 }
+function chunkArray(items, size) {
+  var out = [];
+  var list = Array.isArray(items) ? items : [];
+  var chunkSize = Math.max(1, Number(size) || 1);
+  for (var i = 0; i < list.length; i += chunkSize) {
+    out.push(list.slice(i, i + chunkSize));
+  }
+  return out;
+}
 window.normalizeLegalEntityIds = normalizeLegalEntityIds;
 function setSupplierPriceSaveEnabled(enabled, reason) {
   var btn = document.getElementById('supPriceUploadBtn');
@@ -8014,10 +8023,25 @@ async function persistSupplierPriceImportToSupabase(importRows){
   });
   var created = Array.isArray(createdRows) ? createdRows[0] : createdRows;
   if (!created || !created.id) throw new Error('Не удалось создать прайс-лист');
-  var importedRows = await window.ownerImportSupplierPriceItems({
-    target_price_list_id: created.id,
-    target_items: rows
-  });
+  var chunks = chunkArray(rows, 200);
+  var importedRows = [];
+  for (var i = 0; i < chunks.length; i++) {
+    var chunk = chunks[i];
+    var chunkRows = await window.ownerImportSupplierPriceItems({
+      target_price_list_id: created.id,
+      target_items: chunk
+    });
+    importedRows = importedRows.concat(Array.isArray(chunkRows) ? chunkRows : []);
+    var progressEl = document.getElementById('supPriceErr');
+    if (progressEl) {
+      progressEl.textContent = 'Импортировано ' + Math.min((i + 1) * 200, rows.length) + ' из ' + rows.length + ' строк';
+    }
+    console.info('supplier price import chunk done', {
+      chunk: i + 1,
+      totalChunks: chunks.length,
+      rows: chunk.length
+    });
+  }
   if (typeof window.refreshOrganizationSummaryForOrganization === 'function') {
     await window.refreshOrganizationSummaryForOrganization(organizationId).catch(function(){});
   }
