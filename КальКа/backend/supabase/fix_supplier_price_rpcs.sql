@@ -529,58 +529,76 @@ begin
   ),
   filtered as (
     select
-      rn,
+      incoming.rn,
+      incoming.raw_name,
+      incoming.normalized_name,
+      incoming.unit,
+      incoming.currency,
+      incoming.raw_row,
+      incoming.row_index_text,
+      incoming.status_text,
+      case
+        when incoming.price_text is null or trim(incoming.price_text) = '' then null
+        else replace(incoming.price_text, ',', '.')
+      end as price_value
+    from incoming
+    where coalesce(incoming.raw_name, '') <> ''
+      and incoming.price_text is not null
+      and trim(incoming.price_text) <> ''
+  )
+  , inserted as (
+    insert into public.supplier_price_items (
+      price_list_id,
+      organization_id,
+      supplier_id,
       raw_name,
       normalized_name,
       unit,
+      price,
       currency,
       raw_row,
-      row_index_text,
-      status_text,
+      row_index,
+      status,
+      created_at,
+      updated_at
+    )
+    select
+      target_price_list_id,
+      v_org_id,
+      v_supplier_id,
+      f.raw_name,
+      coalesce(f.normalized_name, lower(coalesce(f.raw_name, ''))) as normalized_name,
+      f.unit,
+      f.price_value::numeric,
+      coalesce(f.currency, 'RUB') as currency,
+      coalesce(f.raw_row, '{}'::jsonb) as raw_row,
+      coalesce(nullif(f.row_index_text, '')::integer, f.rn::integer) as row_index,
       case
-        when price_text is null or trim(price_text) = '' then null
-        else replace(price_text, ',', '.')
-      end as price_value
-    from incoming
-    where coalesce(raw_name, '') <> ''
-      and price_text is not null
-      and trim(price_text) <> ''
-  )
-  insert into public.supplier_price_items (
-    price_list_id,
-    organization_id,
-    supplier_id,
-    raw_name,
-    normalized_name,
-    unit,
-    price,
-    currency,
-    raw_row,
-    row_index,
-    status,
-    created_at,
-    updated_at
+        when lower(coalesce(f.status_text, 'active')) in ('active', 'inactive', 'archived', 'deleted')
+          then lower(coalesce(f.status_text, 'active'))
+        else 'active'
+      end as status,
+      now(),
+      now()
+    from filtered f
+    returning public.supplier_price_items.*
   )
   select
-    target_price_list_id,
-    v_org_id,
-    v_supplier_id,
-    f.raw_name,
-    coalesce(f.normalized_name, lower(coalesce(f.raw_name, ''))) as normalized_name,
-    f.unit,
-    f.price_value::numeric,
-    coalesce(f.currency, 'RUB') as currency,
-    coalesce(f.raw_row, '{}'::jsonb) as raw_row,
-    coalesce(nullif(f.row_index_text, '')::integer, f.rn::integer) as row_index,
-    case
-      when lower(coalesce(f.status_text, 'active')) in ('active', 'inactive', 'archived', 'deleted')
-        then lower(coalesce(f.status_text, 'active'))
-      else 'active'
-    end as status,
-    now(),
-    now()
-  from filtered f
-  returning public.supplier_price_items.*;
+    spi.id,
+    spi.price_list_id,
+    spi.organization_id,
+    spi.supplier_id,
+    spi.raw_name,
+    spi.normalized_name,
+    spi.unit,
+    spi.price,
+    spi.currency,
+    spi.raw_row,
+    spi.row_index,
+    spi.status,
+    spi.created_at,
+    spi.updated_at
+  from inserted spi;
 end;
 $$;
 grant execute on function public.owner_list_supplier_price_lists(uuid, uuid) to authenticated;
