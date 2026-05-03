@@ -664,40 +664,40 @@ begin
   return query
   with src_rows as (
     select
-      src.row_index as row_index,
-      nullif(trim(coalesce(src.raw_name, '')), '') as raw_name,
-      nullif(trim(coalesce(src.original_name, src.raw_name, '')), '') as original_name,
-      nullif(trim(coalesce(src.normalized_name, '')), '') as normalized_name,
-      nullif(trim(coalesce(src.unit, '')), '') as unit,
-      nullif(trim(coalesce(src.currency, 'RUB')), '') as currency,
-      coalesce(src.raw_row, '{}'::jsonb) as raw_row,
-      nullif(regexp_replace(coalesce(src.price::text, ''), '[^0-9,.-]', '', 'g'), '') as price_text
+      src.src_row_index as src_row_index,
+      nullif(trim(coalesce(src.src_raw_name, '')), '') as src_raw_name,
+      nullif(trim(coalesce(src.src_original_name, src.src_raw_name, '')), '') as src_original_name,
+      nullif(trim(coalesce(src.src_normalized_name, '')), '') as src_normalized_name,
+      nullif(trim(coalesce(src.src_unit, '')), '') as src_unit,
+      nullif(trim(coalesce(src.src_currency, 'RUB')), '') as src_currency,
+      coalesce(src.src_raw_row, '{}'::jsonb) as src_raw_row,
+      nullif(regexp_replace(coalesce(src.src_price::text, ''), '[^0-9,.-]', '', 'g'), '') as src_price_text
     from jsonb_to_recordset(coalesce(p_items, '[]'::jsonb)) as src(
-      raw_name text,
-      original_name text,
-      normalized_name text,
-      unit text,
-      price text,
-      currency text,
-      row_index integer,
-      raw_row jsonb
+      src_raw_name text,
+      src_original_name text,
+      src_normalized_name text,
+      src_unit text,
+      src_price text,
+      src_currency text,
+      src_row_index integer,
+      src_raw_row jsonb
     )
   ),
   filtered_rows as (
     select
-      src_rows.row_index,
-      src_rows.raw_name,
-      coalesce(nullif(src_rows.original_name, ''), src_rows.raw_name) as original_name,
-      coalesce(nullif(src_rows.normalized_name, ''), src_rows.raw_name) as normalized_name,
-      src_rows.unit,
-      coalesce(nullif(src_rows.currency, ''), 'RUB') as currency,
-      src_rows.raw_row,
-      replace(src_rows.price_text, ',', '.') as price_text
+      src_rows.src_row_index,
+      src_rows.src_raw_name,
+      coalesce(nullif(src_rows.src_original_name, ''), src_rows.src_raw_name) as src_original_name,
+      coalesce(nullif(src_rows.src_normalized_name, ''), src_rows.src_raw_name) as src_normalized_name,
+      src_rows.src_unit,
+      coalesce(nullif(src_rows.src_currency, ''), 'RUB') as src_currency,
+      src_rows.src_raw_row,
+      replace(src_rows.src_price_text, ',', '.') as src_price_text
     from src_rows
-    where src_rows.row_index is not null
-      and coalesce(src_rows.raw_name, '') <> ''
-      and src_rows.price_text is not null
-      and trim(src_rows.price_text) <> ''
+    where src_rows.src_row_index is not null
+      and coalesce(src_rows.src_raw_name, '') <> ''
+      and src_rows.src_price_text is not null
+      and trim(src_rows.src_price_text) <> ''
   ),
   upserted_rows as (
     insert into public.supplier_price_items as spi (
@@ -720,14 +720,14 @@ begin
       p_price_list_id,
       v_org_id,
       v_supplier_id,
-      f.raw_name,
-      f.original_name,
-      coalesce(nullif(f.normalized_name, ''), f.raw_name) as normalized_name,
-      f.unit,
-      f.price_text::numeric,
-      coalesce(nullif(f.currency, ''), 'RUB') as currency,
-      f.raw_row,
-      f.row_index,
+      f.src_raw_name,
+      f.src_original_name,
+      coalesce(nullif(f.src_normalized_name, ''), f.src_raw_name) as normalized_name,
+      f.src_unit,
+      f.src_price_text::numeric,
+      coalesce(nullif(f.src_currency, ''), 'RUB') as currency,
+      f.src_raw_row,
+      f.src_row_index,
       'active',
       now(),
       now()
