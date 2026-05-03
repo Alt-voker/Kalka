@@ -78,6 +78,7 @@ create index if not exists idx_supplier_price_list_legals_price_list_id on publi
 create index if not exists idx_supplier_price_list_legals_org_id on public.supplier_price_list_legal_entities(organization_id);
 create index if not exists idx_supplier_price_items_price_list_id on public.supplier_price_items(price_list_id);
 create index if not exists idx_supplier_price_items_org_id on public.supplier_price_items(organization_id);
+create unique index if not exists supplier_price_items_price_list_row_idx on public.supplier_price_items(price_list_id, row_index);
 
 drop trigger if exists trg_supplier_price_lists_touch_updated_at on public.supplier_price_lists;
 create trigger trg_supplier_price_lists_touch_updated_at
@@ -628,10 +629,6 @@ begin
     raise exception 'Forbidden' using errcode = '42501';
   end if;
 
-  delete from public.supplier_price_items spi
-   where spi.price_list_id = target_price_list_id
-     and spi.organization_id = v_org_id;
-
   return query
   with incoming as (
     select
@@ -674,17 +671,17 @@ begin
     where coalesce(incoming.raw_name, '') <> ''
       and incoming.price_text is not null
       and trim(incoming.price_text) <> ''
-  )
-  , inserted as (
-  insert into public.supplier_price_items (
-    price_list_id,
-    organization_id,
-    supplier_id,
-    raw_name,
-    original_name,
-    normalized_name,
-    unit,
-    price,
+  ),
+  inserted as (
+    insert into public.supplier_price_items (
+      price_list_id,
+      organization_id,
+      supplier_id,
+      raw_name,
+      original_name,
+      normalized_name,
+      unit,
+      price,
       currency,
       raw_row,
       row_index,
@@ -693,14 +690,14 @@ begin
       updated_at
     )
     select
-    target_price_list_id,
-    v_org_id,
-    v_supplier_id,
-    f.raw_name,
-    f.raw_name as original_name,
-    coalesce(f.normalized_name, lower(coalesce(f.raw_name, ''))) as normalized_name,
-    f.unit,
-    f.price_value::numeric,
+      target_price_list_id,
+      v_org_id,
+      v_supplier_id,
+      f.raw_name,
+      f.raw_name as original_name,
+      coalesce(f.normalized_name, lower(coalesce(f.raw_name, ''))) as normalized_name,
+      f.unit,
+      f.price_value::numeric,
       coalesce(f.currency, 'RUB') as currency,
       coalesce(f.raw_row, '{}'::jsonb) as raw_row,
       coalesce(nullif(f.row_index_text, '')::integer, f.rn::integer) as row_index,
@@ -712,6 +709,19 @@ begin
       now(),
       now()
     from filtered f
+    on conflict (price_list_id, row_index)
+    do update set
+      organization_id = excluded.organization_id,
+      supplier_id = excluded.supplier_id,
+      raw_name = excluded.raw_name,
+      original_name = excluded.original_name,
+      normalized_name = excluded.normalized_name,
+      unit = excluded.unit,
+      price = excluded.price,
+      currency = excluded.currency,
+      raw_row = excluded.raw_row,
+      status = excluded.status,
+      updated_at = now()
     returning public.supplier_price_items.*
   )
   select

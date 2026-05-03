@@ -1,3 +1,5 @@
+create unique index if not exists supplier_price_items_price_list_row_idx on public.supplier_price_items(price_list_id, row_index);
+
 create or replace function public.owner_list_supplier_price_lists(
   target_supplier_id uuid,
   target_organization_id uuid
@@ -565,10 +567,6 @@ begin
     raise exception 'Forbidden' using errcode = '42501';
   end if;
 
-  delete from public.supplier_price_items spi
-   where spi.price_list_id = target_price_list_id
-     and spi.organization_id = v_org_id;
-
   return query
   with incoming as (
     select
@@ -611,11 +609,11 @@ begin
     where coalesce(incoming.raw_name, '') <> ''
       and incoming.price_text is not null
       and trim(incoming.price_text) <> ''
-  )
-  , inserted as (
-  insert into public.supplier_price_items (
-    price_list_id,
-    organization_id,
+  ),
+  inserted as (
+    insert into public.supplier_price_items (
+      price_list_id,
+      organization_id,
     supplier_id,
     raw_name,
     original_name,
@@ -649,6 +647,19 @@ begin
       now(),
       now()
     from filtered f
+    on conflict (price_list_id, row_index)
+    do update set
+      organization_id = excluded.organization_id,
+      supplier_id = excluded.supplier_id,
+      raw_name = excluded.raw_name,
+      original_name = excluded.original_name,
+      normalized_name = excluded.normalized_name,
+      unit = excluded.unit,
+      price = excluded.price,
+      currency = excluded.currency,
+      raw_row = excluded.raw_row,
+      status = excluded.status,
+      updated_at = now()
     returning public.supplier_price_items.*
   )
   select

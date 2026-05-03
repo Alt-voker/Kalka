@@ -1,3 +1,5 @@
+create unique index if not exists supplier_price_items_price_list_row_idx on public.supplier_price_items(price_list_id, row_index);
+
 create or replace function public.owner_list_supplier_price_lists(
   target_supplier_id uuid,
   target_organization_id uuid
@@ -381,6 +383,72 @@ begin
 end;
 $$;
 
+create or replace function public.owner_delete_supplier_price_list(
+  target_price_list_id uuid,
+  target_organization_id uuid default null
+)
+returns table (
+  deleted_id uuid,
+  price_list_id uuid,
+  organization_id uuid,
+  supplier_id uuid,
+  removed_items_count integer,
+  removed_legal_entities_count integer
+)
+language plpgsql
+security definer
+set search_path = public
+set row_security = off
+as $$
+declare
+  v_org_id uuid;
+  v_supplier_id uuid;
+  v_removed_items integer := 0;
+  v_removed_legals integer := 0;
+begin
+  select spl.organization_id, spl.supplier_id
+    into v_org_id, v_supplier_id
+  from public.supplier_price_lists spl
+  where spl.id = target_price_list_id
+  limit 1;
+
+  if v_org_id is null then
+    raise exception 'Прайс-лист не найден' using errcode = '22023';
+  end if;
+
+  if target_organization_id is not null and target_organization_id <> v_org_id then
+    raise exception 'Forbidden' using errcode = '42501';
+  end if;
+
+  if not public.has_permission(v_org_id, 'price_lists.delete') then
+    raise exception 'Forbidden' using errcode = '42501';
+  end if;
+
+  delete from public.supplier_price_items spi
+   where spi.price_list_id = target_price_list_id
+     and spi.organization_id = v_org_id;
+  get diagnostics v_removed_items = row_count;
+
+  delete from public.supplier_price_list_legal_entities sple
+   where sple.price_list_id = target_price_list_id
+     and sple.organization_id = v_org_id;
+  get diagnostics v_removed_legals = row_count;
+
+  delete from public.supplier_price_lists spl
+   where spl.id = target_price_list_id
+     and spl.organization_id = v_org_id;
+
+  return query
+  select
+    target_price_list_id as deleted_id,
+    target_price_list_id as price_list_id,
+    v_org_id as organization_id,
+    v_supplier_id as supplier_id,
+    v_removed_items as removed_items_count,
+    v_removed_legals as removed_legal_entities_count;
+end;
+$$;
+
 create or replace function public.owner_list_supplier_price_items(
   target_price_list_id uuid,
   target_organization_id uuid
@@ -499,10 +567,6 @@ begin
     raise exception 'Forbidden' using errcode = '42501';
   end if;
 
-  delete from public.supplier_price_items spi
-   where spi.price_list_id = target_price_list_id
-     and spi.organization_id = v_org_id;
-
   return query
   with incoming as (
     select
@@ -545,16 +609,17 @@ begin
     where coalesce(incoming.raw_name, '') <> ''
       and incoming.price_text is not null
       and trim(incoming.price_text) <> ''
-  )
-  , inserted as (
+  ),
+  inserted as (
     insert into public.supplier_price_items (
       price_list_id,
       organization_id,
-      supplier_id,
-      raw_name,
-      normalized_name,
-      unit,
-      price,
+    supplier_id,
+    raw_name,
+    original_name,
+    normalized_name,
+    unit,
+    price,
       currency,
       raw_row,
       row_index,
@@ -563,13 +628,14 @@ begin
       updated_at
     )
     select
-      target_price_list_id,
-      v_org_id,
-      v_supplier_id,
-      f.raw_name,
-      coalesce(f.normalized_name, lower(coalesce(f.raw_name, ''))) as normalized_name,
-      f.unit,
-      f.price_value::numeric,
+    target_price_list_id,
+    v_org_id,
+    v_supplier_id,
+    f.raw_name,
+    f.raw_name as original_name,
+    coalesce(f.normalized_name, lower(coalesce(f.raw_name, ''))) as normalized_name,
+    f.unit,
+    f.price_value::numeric,
       coalesce(f.currency, 'RUB') as currency,
       coalesce(f.raw_row, '{}'::jsonb) as raw_row,
       coalesce(nullif(f.row_index_text, '')::integer, f.rn::integer) as row_index,
@@ -581,6 +647,19 @@ begin
       now(),
       now()
     from filtered f
+    on conflict (price_list_id, row_index)
+    do update set
+      organization_id = excluded.organization_id,
+      supplier_id = excluded.supplier_id,
+      raw_name = excluded.raw_name,
+      original_name = excluded.original_name,
+      normalized_name = excluded.normalized_name,
+      unit = excluded.unit,
+      price = excluded.price,
+      currency = excluded.currency,
+      raw_row = excluded.raw_row,
+      status = excluded.status,
+      updated_at = now()
     returning public.supplier_price_items.*
   )
   select
@@ -604,6 +683,7 @@ $$;
 grant execute on function public.owner_list_supplier_price_lists(uuid, uuid) to authenticated;
 grant execute on function public.owner_create_supplier_price_list(uuid, uuid, text, text, uuid, uuid[], text) to authenticated;
 grant execute on function public.owner_archive_supplier_price_list(uuid, uuid) to authenticated;
+grant execute on function public.owner_delete_supplier_price_list(uuid, uuid) to authenticated;
 grant execute on function public.owner_list_supplier_price_items(uuid, uuid) to authenticated;
 grant execute on function public.owner_import_supplier_price_items(uuid, jsonb, uuid) to authenticated;
 
