@@ -1143,18 +1143,24 @@
         : Array.isArray(payload.items)
           ? payload.items.slice()
           : [];
+    function normalizeSupplierPriceImportItem(row, globalIndex) {
+      row = row || {};
+      var normalizedRowIndex = Number(row.src_row_index ?? row.row_index ?? row.rowIndex);
+      return {
+        src_raw_name: row.src_raw_name || row.raw_name || row.name || row.product_name || '',
+        src_normalized_name: row.src_normalized_name || row.normalized_name || row.normalizedName || null,
+        src_unit: row.src_unit || row.unit || row.uom || null,
+        src_price_text: String(row.src_price_text || row.price || row.cost || ''),
+        src_currency: row.src_currency || row.currency || 'RUB',
+        src_row_index: Number.isFinite(normalizedRowIndex) ? normalizedRowIndex : globalIndex + 1,
+        src_raw_row: row.src_raw_row || row.raw_row || row
+      };
+    }
     var items = rawItems.map(function (row, index) {
       row = row || {};
-      return {
-        src_raw_name: row.raw_name || row.name || '',
-        src_normalized_name: row.normalized_name || null,
-        src_unit: row.unit || null,
-        src_price_text: String(row.price || ''),
-        src_currency: row.currency || 'RUB',
-        src_row_index: row.row_index ?? index,
-        src_raw_row: row
-      };
+      return normalizeSupplierPriceImportItem(row, index);
     });
+    console.info('supplier price normalized item sample', items[0]);
     var params = cleanDefinedParams({
       p_target_price_list_id: String(payload.p_target_price_list_id || payload.target_price_list_id || payload.priceListId || payload.price_list_id || payload.id || '').trim() || null,
       p_items: items,
