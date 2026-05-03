@@ -1136,9 +1136,28 @@
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
     payload = payload || {};
+    var rawItems = Array.isArray(payload.p_items)
+      ? payload.p_items.slice()
+      : Array.isArray(payload.target_items)
+        ? payload.target_items.slice()
+        : Array.isArray(payload.items)
+          ? payload.items.slice()
+          : [];
+    var items = rawItems.map(function (row, index) {
+      row = row || {};
+      return {
+        src_raw_name: row.raw_name || row.name || '',
+        src_normalized_name: row.normalized_name || null,
+        src_unit: row.unit || null,
+        src_price_text: String(row.price || ''),
+        src_currency: row.currency || 'RUB',
+        src_row_index: row.row_index ?? index,
+        src_raw_row: row
+      };
+    });
     var params = cleanDefinedParams({
       p_target_price_list_id: String(payload.p_target_price_list_id || payload.target_price_list_id || payload.priceListId || payload.price_list_id || payload.id || '').trim() || null,
-      p_items: Array.isArray(payload.p_items) ? payload.p_items.slice() : Array.isArray(payload.target_items) ? payload.target_items.slice() : Array.isArray(payload.items) ? payload.items.slice() : [],
+      p_items: items,
       p_target_organization_id: String(payload.p_target_organization_id || payload.target_organization_id || payload.organizationId || payload.organization_id || '').trim() || null
     });
     console.log('rpc correct payload', params);
