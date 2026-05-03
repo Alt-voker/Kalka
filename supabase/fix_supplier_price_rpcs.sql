@@ -613,160 +613,162 @@ end;
 $$;
 
 create or replace function public.owner_import_supplier_price_items(
-  p_price_list_id uuid,
+  p_target_price_list_id uuid,
   p_items jsonb,
-  p_organization_id uuid default null
+  p_target_organization_id uuid default null
 )
 returns table (
-  id uuid,
-  price_list_id uuid,
-  organization_id uuid,
-  supplier_id uuid,
-  raw_name text,
-  original_name text,
-  normalized_name text,
-  unit text,
-  price numeric,
-  currency text,
-  raw_row jsonb,
-  row_index integer,
-  status text,
-  created_at timestamptz,
-  updated_at timestamptz
+  out_id uuid,
+  out_price_list_id uuid,
+  out_organization_id uuid,
+  out_supplier_id uuid,
+  out_raw_name text,
+  out_original_name text,
+  out_normalized_name text,
+  out_unit text,
+  out_price numeric,
+  out_currency text,
+  out_row_index integer,
+  out_status text,
+  out_created_at timestamptz,
+  out_updated_at timestamptz
 )
 language plpgsql
 security definer
 set search_path = public
-set row_security = off
 as $$
 declare
   v_org_id uuid;
   v_supplier_id uuid;
 begin
-  select spl.organization_id, spl.supplier_id
-    into v_org_id, v_supplier_id
-  from public.supplier_price_lists as spl
-  where spl.id = p_price_list_id
+  select
+    spl.organization_id,
+    spl.supplier_id
+  into
+    v_org_id,
+    v_supplier_id
+  from public.supplier_price_lists spl
+  where spl.id = p_target_price_list_id
+    and coalesce(spl.status, 'active') <> 'deleted'
   limit 1;
 
   if v_org_id is null then
     raise exception 'Прайс-лист не найден' using errcode = '22023';
   end if;
 
-  if p_organization_id is not null and p_organization_id <> v_org_id then
+  if p_target_organization_id is not null and p_target_organization_id <> v_org_id then
     raise exception 'Forbidden' using errcode = '42501';
   end if;
 
-  if not public.has_permission(v_org_id, 'price_lists.upload') then
+  if not public.has_permission(v_org_id, 'price_lists.upload')
+     and not public.has_permission(v_org_id, 'price_lists.edit') then
     raise exception 'Forbidden' using errcode = '42501';
   end if;
 
-  return query
-  with src_rows as (
+  insert into public.supplier_price_items as spi (
+    price_list_id,
+    organization_id,
+    supplier_id,
+    raw_name,
+    original_name,
+    normalized_name,
+    unit,
+    price,
+    currency,
+    raw_row,
+    row_index,
+    status,
+    created_at,
+    updated_at
+  )
+  select
+    p_target_price_list_id,
+    v_org_id,
+    v_supplier_id,
+    f.src_raw_name,
+    f.src_raw_name,
+    coalesce(nullif(f.src_normalized_name, ''), f.src_raw_name),
+    nullif(f.src_unit, ''),
+    f.src_price_num,
+    coalesce(nullif(f.src_currency, ''), 'RUB'),
+    coalesce(f.src_raw_row, '{}'::jsonb),
+    f.src_row_index,
+    'active',
+    now(),
+    now()
+  from (
     select
-      src.src_row_index as src_row_index,
-      nullif(trim(coalesce(src.src_raw_name, '')), '') as src_raw_name,
-      nullif(trim(coalesce(src.src_original_name, src.src_raw_name, '')), '') as src_original_name,
-      nullif(trim(coalesce(src.src_normalized_name, '')), '') as src_normalized_name,
-      nullif(trim(coalesce(src.src_unit, '')), '') as src_unit,
-      nullif(trim(coalesce(src.src_currency, 'RUB')), '') as src_currency,
-      coalesce(src.src_raw_row, '{}'::jsonb) as src_raw_row,
-      nullif(regexp_replace(coalesce(src.src_price::text, ''), '[^0-9,.-]', '', 'g'), '') as src_price_text
-    from jsonb_to_recordset(coalesce(p_items, '[]'::jsonb)) as src(
+      s.src_raw_name,
+      s.src_normalized_name,
+      s.src_unit,
+      s.src_price_text,
+      s.src_currency,
+      s.src_row_index,
+      s.src_raw_row,
+      nullif(
+        regexp_replace(
+          replace(replace(coalesce(s.src_price_text, ''), ',', '.'), '₽', ''),
+          '[^0-9\.\-]',
+          '',
+          'g'
+        ),
+        ''
+      )::numeric as src_price_num
+    from jsonb_to_recordset(coalesce(p_items, '[]'::jsonb)) as s(
       src_raw_name text,
-      src_original_name text,
       src_normalized_name text,
       src_unit text,
-      src_price text,
+      src_price_text text,
       src_currency text,
       src_row_index integer,
       src_raw_row jsonb
     )
-  ),
-  filtered_rows as (
-    select
-      src_rows.src_row_index,
-      src_rows.src_raw_name,
-      coalesce(nullif(src_rows.src_original_name, ''), src_rows.src_raw_name) as src_original_name,
-      coalesce(nullif(src_rows.src_normalized_name, ''), src_rows.src_raw_name) as src_normalized_name,
-      src_rows.src_unit,
-      coalesce(nullif(src_rows.src_currency, ''), 'RUB') as src_currency,
-      src_rows.src_raw_row,
-      replace(src_rows.src_price_text, ',', '.') as src_price_text
-    from src_rows
-    where src_rows.src_row_index is not null
-      and coalesce(src_rows.src_raw_name, '') <> ''
-      and src_rows.src_price_text is not null
-      and trim(src_rows.src_price_text) <> ''
-  ),
-  upserted_rows as (
-    insert into public.supplier_price_items as spi (
-      price_list_id,
-      organization_id,
-      supplier_id,
-      raw_name,
-      original_name,
-      normalized_name,
-      unit,
-      price,
-      currency,
-      raw_row,
-      row_index,
-      status,
-      created_at,
-      updated_at
-    )
-    select
-      p_price_list_id,
-      v_org_id,
-      v_supplier_id,
-      f.src_raw_name,
-      f.src_original_name,
-      coalesce(nullif(f.src_normalized_name, ''), f.src_raw_name) as normalized_name,
-      f.src_unit,
-      f.src_price_text::numeric,
-      coalesce(nullif(f.src_currency, ''), 'RUB') as currency,
-      f.src_raw_row,
-      f.src_row_index,
-      'active',
-      now(),
-      now()
-    from filtered_rows as f
-    on conflict (price_list_id, row_index)
-    do update set
-      organization_id = excluded.organization_id,
-      supplier_id = excluded.supplier_id,
-      raw_name = excluded.raw_name,
-      original_name = excluded.original_name,
-      normalized_name = excluded.normalized_name,
-      unit = excluded.unit,
-      price = excluded.price,
-      currency = excluded.currency,
-      raw_row = excluded.raw_row,
-      status = 'active',
-      updated_at = now()
-    returning spi.id as inserted_id
-  )
+    where nullif(trim(coalesce(s.src_raw_name, '')), '') is not null
+      and s.src_row_index is not null
+      and nullif(
+        regexp_replace(
+          replace(replace(coalesce(s.src_price_text, ''), ',', '.'), '₽', ''),
+          '[^0-9\.\-]',
+          '',
+          'g'
+        ),
+        ''
+      ) is not null
+  ) f
+  on conflict (price_list_id, row_index)
+  do update set
+    organization_id = excluded.organization_id,
+    supplier_id = excluded.supplier_id,
+    raw_name = excluded.raw_name,
+    original_name = excluded.original_name,
+    normalized_name = excluded.normalized_name,
+    unit = excluded.unit,
+    price = excluded.price,
+    currency = excluded.currency,
+    raw_row = excluded.raw_row,
+    status = 'active',
+    updated_at = now();
+
+  return query
   select
-    spi.id,
-    spi.price_list_id,
-    spi.organization_id,
-    spi.supplier_id,
-    spi.raw_name,
-    spi.original_name,
-    spi.normalized_name,
-    spi.unit,
-    spi.price,
-    spi.currency,
-    spi.raw_row,
-    spi.row_index,
-    spi.status,
-    spi.created_at,
-    spi.updated_at
-  from public.supplier_price_items as spi
-  join upserted_rows as ur
-    on ur.inserted_id = spi.id
-  order by spi.row_index asc, spi.created_at asc;
+    spi.id as out_id,
+    spi.price_list_id as out_price_list_id,
+    spi.organization_id as out_organization_id,
+    spi.supplier_id as out_supplier_id,
+    spi.raw_name as out_raw_name,
+    spi.original_name as out_original_name,
+    spi.normalized_name as out_normalized_name,
+    spi.unit as out_unit,
+    spi.price as out_price,
+    spi.currency as out_currency,
+    spi.row_index as out_row_index,
+    coalesce(spi.status, 'active') as out_status,
+    spi.created_at as out_created_at,
+    spi.updated_at as out_updated_at
+  from public.supplier_price_items spi
+  where spi.price_list_id = p_target_price_list_id
+    and coalesce(spi.status, 'active') <> 'deleted'
+  order by spi.row_index;
 end;
 $$;
 
