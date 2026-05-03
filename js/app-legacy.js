@@ -8360,6 +8360,30 @@ function ensureSupplierPriceManagerActionsBinding(){
       });
       return;
     }
+    if (action === 'delete') {
+      if (!confirm('Удалить прайс полностью? Это действие нельзя отменить.')) return;
+      if (typeof window.ownerDeleteSupplierPriceList !== 'function') {
+        toast('Не удалось удалить прайс-лист', 'err');
+        return;
+      }
+      btn.disabled = true;
+      window.ownerDeleteSupplierPriceList({
+        target_price_list_id: priceListId,
+        target_organization_id: orgId || null
+      }).then(function () {
+        toast('Прайс удалён', 'ok');
+        if (typeof window.refreshOrganizationSummaryForOrganization === 'function' && orgId) {
+          window.refreshOrganizationSummaryForOrganization(orgId).catch(function(){});
+        }
+        renderSupplierPriceManager();
+      }).catch(function (error) {
+        console.error('ownerDeleteSupplierPriceList failed', error, error && error.stack);
+        toast('Не удалось удалить прайс-лист', 'err');
+      }).finally(function () {
+        btn.disabled = false;
+      });
+      return;
+    }
   });
 }
 
@@ -8550,6 +8574,7 @@ function renderSupplierPriceManager(){
     }
     body.innerHTML = rows.map(function(pl){
       var itemCount = pl.item_count !== undefined ? pl.item_count : pl.items_count;
+      var canDeletePrice = !!(window.CU && (window.CU.role === 'owner' || window.CU.role === 'platform_owner' || typeof window.hasPermission !== 'function' || window.hasPermission('price_lists.delete')));
       return '<div style="padding:16px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);display:grid;gap:10px;">'
         +'<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'
           +'<div style="min-width:0;flex:1;">'
@@ -8565,6 +8590,7 @@ function renderSupplierPriceManager(){
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
           +'<button class="tbBtn" data-price-list-action="open" data-price-list-id="'+_esc(String(pl.id || ''))+'" style="cursor:pointer;">Открыть</button>'
           +(String(pl.status || 'active') !== 'archived' ? '<button class="tbBtn danger" data-price-list-action="archive" data-price-list-id="'+_esc(String(pl.id || ''))+'" style="cursor:pointer;">Архивировать</button>' : '')
+          +(canDeletePrice ? '<button class="tbBtn danger" data-price-list-action="delete" data-price-list-id="'+_esc(String(pl.id || ''))+'" style="cursor:pointer;">Удалить</button>' : '')
         +'</div>'
       +'</div>';
     }).join('');

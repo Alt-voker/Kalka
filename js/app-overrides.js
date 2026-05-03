@@ -1046,6 +1046,12 @@
     return rpcWithPortability('owner_archive_supplier_price_list', payload || {}, 'Не удалось архивировать прайс-лист');
   };
 
+  window.ownerDeleteSupplierPriceList = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    return rpcWithPortability('owner_delete_supplier_price_list', payload || {}, 'Не удалось удалить прайс-лист');
+  };
+
   window.ownerListSupplierPriceItems = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
