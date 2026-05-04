@@ -78,7 +78,8 @@ begin
     raise exception 'Forbidden' using errcode = '42501';
   end if;
 
-  if not public.has_permission(v_org_id, 'price_lists.view') then
+  if not public.has_permission(v_org_id, 'tender.view')
+     and not public.has_permission(v_org_id, 'price_lists.view') then
     raise exception 'Forbidden' using errcode = '42501';
   end if;
 
@@ -821,8 +822,11 @@ begin
   from public.supplier_price_items as spi
   join public.supplier_price_lists as spl
     on spl.id = spi.price_list_id
+   and spl.organization_id = v_org_id
+   and coalesce(spl.status, 'active') <> 'deleted'
   join public.suppliers as s
     on s.id = spl.supplier_id
+   and s.organization_id = v_org_id
   where spl.organization_id = v_org_id
     and coalesce(spl.status, 'active') <> 'deleted'
     and coalesce(spi.status, 'active') <> 'deleted'

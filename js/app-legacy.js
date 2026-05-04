@@ -10694,15 +10694,12 @@ if(typeof window.__tenderCatalogLoading==='undefined') window.__tenderCatalogLoa
 if(typeof window.__tenderCatalogLoadedOrgId==='undefined') window.__tenderCatalogLoadedOrgId='';
 if(typeof window.__tenderCatalogError==='undefined') window.__tenderCatalogError='';
 if(typeof window.__tenderCatalogShellKey==='undefined') window.__tenderCatalogShellKey='';
+if(typeof window.__tenderCatalogOrgId==='undefined') window.__tenderCatalogOrgId='';
 var _tenderCatalogSearchTimer = null;
 
 function getTenderCatalogOrganizationId(){
   return String(
-    (window.__userSession && (
-      window.__userSession.activeOrganizationId ||
-      (window.__userSession.activeOrganization && window.__userSession.activeOrganization.id)
-    )) ||
-    (window.activeRest && window.activeRest.id) ||
+    (window.__userSession && window.__userSession.activeOrganizationId) ||
     ''
   ).trim();
 }
@@ -10804,6 +10801,7 @@ function renderTenderCatalogShell(force){
   if(!force && window.__tenderCatalogShellKey === shellKey && root.innerHTML) return;
   window.__tenderCatalogShellKey = shellKey;
   root.style.display = '';
+  window.__tenderCatalogOrgId = orgId;
   var mode = window.__tenderCatalogViewMode === 'group' ? 'group' : 'list';
   var listOn = mode === 'list';
   var total = mode === 'group'
@@ -10829,7 +10827,7 @@ function renderTenderCatalogShell(force){
           +'<button id="tenderCatalogExportBtn" class="tbBtn" onclick="exportTenderCatalogExcel()">Экспорт Excel</button>'
         +'</div>'
         +'<div id="tenderCatalogMeta" style="font-size:12px;color:var(--t3);margin-bottom:12px;">'
-          +(window.__tenderCatalogLoading ? 'Загрузка каталога...' : (window.__tenderCatalogError ? '<span style="color:var(--rd);">'+window.__tenderCatalogError+'</span>' : (orgId ? '' : 'Выберите организацию для просмотра прайсов поставщиков')))
+          +(window.__tenderCatalogLoading ? 'Загрузка каталога...' : (window.__tenderCatalogError ? '<span style="color:var(--rd);">'+window.__tenderCatalogError+'</span>' : (orgId ? '' : 'Выберите организацию для просмотра тендера')))
         +'</div>'
         +'<div style="margin-bottom:12px;">'
           +'<input id="tenderCatalogSearch" type="text" placeholder="Поиск по товару или поставщику..."'
@@ -10996,12 +10994,21 @@ async function loadTenderCatalogRows(force){
     window.__tenderCatalogFilteredItems = [];
     window.__tenderCatalogGroupedItems = [];
     window.__tenderCatalogAllGroupedItems = [];
-    window.__tenderCatalogError = '';
+    window.__tenderCatalogError = 'Выберите активную организацию';
     window.__tenderCatalogLoadedOrgId = '';
     window.__tenderCatalogLoading = false;
     renderTenderCatalogShell(true);
     renderTenderCatalogRows();
     return [];
+  }
+  if(window.__tenderCatalogOrgId && window.__tenderCatalogOrgId !== orgId){
+    window.__tenderCatalogItems = [];
+    window.__tenderCatalogFilteredItems = [];
+    window.__tenderCatalogAllGroupedItems = [];
+    window.__tenderCatalogGroupedItems = [];
+    window.__tenderCatalogSearch = '';
+    window.__tenderCatalogError = '';
+    window.__tenderCatalogLoadedOrgId = '';
   }
   if(!force && window.__tenderCatalogLoadedOrgId === orgId && Array.isArray(window.__tenderCatalogItems) && window.__tenderCatalogItems.length){
     renderTenderCatalogRows();
@@ -11032,6 +11039,7 @@ async function loadTenderCatalogRows(force){
     window.__tenderCatalogFilteredItems = all.slice();
     window.__tenderCatalogAllGroupedItems = buildTenderCatalogGroups(all);
     window.__tenderCatalogGroupedItems = buildTenderCatalogGroups(all);
+    window.__tenderCatalogOrgId = orgId;
     console.info('tender catalog loaded', {
       orgId: orgId,
       count: all.length
@@ -11043,6 +11051,7 @@ async function loadTenderCatalogRows(force){
     window.__tenderCatalogFilteredItems = [];
     window.__tenderCatalogAllGroupedItems = [];
     window.__tenderCatalogGroupedItems = [];
+    window.__tenderCatalogOrgId = orgId;
     console.error('tender catalog load failed', error, error && error.stack ? error.stack : '');
     return [];
   } finally {

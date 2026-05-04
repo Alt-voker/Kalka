@@ -157,6 +157,7 @@
       if (typeof window.__tenderCatalogLoading !== 'undefined') window.__tenderCatalogLoading = false;
       if (typeof window.__tenderCatalogLoadedOrgId !== 'undefined') window.__tenderCatalogLoadedOrgId = '';
       if (typeof window.__tenderCatalogError !== 'undefined') window.__tenderCatalogError = '';
+      if (typeof window.__tenderCatalogOrgId !== 'undefined') window.__tenderCatalogOrgId = '';
       if (typeof window.ordersRestFilter !== 'undefined') window.ordersRestFilter = 'all';
       if (typeof window.catFilter !== 'undefined') window.catFilter = 'all';
       if (typeof window.ordFilter !== 'undefined') window.ordFilter = 'all';

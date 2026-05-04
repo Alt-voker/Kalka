@@ -10687,21 +10687,19 @@ function exportTenderTable(){
 if(typeof window.__tenderCatalogItems==='undefined') window.__tenderCatalogItems=[];
 if(typeof window.__tenderCatalogFilteredItems==='undefined') window.__tenderCatalogFilteredItems=[];
 if(typeof window.__tenderCatalogGroupedItems==='undefined') window.__tenderCatalogGroupedItems=[];
+if(typeof window.__tenderCatalogAllGroupedItems==='undefined') window.__tenderCatalogAllGroupedItems=[];
 if(typeof window.__tenderCatalogSearch==='undefined') window.__tenderCatalogSearch='';
 if(typeof window.__tenderCatalogViewMode==='undefined') window.__tenderCatalogViewMode='list';
 if(typeof window.__tenderCatalogLoading==='undefined') window.__tenderCatalogLoading=false;
 if(typeof window.__tenderCatalogLoadedOrgId==='undefined') window.__tenderCatalogLoadedOrgId='';
 if(typeof window.__tenderCatalogError==='undefined') window.__tenderCatalogError='';
 if(typeof window.__tenderCatalogShellKey==='undefined') window.__tenderCatalogShellKey='';
+if(typeof window.__tenderCatalogOrgId==='undefined') window.__tenderCatalogOrgId='';
 var _tenderCatalogSearchTimer = null;
 
 function getTenderCatalogOrganizationId(){
   return String(
-    (window.__userSession && (
-      window.__userSession.activeOrganizationId ||
-      (window.__userSession.activeOrganization && window.__userSession.activeOrganization.id)
-    )) ||
-    (window.activeRest && window.activeRest.id) ||
+    (window.__userSession && window.__userSession.activeOrganizationId) ||
     ''
   ).trim();
 }
@@ -10803,10 +10801,15 @@ function renderTenderCatalogShell(force){
   if(!force && window.__tenderCatalogShellKey === shellKey && root.innerHTML) return;
   window.__tenderCatalogShellKey = shellKey;
   root.style.display = '';
+  window.__tenderCatalogOrgId = orgId;
   var mode = window.__tenderCatalogViewMode === 'group' ? 'group' : 'list';
   var listOn = mode === 'list';
-  var total = Array.isArray(window.__tenderCatalogItems) ? window.__tenderCatalogItems.length : 0;
-  var found = Array.isArray(window.__tenderCatalogFilteredItems) ? window.__tenderCatalogFilteredItems.length : total;
+  var total = mode === 'group'
+    ? (Array.isArray(window.__tenderCatalogAllGroupedItems) ? window.__tenderCatalogAllGroupedItems.length : 0)
+    : (Array.isArray(window.__tenderCatalogItems) ? window.__tenderCatalogItems.length : 0);
+  var found = mode === 'group'
+    ? (Array.isArray(window.__tenderCatalogGroupedItems) ? window.__tenderCatalogGroupedItems.length : 0)
+    : (Array.isArray(window.__tenderCatalogFilteredItems) ? window.__tenderCatalogFilteredItems.length : total);
   var totalLabel = mode === 'group' ? 'Всего групп' : 'Всего позиций';
   var foundLabel = mode === 'group' ? 'Найдено групп' : 'Найдено';
   root.innerHTML =
@@ -10824,7 +10827,7 @@ function renderTenderCatalogShell(force){
           +'<button id="tenderCatalogExportBtn" class="tbBtn" onclick="exportTenderCatalogExcel()">Экспорт Excel</button>'
         +'</div>'
         +'<div id="tenderCatalogMeta" style="font-size:12px;color:var(--t3);margin-bottom:12px;">'
-          +(window.__tenderCatalogLoading ? 'Загрузка каталога...' : (window.__tenderCatalogError ? '<span style="color:var(--rd);">'+window.__tenderCatalogError+'</span>' : (orgId ? '' : 'Выберите организацию для просмотра прайсов поставщиков')))
+          +(window.__tenderCatalogLoading ? 'Загрузка каталога...' : (window.__tenderCatalogError ? '<span style="color:var(--rd);">'+window.__tenderCatalogError+'</span>' : (orgId ? '' : 'Выберите организацию для просмотра тендера')))
         +'</div>'
         +'<div style="margin-bottom:12px;">'
           +'<input id="tenderCatalogSearch" type="text" placeholder="Поиск по товару или поставщику..."'
@@ -10860,14 +10863,16 @@ function renderTenderCatalogRows(){
   var items = Array.isArray(window.__tenderCatalogItems) ? window.__tenderCatalogItems : [];
   var query = String(window.__tenderCatalogSearch || '').trim().toLowerCase();
   var filteredItems = filterTenderCatalogItems(items, query);
+  var allGroups = buildTenderCatalogGroups(items);
+  var filteredGroups = buildTenderCatalogGroups(filteredItems);
   window.__tenderCatalogFilteredItems = filteredItems || [];
-  var groups = buildTenderCatalogGroups(filteredItems);
-  window.__tenderCatalogGroupedItems = groups || [];
+  window.__tenderCatalogAllGroupedItems = allGroups || [];
+  window.__tenderCatalogGroupedItems = filteredGroups || [];
 
   var mode = window.__tenderCatalogViewMode === 'group' ? 'group' : 'list';
   var totalLabel = mode === 'group' ? 'Всего групп' : 'Всего позиций';
   var foundLabel = mode === 'group' ? 'Найдено групп' : 'Найдено';
-  counts.innerHTML = totalLabel+': <b style="color:var(--tx);">'+(mode === 'group' ? groups.length : items.length)+'</b> · '+foundLabel+': <b style="color:var(--tx);">'+(mode === 'group' ? groups.length : filteredItems.length)+'</b>';
+  counts.innerHTML = totalLabel+': <b style="color:var(--tx);">'+(mode === 'group' ? allGroups.length : items.length)+'</b> · '+foundLabel+': <b style="color:var(--tx);">'+(mode === 'group' ? filteredGroups.length : filteredItems.length)+'</b>';
   meta.textContent = window.__tenderCatalogLoading
     ? 'Загрузка каталога...'
     : (window.__tenderCatalogError ? window.__tenderCatalogError : (items.length ? 'Показаны загруженные прайсы поставщиков' : 'Нет данных для тендера'));
@@ -10875,7 +10880,7 @@ function renderTenderCatalogRows(){
   if(mode === 'group'){
     console.info('tender catalog grouped', {
       totalItems: items.length,
-      groups: groups.length,
+      groups: filteredGroups.length,
       query: query
     });
     head.innerHTML = '<tr style="background:var(--bg3);">'
@@ -10888,11 +10893,11 @@ function renderTenderCatalogRows(){
       +'<th style="padding:10px 12px;text-align:center;font-size:12px;font-weight:700;border:1px solid var(--br);min-width:100px;">Тип прайса</th>'
       +'<th style="padding:10px 12px;text-align:left;font-size:12px;font-weight:700;border:1px solid var(--br);min-width:180px;">Прайс-лист</th>'
       +'</tr>';
-    if(!groups.length){
+    if(!filteredGroups.length){
       body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--t3);padding:40px;">Ничего не найдено</td></tr>';
       return;
     }
-    body.innerHTML = groups.map(function(group){
+    body.innerHTML = filteredGroups.map(function(group){
       var variants = group.variants || [];
       var bestId = group.best && group.best.item_id ? String(group.best.item_id) : '';
       var variantsHtml = variants.map(function(item){
@@ -10988,12 +10993,22 @@ async function loadTenderCatalogRows(force){
     window.__tenderCatalogItems = [];
     window.__tenderCatalogFilteredItems = [];
     window.__tenderCatalogGroupedItems = [];
-    window.__tenderCatalogError = '';
+    window.__tenderCatalogAllGroupedItems = [];
+    window.__tenderCatalogError = 'Выберите активную организацию';
     window.__tenderCatalogLoadedOrgId = '';
     window.__tenderCatalogLoading = false;
     renderTenderCatalogShell(true);
     renderTenderCatalogRows();
     return [];
+  }
+  if(window.__tenderCatalogOrgId && window.__tenderCatalogOrgId !== orgId){
+    window.__tenderCatalogItems = [];
+    window.__tenderCatalogFilteredItems = [];
+    window.__tenderCatalogAllGroupedItems = [];
+    window.__tenderCatalogGroupedItems = [];
+    window.__tenderCatalogSearch = '';
+    window.__tenderCatalogError = '';
+    window.__tenderCatalogLoadedOrgId = '';
   }
   if(!force && window.__tenderCatalogLoadedOrgId === orgId && Array.isArray(window.__tenderCatalogItems) && window.__tenderCatalogItems.length){
     renderTenderCatalogRows();
@@ -11022,7 +11037,9 @@ async function loadTenderCatalogRows(force){
     }
     window.__tenderCatalogItems = all;
     window.__tenderCatalogFilteredItems = all.slice();
+    window.__tenderCatalogAllGroupedItems = buildTenderCatalogGroups(all);
     window.__tenderCatalogGroupedItems = buildTenderCatalogGroups(all);
+    window.__tenderCatalogOrgId = orgId;
     console.info('tender catalog loaded', {
       orgId: orgId,
       count: all.length
@@ -11032,7 +11049,9 @@ async function loadTenderCatalogRows(force){
     window.__tenderCatalogError = (error && error.message) ? error.message : 'Не удалось загрузить каталог тендера';
     window.__tenderCatalogItems = [];
     window.__tenderCatalogFilteredItems = [];
+    window.__tenderCatalogAllGroupedItems = [];
     window.__tenderCatalogGroupedItems = [];
+    window.__tenderCatalogOrgId = orgId;
     console.error('tender catalog load failed', error, error && error.stack ? error.stack : '');
     return [];
   } finally {

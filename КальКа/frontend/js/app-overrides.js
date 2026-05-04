@@ -151,11 +151,13 @@
       if (typeof window.__tenderCatalogItems !== 'undefined') window.__tenderCatalogItems = [];
       if (typeof window.__tenderCatalogFilteredItems !== 'undefined') window.__tenderCatalogFilteredItems = [];
       if (typeof window.__tenderCatalogGroupedItems !== 'undefined') window.__tenderCatalogGroupedItems = [];
+      if (typeof window.__tenderCatalogAllGroupedItems !== 'undefined') window.__tenderCatalogAllGroupedItems = [];
       if (typeof window.__tenderCatalogSearch !== 'undefined') window.__tenderCatalogSearch = '';
       if (typeof window.__tenderCatalogViewMode !== 'undefined') window.__tenderCatalogViewMode = 'list';
       if (typeof window.__tenderCatalogLoading !== 'undefined') window.__tenderCatalogLoading = false;
       if (typeof window.__tenderCatalogLoadedOrgId !== 'undefined') window.__tenderCatalogLoadedOrgId = '';
       if (typeof window.__tenderCatalogError !== 'undefined') window.__tenderCatalogError = '';
+      if (typeof window.__tenderCatalogOrgId !== 'undefined') window.__tenderCatalogOrgId = '';
       if (typeof window.ordersRestFilter !== 'undefined') window.ordersRestFilter = 'all';
       if (typeof window.catFilter !== 'undefined') window.catFilter = 'all';
       if (typeof window.ordFilter !== 'undefined') window.ordFilter = 'all';
