@@ -2,6 +2,14 @@ begin;
 
 create extension if not exists pgcrypto;
 
+alter table if exists public.supplier_price_lists
+  add column if not exists price_type text default 'main';
+
+update public.supplier_price_lists as spl
+   set price_type = coalesce(nullif(lower(trim(spl.price_type)), ''), 'main')
+ where spl.price_type is null
+    or trim(spl.price_type) = '';
+
 alter table if exists public.supplier_price_items
   add column if not exists original_name text not null default '';
 
@@ -17,7 +25,7 @@ create unique index if not exists supplier_price_list_legal_entities_price_list_
   on public.supplier_price_list_legal_entities(price_list_id, legal_entity_id);
 
 drop function if exists public.owner_list_supplier_price_lists(uuid, uuid);
-drop function if exists public.owner_create_supplier_price_list(uuid, uuid, text, text, uuid, uuid[], text);
+drop function if exists public.owner_create_supplier_price_list(uuid, uuid, text, text, uuid, uuid[], text, text);
 drop function if exists public.owner_archive_supplier_price_list(uuid, uuid);
 drop function if exists public.owner_delete_supplier_price_list(uuid, uuid);
 drop function if exists public.owner_clear_supplier_price_items(uuid, uuid);
@@ -37,6 +45,7 @@ returns table (
   source_filename text,
   uploaded_by uuid,
   status text,
+  price_type text,
   created_at timestamptz,
   updated_at timestamptz,
   item_count integer,
@@ -80,6 +89,7 @@ begin
       coalesce(spl.source_filename, '') as source_filename,
       spl.uploaded_by,
       coalesce(spl.status, 'active') as status,
+      coalesce(nullif(lower(trim(spl.price_type)), ''), 'main') as price_type,
       spl.created_at,
       spl.updated_at
     from public.supplier_price_lists as spl
@@ -131,6 +141,7 @@ begin
     lr.source_filename,
     lr.uploaded_by,
     lr.status,
+    lr.price_type,
     lr.created_at,
     lr.updated_at,
     coalesce(ic.item_count, 0) as item_count,
@@ -154,7 +165,8 @@ create or replace function public.owner_create_supplier_price_list(
   p_source_filename text default '',
   p_uploaded_by uuid default null,
   p_legal_entity_ids uuid[] default '{}'::uuid[],
-  p_status text default 'active'
+  p_status text default 'active',
+  p_price_type text default 'main'
 )
 returns table (
   id uuid,
@@ -165,6 +177,7 @@ returns table (
   source_filename text,
   uploaded_by uuid,
   status text,
+  price_type text,
   created_at timestamptz,
   updated_at timestamptz,
   item_count integer,
@@ -225,6 +238,7 @@ begin
       source_filename,
       uploaded_by,
       status,
+      price_type,
       created_at,
       updated_at
     )
@@ -238,6 +252,10 @@ begin
       case
         when coalesce(lower(trim(p_status)), 'active') in ('active', 'archived', 'inactive') then lower(trim(p_status))
         else 'active'
+      end,
+      case
+        when coalesce(lower(trim(p_price_type)), 'main') = 'extra' then 'extra'
+        else 'main'
       end,
       now(),
       now()
@@ -283,6 +301,7 @@ begin
       coalesce(spl.source_filename, '') as source_filename,
       spl.uploaded_by,
       coalesce(spl.status, 'active') as status,
+      coalesce(nullif(lower(trim(spl.price_type)), ''), 'main') as price_type,
       spl.created_at,
       spl.updated_at
     from public.supplier_price_lists as spl
@@ -334,6 +353,7 @@ begin
     lr.source_filename,
     lr.uploaded_by,
     lr.status,
+    lr.price_type,
     lr.created_at,
     lr.updated_at,
     coalesce(ic.item_count, 0) as item_count,
@@ -362,6 +382,7 @@ returns table (
   source_filename text,
   uploaded_by uuid,
   status text,
+  price_type text,
   created_at timestamptz,
   updated_at timestamptz,
   item_count integer,
@@ -833,7 +854,7 @@ end;
 $$;
 
 grant execute on function public.owner_list_supplier_price_lists(uuid, uuid) to authenticated;
-grant execute on function public.owner_create_supplier_price_list(uuid, uuid, text, text, uuid, uuid[], text) to authenticated;
+grant execute on function public.owner_create_supplier_price_list(uuid, uuid, text, text, uuid, uuid[], text, text) to authenticated;
 grant execute on function public.owner_archive_supplier_price_list(uuid, uuid) to authenticated;
 grant execute on function public.owner_delete_supplier_price_list(uuid, uuid) to authenticated;
 grant execute on function public.owner_clear_supplier_price_items(uuid, uuid) to authenticated;

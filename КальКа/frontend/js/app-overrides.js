@@ -1094,7 +1094,8 @@
             : Array.isArray(payload.legalEntityIds)
               ? payload.legalEntityIds.slice()
               : [],
-      p_status: String(payload.p_status || payload.target_status || payload.status || 'active').trim() || 'active'
+      p_status: String(payload.p_status || payload.target_status || payload.status || 'active').trim() || 'active',
+      p_price_type: String(payload.p_price_type || payload.target_price_type || payload.price_type || payload.priceType || 'main').trim() || 'main'
     });
     return rpcWithPortability('owner_create_supplier_price_list', clean, 'Не удалось создать прайс-лист');
   };

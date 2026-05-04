@@ -7616,6 +7616,7 @@ function _exportSupCartCSV(supName, items, total, restName, date, comment){
 var _currentSupName = '';
 var _supPriceAppend = false; // false=заменить, true=дополнить
 var _supPriceImportMode = 'create';
+var _supPricePriceType = 'main';
 var _supPriceTargetPriceListId = '';
 var _supPriceExistingPriceLists = [];
 var _supPriceImportBook = null;
@@ -8085,6 +8086,7 @@ async function persistSupplierPriceImportToSupabase(importRows){
       p_supplier_id: supplierId,
       p_title: title,
       p_status: 'active',
+      p_price_type: _supPricePriceType || 'main',
       p_source_filename: sourceFilename,
       p_uploaded_by: uploadedBy,
       p_legal_entity_ids: legalEntityIds.slice()
@@ -8249,6 +8251,7 @@ function selectSupPriceSheet(sheetName){
 function openSupPriceUpload(supName, append){
   _currentSupName = supName;
   _supPriceAppend = append;
+  _supPricePriceType = append ? 'extra' : 'main';
   _supPriceImportMode = 'create';
   _supPriceTargetPriceListId = '';
   _supPriceExistingPriceLists = [];
@@ -8565,7 +8568,7 @@ function renderSupplierPriceExistingLists(rows) {
   }
   select.disabled = false;
   select.innerHTML = ['<option value="">Выберите прайс-лист</option>'].concat(rows.map(function (pl) {
-    return '<option value="'+_esc(String(pl.id || ''))+'">'+_esc(String(pl.title || pl.name || 'Прайс-лист'))+' · '+_esc(String(pl.status || 'active'))+'</option>';
+    return '<option value="'+_esc(String(pl.id || ''))+'">'+_esc(String(pl.title || pl.name || 'Прайс-лист'))+' · '+_esc(String(pl.status || 'active'))+' · '+_esc((String(pl.price_type || 'main') === 'extra' ? 'Доп. прайс' : 'Основной'))+'</option>';
   })).join('');
   if (_supPriceTargetPriceListId) {
     select.value = _supPriceTargetPriceListId;
@@ -8590,8 +8593,11 @@ function loadSupplierPriceListsForUpdateSelection() {
   if (select) select.innerHTML = '<option value="">Загрузка прайсов...</option>';
   updateSupplierPriceUploadButtonState();
   return Promise.resolve(window.ownerListSupplierPriceLists(supplier._id, orgId)).then(function (rows) {
-    renderSupplierPriceExistingLists(rows);
-    return rows;
+    var filtered = Array.isArray(rows) ? rows.filter(function (pl) {
+      return String((pl && pl.price_type) || 'main').toLowerCase() === String(_supPricePriceType || 'main').toLowerCase();
+    }) : [];
+    renderSupplierPriceExistingLists(filtered);
+    return filtered;
   }).catch(function (error) {
     console.warn('ownerListSupplierPriceLists for update mode failed', error, error && error.stack);
     renderSupplierPriceExistingLists([]);
@@ -8916,10 +8922,11 @@ function renderSupplierPriceManager(){
     body.innerHTML = rows.map(function(pl){
       var itemCount = pl.item_count !== undefined ? pl.item_count : pl.items_count;
       var canDeletePrice = !!(window.CU && (window.CU.role === 'owner' || window.CU.role === 'platform_owner' || typeof window.hasPermission !== 'function' || window.hasPermission('price_lists.delete')));
+      var typeLabel = String(pl.price_type || 'main') === 'extra' ? 'Доп. прайс' : 'Основной';
       return '<div style="padding:16px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);display:grid;gap:10px;">'
         +'<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">'
           +'<div style="min-width:0;flex:1;">'
-            +'<div style="font-size:15px;font-weight:800;">'+_esc(pl.title || pl.name || 'Прайс-лист')+'</div>'
+            +'<div style="font-size:15px;font-weight:800;">'+_esc(pl.title || pl.name || 'Прайс-лист')+' <span class="badge" style="margin-left:6px;">'+_esc(typeLabel)+'</span></div>'
             +'<div style="font-size:12px;color:var(--t2);margin-top:4px;">'+_esc(pl.source_filename || pl.file_path || '—')+'</div>'
           +'</div>'
           +'<span class="badge '+(String(pl.status || 'active') === 'archived' ? 'by' : 'bg')+'">'+_esc(String(pl.status || 'active'))+'</span>'
