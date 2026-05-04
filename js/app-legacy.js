@@ -1901,6 +1901,9 @@ function chunkArray(items, size) {
   return out;
 }
 window.normalizeLegalEntityIds = normalizeLegalEntityIds;
+if (typeof window.__supplierPriceImportInProgress === 'undefined') {
+  window.__supplierPriceImportInProgress = false;
+}
 function setSupplierPriceSaveEnabled(enabled, reason) {
   var btn = document.getElementById('supPriceUploadBtn');
   if (!btn) return;
@@ -1910,6 +1913,35 @@ function setSupplierPriceSaveEnabled(enabled, reason) {
   btn.style.cursor = enabled ? 'pointer' : 'not-allowed';
 }
 window.setSupplierPriceSaveEnabled = setSupplierPriceSaveEnabled;
+function setSupplierPriceImportButtonsDisabled(disabled) {
+  ['supPriceUploadBtn', 'priceConfirmBtn', 'priceChangeColsBtn', 'mcmApplyBtn', 'mcmSaveTplBtn'].forEach(function (id) {
+    var btn = document.getElementById(id);
+    if (!btn) return;
+    btn.disabled = !!disabled;
+    btn.style.opacity = disabled ? '0.6' : '';
+    btn.style.cursor = disabled ? 'not-allowed' : 'pointer';
+  });
+}
+window.setSupplierPriceImportButtonsDisabled = setSupplierPriceImportButtonsDisabled;
+function beginSupplierPriceImport(priceListId, mode) {
+  if (window.__supplierPriceImportInProgress) {
+    console.warn('supplier price import skipped: already in progress');
+    return false;
+  }
+  window.__supplierPriceImportInProgress = true;
+  setSupplierPriceImportButtonsDisabled(true);
+  console.info('supplier price import started once', {
+    priceListId: String(priceListId || '').trim() || null,
+    mode: String(mode || 'create').trim() || 'create'
+  });
+  return true;
+}
+window.beginSupplierPriceImport = beginSupplierPriceImport;
+function endSupplierPriceImport() {
+  window.__supplierPriceImportInProgress = false;
+  setSupplierPriceImportButtonsDisabled(false);
+}
+window.endSupplierPriceImport = endSupplierPriceImport;
 function updateSupplierPriceUploadButtonState() {
   var enabled = false;
   var reason = 'Сначала дождитесь загрузки юрлиц';
@@ -12313,6 +12345,9 @@ async function priceSaveEdited(){
     toast('Заполните название и цену для всех строк ('+invalid.length+' незаполнено)','err');
     return;
   }
+  if (!beginSupplierPriceImport(_supPriceTargetPriceListId || '', _supPriceImportMode)) {
+    return;
+  }
 
   // Конвертировать в rows-формат для processSupPriceRows
   var fakeRows = _priceEditRows.map(function(r){ return [r.name, r.unit, r.price.toString(), (r.price2||'').toString()]; });
@@ -12338,7 +12373,11 @@ async function priceSaveEdited(){
     }
   });
 
-  processSupPriceRows(fakeRows, fakeLayout, ctx.supName, ctx.append, ctx.priceName, ctx.allowedUserIds);
+  try {
+    processSupPriceRows(fakeRows, fakeLayout, ctx.supName, ctx.append, ctx.priceName, ctx.allowedUserIds);
+  } finally {
+    endSupplierPriceImport();
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -13216,6 +13255,9 @@ async function priceSaveEdited(){
     if(emptyErr) emptyErr.textContent = 'Нет ни одной корректной строки для загрузки. Проверьте название и цену.';
     return;
   }
+  if (!beginSupplierPriceImport(_supPriceTargetPriceListId || '', _supPriceImportMode)) {
+    return;
+  }
   try{
     _saveSupPriceTemplate(ctx.supName, {
       sheetName: _supPriceImportState.sheetName || '',
@@ -13281,6 +13323,8 @@ async function priceSaveEdited(){
     toast('Ошибка загрузки прайса: ' + (e && e.message ? e.message : 'неизвестная ошибка'), 'err');
     var errNode = document.getElementById('mcm-err');
     if(errNode) errNode.textContent = 'Ошибка загрузки прайса: ' + (e && e.message ? e.message : 'неизвестная ошибка');
+  } finally {
+    endSupplierPriceImport();
   }
 }
 
