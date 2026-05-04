@@ -740,6 +740,10 @@
     if (!client || !orgId) return [];
     var cache = getDataCache();
     if (Array.isArray(cache.suppliersByOrg[orgId])) {
+      console.info('suppliers loaded for organization', {
+        activeOrganizationId: orgId,
+        count: cache.suppliersByOrg[orgId].length
+      });
       return cache.suppliersByOrg[orgId].slice();
     }
     if (cache.suppliersPromisesByOrg[orgId]) {
@@ -778,6 +782,13 @@
       var suppliers = (Array.isArray(response.data) ? response.data : []).map(normalizeSupplierRow).filter(Boolean);
       cache.suppliersByOrg[orgId] = suppliers.slice();
       delete cache.suppliersErrorsByOrg[orgId];
+      if (window.__supplierRuntimeOrgId !== orgId) {
+        resetSupplierRuntimeForOrganizationChange(orgId);
+      }
+      console.info('suppliers loaded for organization', {
+        activeOrganizationId: orgId,
+        count: suppliers.length
+      });
       if (typeof window.syncSupplierRuntime === 'function') {
         window.syncSupplierRuntime(suppliers);
       } else {
@@ -1028,6 +1039,21 @@
     return clean;
   }
 
+  function resetSupplierRuntimeForOrganizationChange(nextOrgId) {
+    window.__supplierRuntime = null;
+    window.SUPPLIERS = [];
+    window.SUPS_DATA = [];
+    if (typeof window.__supplierRuntimeOrgId !== 'undefined') {
+      window.__supplierRuntimeOrgId = String(nextOrgId || '').trim();
+    }
+    if (typeof window.__supplierRuntimeLoadedOrgId !== 'undefined') {
+      window.__supplierRuntimeLoadedOrgId = '';
+    }
+    if (typeof window.__supplierRuntimeLoading !== 'undefined') {
+      window.__supplierRuntimeLoading = false;
+    }
+  }
+
   window.ownerListSuppliers = function (targetOrganizationId) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     var orgId = String(targetOrganizationId || '').trim();
@@ -1040,7 +1066,19 @@
   window.ownerCreateSupplier = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    return rpcWithPortability('owner_create_supplier', payload || {}, 'Не удалось создать поставщика');
+    var clean = rpcCleanPayload('owner_create_supplier', {
+      target_organization_id: String((payload && (payload.target_organization_id || payload.p_organization_id || payload.organization_id || payload.organizationId)) || '').trim() || null,
+      target_name: String((payload && (payload.target_name || payload.name)) || '').trim(),
+      target_inn: String((payload && (payload.target_inn || payload.inn)) || '').trim(),
+      target_phone: String((payload && (payload.target_phone || payload.phone)) || '').trim(),
+      target_email: String((payload && (payload.target_email || payload.email)) || '').trim(),
+      target_contact_name: String((payload && (payload.target_contact_name || payload.contact_name || payload.contact)) || '').trim(),
+      target_status: String((payload && (payload.target_status || payload.status)) || 'active').trim() || 'active',
+      target_legal_entity_ids: Array.isArray(payload && (payload.target_legal_entity_ids || payload.legal_entity_ids || payload.legalEntityIds))
+        ? (payload.target_legal_entity_ids || payload.legal_entity_ids || payload.legalEntityIds).slice()
+        : []
+    });
+    return rpcWithPortability('owner_create_supplier', clean, 'Не удалось создать поставщика');
   };
 
   window.ownerUpdateSupplier = function (payload) {
@@ -2631,6 +2669,8 @@
       };
     });
 
+    resetSupplierRuntimeForOrganizationChange(targetOrg.id);
+
     session.suppliers = Array.isArray(session.suppliers) ? session.suppliers : [];
 
     var baseDb = ensureArrays(window._dbCache || getDefaults());
@@ -2897,7 +2937,7 @@
         throw new Error('Supabase не настроен');
       }
       if (!activeOrgId) {
-        throw new Error('Нет активной организации. Выберите организацию и попробуйте снова.');
+        throw new Error('Выберите активную организацию');
       }
 
       var name = ((document.getElementById('as-n') || {}).value || '').trim();
@@ -2920,7 +2960,11 @@
         target_status: ((document.getElementById('as-status') || {}).value || (existing && existing.status) || 'active').trim() || 'active',
         target_legal_entity_ids: selectedLegalEntityIds.slice()
       };
-      console.info('assign supplier payload', supplierPayload);
+      console.info('supplier create payload', {
+        activeOrganizationId: activeOrgId,
+        supplierName: name,
+        legalEntityIds: selectedLegalEntityIds.slice()
+      });
 
       var upsertRows;
       if (supplierId) {

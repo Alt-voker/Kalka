@@ -3953,9 +3953,9 @@ function renderSupplierOrganizationOptions(selectedIds){
   var box=document.getElementById('as-orgs');
   if(!box) return;
   var orgId=String((window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
-  var org=getOrganizationById(orgId) || (window.__userSession && window.__userSession.activeOrganization) || window.activeRest || null;
+  var org=getOrganizationById(orgId) || (window.__userSession && window.__userSession.activeOrganization) || null;
   if(!orgId || !org){
-    box.innerHTML='<div style="font-size:12px;color:var(--t3);">Выберите организацию.</div>';
+    box.innerHTML='<div style="font-size:12px;color:var(--rd);">Выберите активную организацию.</div>';
     return;
   }
   box.innerHTML='<div style="display:grid;gap:6px;padding:10px;border:1px solid var(--br);border-radius:8px;background:var(--bg3);">'
@@ -4004,7 +4004,7 @@ function openSupplierModal(index, presetRestId){
   setVal('as-mn', supplier?String((supplier.min||'').replace(/[^\d.,]/g,'')).replace(',','.'):'');
   var cat=document.getElementById('as-c'); if(cat) cat.value=supplier&&supplier.type?supplier.type:'Универсальный';
   renderSupplierOrganizationOptions([]);
-  renderSupplierLegalEntityOptions(normalizeSupplierLegalEntityIds(supplier), supplier && supplier.organizationId ? supplier.organizationId : presetRestId || (window.__userSession && window.__userSession.activeOrganizationId) || '');
+  renderSupplierLegalEntityOptions(normalizeSupplierLegalEntityIds(supplier), (window.__userSession && window.__userSession.activeOrganizationId) || '');
   openModal('addSup');
 }
 function submitSup(){

@@ -91,6 +91,7 @@ begin
    and le.organization_id = target_organization_id
    and le.status = 'active'
   where s.organization_id = target_organization_id
+    and coalesce(s.status, 'active') <> 'deleted'
   group by
     s.id, s.organization_id, s.name, s.inn, s.phone, s.email,
     s.contact_name, s.contact_person, s.status, s.created_at, s.updated_at, s.comment
@@ -144,7 +145,8 @@ begin
   if target_organization_id is null then
     raise exception 'Forbidden' using errcode = '42501';
   end if;
-  if not public.has_permission(target_organization_id, 'suppliers.create') then
+  if not public.has_permission(target_organization_id, 'suppliers.create')
+     and not public.has_permission(target_organization_id, 'suppliers.edit') then
     raise exception 'Forbidden' using errcode = '42501';
   end if;
   if coalesce(trim(target_name), '') = '' then
