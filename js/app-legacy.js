@@ -8089,6 +8089,7 @@ async function persistSupplierPriceImportToSupabase(importRows){
       totalChunks: chunks.length
     });
     window.__supplierPriceImportProgress.percent = 100;
+    window.__supplierPriceInvalidRows = Array.isArray(window.__supplierPriceInvalidRows) ? window.__supplierPriceInvalidRows.slice() : [];
     return {
       priceList: created,
       imported: totalImported,
@@ -8096,6 +8097,7 @@ async function persistSupplierPriceImportToSupabase(importRows){
     };
   } catch (error) {
     console.error('persistSupplierPriceImportToSupabase failed', error, error && error.stack);
+    window.__supplierPriceInvalidRows = null;
     window.__supplierPriceImportProgress = null;
     if (created && created.id && typeof window.ownerDeleteSupplierPriceList === 'function') {
       await window.ownerDeleteSupplierPriceList({
@@ -8323,7 +8325,100 @@ function openSupPriceUpload(supName, append){
       if (text) text.innerText = 'Загрузка: ' + (p.current || 0) + ' / ' + (p.total || 0) + ' (' + (p.percent || 0) + '%)';
     }, 250);
   }
+  var errorsWrap = document.getElementById('supplier-import-errors');
+  if (!errorsWrap) {
+    var uploadBody = document.querySelector('#ov-supPriceUpload .modal');
+    if (uploadBody) {
+      errorsWrap = document.createElement('div');
+      errorsWrap.id = 'supplier-import-errors';
+      errorsWrap.style.marginTop = '12px';
+      errorsWrap.style.display = 'none';
+      errorsWrap.innerHTML = ''
+        +'<div class="error-summary" style="font-size:12px;color:var(--t2);margin-bottom:8px;"></div>'
+        +'<button id="show-errors-btn" class="tbBtn danger" type="button" style="display:none;cursor:pointer;">Показать ошибки</button>';
+      uploadBody.appendChild(errorsWrap);
+    }
+  }
+  if (!document.getElementById('supplier-errors-modal')) {
+    var errorsModal = document.createElement('div');
+    errorsModal.id = 'supplier-errors-modal';
+    errorsModal.className = 'ov';
+    errorsModal.innerHTML = ''
+      +'<div class="modal xl" style="max-width:980px;width:min(980px,calc(100vw - 24px));">'
+        +'<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">'
+          +'<div>'
+            +'<div class="m-title">Ошибки импорта</div>'
+            +'<div class="m-sub" style="font-size:12px;color:var(--t2);margin-top:4px;">Показаны первые 100 пропущенных строк</div>'
+          +'</div>'
+          +'<button class="tbBtn" type="button" onclick="closeSupplierPriceErrorsModal()" style="cursor:pointer;">Закрыть</button>'
+        +'</div>'
+        +'<div style="margin-top:14px;overflow:auto;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;">'
+          +'<table style="width:100%;border-collapse:collapse;min-width:760px;">'
+            +'<thead>'
+              +'<tr style="background:var(--bg3);">'
+                +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">#</th>'
+                +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Товар</th>'
+                +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Цена</th>'
+                +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Причина</th>'
+              +'</tr>'
+            +'</thead>'
+            +'<tbody id="errors-body"></tbody>'
+          +'</table>'
+        +'</div>'
+      +'</div>';
+    document.body.appendChild(errorsModal);
+  }
+  if (!window.__supplierPriceImportErrorsTimer) {
+    window.__supplierPriceImportErrorsTimer = setInterval(function () {
+      var p = window.__supplierPriceInvalidRows;
+      var wrap = document.getElementById('supplier-import-errors');
+      var summary = wrap ? wrap.querySelector('.error-summary') : null;
+      var btn = document.getElementById('show-errors-btn');
+      var hasErrors = Array.isArray(p) && p.length > 0;
+      if (wrap) wrap.style.display = hasErrors ? 'block' : 'none';
+      if (summary) summary.textContent = hasErrors ? ('Пропущено строк: ' + p.length) : '';
+      if (btn) btn.style.display = hasErrors ? 'inline-flex' : 'none';
+      if (btn && !btn.dataset.bound) {
+        btn.dataset.bound = '1';
+        btn.addEventListener('click', function () {
+          openSupplierPriceErrorsModal();
+        });
+      }
+    }, 300);
+  }
 }
+
+function detectSupplierPriceErrorReason(row) {
+  row = row || {};
+  if (!String(row.raw_name || row.name || '').trim()) return 'Нет названия товара';
+  if (!String(row.price || row.src_price_text || '').trim()) return 'Нет цены';
+  return 'Ошибка данных';
+}
+
+function closeSupplierPriceErrorsModal() {
+  var modal = document.getElementById('supplier-errors-modal');
+  if (modal) modal.classList.remove('on');
+}
+window.closeSupplierPriceErrorsModal = closeSupplierPriceErrorsModal;
+
+function openSupplierPriceErrorsModal() {
+  var modal = document.getElementById('supplier-errors-modal');
+  var tbody = document.getElementById('errors-body');
+  var rows = Array.isArray(window.__supplierPriceInvalidRows) ? window.__supplierPriceInvalidRows.slice(0, 100) : [];
+  if (!modal || !tbody) return;
+  tbody.innerHTML = '';
+  rows.forEach(function (row, index) {
+    var tr = document.createElement('tr');
+    tr.innerHTML = ''
+      +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(String(index + 1))+'</td>'
+      +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(String(row.raw_name || row.name || '-'))+'</td>'
+      +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(String(row.price || row.src_price_text || '-'))+'</td>'
+      +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(detectSupplierPriceErrorReason(row))+'</td>';
+    tbody.appendChild(tr);
+  });
+  modal.classList.add('on');
+}
+window.openSupplierPriceErrorsModal = openSupplierPriceErrorsModal;
 
 function selectAllSupPriceComps(val){
   document.querySelectorAll('.sup-price-comp-cb').forEach(function(cb){cb.checked=val;});

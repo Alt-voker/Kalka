@@ -1201,6 +1201,7 @@
       return !String(item.src_raw_name || '').trim() ||
         !String(item.src_price_text || '').trim();
     });
+    window.__supplierPriceInvalidRows = invalidItems.slice();
     console.warn('supplier price invalid rows skipped before rpc', {
       total: items.length,
       valid: validItems.length,
@@ -1212,6 +1213,7 @@
       valid: validItems.length,
       invalid: invalidItems.length
     };
+    window.__supplierPriceInvalidRows = invalidItems.slice();
     if (!validItems.length) {
       throw new Error('Нет валидных строк для импорта: проверьте колонку товара и цены');
     }
