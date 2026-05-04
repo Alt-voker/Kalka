@@ -8025,6 +8025,8 @@ async function persistSupplierPriceImportToSupabase(importRows){
   if (!created || !created.id) throw new Error('Не удалось создать прайс-лист');
   var chunks = chunkArray(rows, 200);
   var importedRows = [];
+  let totalImported = 0;
+  let totalSkipped = 0;
   try {
     for (var i = 0; i < chunks.length; i++) {
       var chunk = chunks[i];
@@ -8048,10 +8050,14 @@ async function persistSupplierPriceImportToSupabase(importRows){
         target_price_list_id: created.id,
         target_items: chunk
       });
+      totalImported += Array.isArray(chunk) ? chunk.length : 0;
+      if (window.__supplierPriceImportStats) {
+        totalSkipped += Number(window.__supplierPriceImportStats.invalid || 0);
+      }
       importedRows = importedRows.concat(Array.isArray(chunkRows) ? chunkRows : []);
       var progressEl = document.getElementById('supPriceErr');
       if (progressEl) {
-        progressEl.textContent = 'Импортировано ' + Math.min((i + 1) * 200, rows.length) + ' из ' + rows.length + ' строк';
+        progressEl.textContent = 'Импортировано ' + Math.min(totalImported, rows.length) + ' из ' + rows.length + ' строк';
       }
       console.info('supplier price import chunk done', {
         chunk: i + 1,
@@ -8062,14 +8068,15 @@ async function persistSupplierPriceImportToSupabase(importRows){
     if (typeof window.refreshOrganizationSummaryForOrganization === 'function') {
       await window.refreshOrganizationSummaryForOrganization(organizationId).catch(function(){});
     }
+    console.info('supplier price import total result', {
+      totalImported: totalImported,
+      totalSkipped: totalSkipped,
+      totalChunks: chunks.length
+    });
     return {
       priceList: created,
-      imported: window.__supplierPriceImportStats && Number(window.__supplierPriceImportStats.valid || 0) > 0
-        ? Number(window.__supplierPriceImportStats.valid || importedRows.length || 0)
-        : (Array.isArray(importedRows) ? importedRows.length : rows.length),
-      skippedRows: window.__supplierPriceImportStats
-        ? Number(window.__supplierPriceImportStats.invalid || 0)
-        : Math.max(0, (importRows || []).length - rows.length)
+      imported: totalImported,
+      skippedRows: totalSkipped
     };
   } catch (error) {
     console.error('persistSupplierPriceImportToSupabase failed', error, error && error.stack);
