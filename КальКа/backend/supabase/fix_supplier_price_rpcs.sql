@@ -20,6 +20,7 @@ drop function if exists public.owner_list_supplier_price_lists(uuid, uuid);
 drop function if exists public.owner_create_supplier_price_list(uuid, uuid, text, text, uuid, uuid[], text);
 drop function if exists public.owner_archive_supplier_price_list(uuid, uuid);
 drop function if exists public.owner_delete_supplier_price_list(uuid, uuid);
+drop function if exists public.owner_clear_supplier_price_items(uuid, uuid);
 drop function if exists public.owner_list_supplier_price_items(uuid, uuid);
 drop function if exists public.owner_import_supplier_price_items(uuid, jsonb, uuid);
 
@@ -540,6 +541,65 @@ begin
 end;
 $$;
 
+create or replace function public.owner_clear_supplier_price_items(
+  p_price_list_id uuid,
+  p_organization_id uuid default null
+)
+returns table (
+  success boolean,
+  price_list_id uuid,
+  organization_id uuid,
+  cleared_items_count integer,
+  updated_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+set row_security = off
+as $$
+declare
+  v_org_id uuid;
+  v_cleared_count integer := 0;
+begin
+  select spl.organization_id
+    into v_org_id
+  from public.supplier_price_lists as spl
+  where spl.id = p_price_list_id
+    and coalesce(spl.status, 'active') <> 'deleted'
+  limit 1;
+
+  if v_org_id is null then
+    raise exception 'Прайс-лист не найден' using errcode = '22023';
+  end if;
+
+  if p_organization_id is not null and p_organization_id <> v_org_id then
+    raise exception 'Forbidden' using errcode = '42501';
+  end if;
+
+  if not public.has_permission(v_org_id, 'price_lists.edit') then
+    raise exception 'Forbidden' using errcode = '42501';
+  end if;
+
+  delete from public.supplier_price_items as spi
+   where spi.price_list_id = p_price_list_id
+     and spi.organization_id = v_org_id;
+  get diagnostics v_cleared_count = row_count;
+
+  update public.supplier_price_lists as spl
+     set updated_at = now()
+   where spl.id = p_price_list_id
+     and spl.organization_id = v_org_id;
+
+  return query
+  select
+    true as success,
+    p_price_list_id as price_list_id,
+    v_org_id as organization_id,
+    v_cleared_count as cleared_items_count,
+    now() as updated_at;
+end;
+$$;
+
 create or replace function public.owner_list_supplier_price_items(
   p_price_list_id uuid,
   p_organization_id uuid
@@ -776,6 +836,7 @@ grant execute on function public.owner_list_supplier_price_lists(uuid, uuid) to 
 grant execute on function public.owner_create_supplier_price_list(uuid, uuid, text, text, uuid, uuid[], text) to authenticated;
 grant execute on function public.owner_archive_supplier_price_list(uuid, uuid) to authenticated;
 grant execute on function public.owner_delete_supplier_price_list(uuid, uuid) to authenticated;
+grant execute on function public.owner_clear_supplier_price_items(uuid, uuid) to authenticated;
 grant execute on function public.owner_list_supplier_price_items(uuid, uuid) to authenticated;
 grant execute on function public.owner_import_supplier_price_items(uuid, jsonb, uuid) to authenticated;
 

@@ -1910,6 +1910,26 @@ function setSupplierPriceSaveEnabled(enabled, reason) {
   btn.style.cursor = enabled ? 'pointer' : 'not-allowed';
 }
 window.setSupplierPriceSaveEnabled = setSupplierPriceSaveEnabled;
+function updateSupplierPriceUploadButtonState() {
+  var enabled = false;
+  var reason = 'Сначала дождитесь загрузки юрлиц';
+  var legalEntities = Array.isArray(window.__supPriceLegalEntities) ? window.__supPriceLegalEntities : [];
+  if (window.__supPriceLegalEntitiesLoading) {
+    enabled = false;
+    reason = 'Загрузка юрлиц...';
+  } else if (!legalEntities.length) {
+    enabled = false;
+    reason = 'Сначала добавьте юрлицо в карточке организации';
+  } else if (_supPriceImportMode === 'update' && !String(_supPriceTargetPriceListId || '').trim()) {
+    enabled = false;
+    reason = 'Сначала выберите прайс-лист для обновления';
+  } else {
+    enabled = true;
+    reason = '';
+  }
+  setSupplierPriceSaveEnabled(enabled, reason);
+}
+window.updateSupplierPriceUploadButtonState = updateSupplierPriceUploadButtonState;
 function renderSuppliers(){
   try {
     var page = document.querySelector('#pg-suppliers');
@@ -7563,6 +7583,9 @@ function _exportSupCartCSV(supName, items, total, restName, date, comment){
 
 var _currentSupName = '';
 var _supPriceAppend = false; // false=заменить, true=дополнить
+var _supPriceImportMode = 'create';
+var _supPriceTargetPriceListId = '';
+var _supPriceExistingPriceLists = [];
 var _supPriceImportBook = null;
 var _supPriceImportSheetName = '';
 var _supPriceImportRows = [];
@@ -8012,17 +8035,32 @@ async function persistSupplierPriceImportToSupabase(importRows){
   if (!window.KalkaApi || typeof window.KalkaApi.rpc !== 'function' || typeof window.ownerCreateSupplierPriceList !== 'function' || typeof window.ownerImportSupplierPriceItems !== 'function') {
     throw new Error('RPC прайсов недоступен');
   }
-  var createdRows = await window.ownerCreateSupplierPriceList({
-    target_organization_id: organizationId,
-    target_supplier_id: supplierId,
-    target_title: title,
-    target_status: 'active',
-    target_source_filename: sourceFilename,
-    target_uploaded_by: uploadedBy,
-    target_legal_entity_ids: legalEntityIds.slice()
-  });
-  var created = Array.isArray(createdRows) ? createdRows[0] : createdRows;
-  if (!created || !created.id) throw new Error('Не удалось создать прайс-лист');
+  var created = null;
+  var targetPriceListId = String(_supPriceTargetPriceListId || '').trim();
+  if (_supPriceImportMode === 'update') {
+    if (!targetPriceListId) throw new Error('Не выбран прайс-лист для обновления');
+    var clearResult = await window.ownerClearSupplierPriceItems({
+      p_price_list_id: targetPriceListId,
+      p_organization_id: organizationId
+    });
+    if (clearResult && clearResult[0] && clearResult[0].updated_at && typeof window.ownerListSupplierPriceLists === 'function') {
+      await window.ownerListSupplierPriceLists(supplierId, organizationId).catch(function(){});
+    }
+    created = { id: targetPriceListId };
+  } else {
+    var createdRows = await window.ownerCreateSupplierPriceList({
+      p_organization_id: organizationId,
+      p_supplier_id: supplierId,
+      p_title: title,
+      p_status: 'active',
+      p_source_filename: sourceFilename,
+      p_uploaded_by: uploadedBy,
+      p_legal_entity_ids: legalEntityIds.slice()
+    });
+    created = Array.isArray(createdRows) ? createdRows[0] : createdRows;
+    if (!created || !created.id) throw new Error('Не удалось создать прайс-лист');
+    targetPriceListId = String(created.id || '').trim();
+  }
   var chunks = chunkArray(rows, 200);
   var totalChunks = chunks.length;
   var importedRows = [];
@@ -8053,7 +8091,7 @@ async function persistSupplierPriceImportToSupabase(importRows){
         }
       }
       var chunkRows = await window.ownerImportSupplierPriceItems({
-        target_price_list_id: created.id,
+        p_target_price_list_id: targetPriceListId || (created && created.id) || '',
         target_items: chunk
       });
       totalImported += Array.isArray(chunk) ? chunk.length : 0;
@@ -8099,7 +8137,7 @@ async function persistSupplierPriceImportToSupabase(importRows){
     console.error('persistSupplierPriceImportToSupabase failed', error, error && error.stack);
     window.__supplierPriceInvalidRows = null;
     window.__supplierPriceImportProgress = null;
-    if (created && created.id && typeof window.ownerDeleteSupplierPriceList === 'function') {
+    if (_supPriceImportMode !== 'update' && created && created.id && typeof window.ownerDeleteSupplierPriceList === 'function') {
       await window.ownerDeleteSupplierPriceList({
         target_price_list_id: created.id,
         target_organization_id: organizationId
@@ -8179,6 +8217,9 @@ function selectSupPriceSheet(sheetName){
 function openSupPriceUpload(supName, append){
   _currentSupName = supName;
   _supPriceAppend = append;
+  _supPriceImportMode = 'create';
+  _supPriceTargetPriceListId = '';
+  _supPriceExistingPriceLists = [];
   setSupplierPriceSaveEnabled(false, 'Загрузка юрлиц...');
   window.__supPriceLegalEntities = [];
   window.__supPriceLegalEntitiesLoading = true;
@@ -8212,6 +8253,7 @@ function openSupPriceUpload(supName, append){
   var orgSelect = document.getElementById('supPriceOrgSelect');
   var orgHint = document.getElementById('supPriceOrgHint');
   var listEl = document.getElementById('supPriceCompList');
+  renderSupplierPriceModeControls();
   if(orgSelect){
     orgSelect.innerHTML = orgs.map(function(org){
       return '<option value="'+_esc(org.id)+'"'+(String(org.id)===String(_supPriceOrganizationId) ? ' selected' : '')+'>'+_esc(org.label||org.id)+'</option>';
@@ -8221,6 +8263,9 @@ function openSupPriceUpload(supName, append){
       window.__supPriceLegalEntities = [];
       window.__supPriceLegalEntitiesLoading = true;
       renderSupPriceLegalList(_supPriceOrganizationId, dbGet());
+      if (_supPriceImportMode === 'update') {
+        loadSupplierPriceListsForUpdateSelection();
+      }
       if (_supPriceOrganizationId && typeof window.ownerListLegalEntities === 'function') {
         setSupplierPriceSaveEnabled(false, 'Загрузка юрлиц...');
         Promise.resolve(window.ownerListLegalEntities(_supPriceOrganizationId)).then(function (result) {
@@ -8282,6 +8327,11 @@ function openSupPriceUpload(supName, append){
   } else {
     window.__supPriceLegalEntitiesLoading = false;
     renderSupPriceLegalList(_supPriceOrganizationId, db);
+  }
+  if (_supPriceImportMode === 'update') {
+    loadSupplierPriceListsForUpdateSelection();
+  } else {
+    renderSupplierPriceExistingLists([]);
   }
   var fi=document.getElementById('supPriceFile'); if(fi)fi.value='';
   var err=document.getElementById('supPriceErr'); if(err)err.textContent='';
@@ -8445,6 +8495,84 @@ function syncSupPriceLegalSelection(){
     normalizedIds: _supPriceLegalEntityIds.slice()
   });
 }
+
+function renderSupplierPriceModeControls() {
+  var modeEl = document.getElementById('supPriceMode');
+  var existingWrap = document.getElementById('supPriceExistingWrap');
+  var existingSelect = document.getElementById('supPriceExistingSelect');
+  if (modeEl) modeEl.value = _supPriceImportMode || 'create';
+  if (existingWrap) existingWrap.style.display = (_supPriceImportMode === 'update') ? 'block' : 'none';
+  if (existingSelect) {
+    existingSelect.disabled = _supPriceImportMode !== 'update';
+    existingSelect.value = _supPriceTargetPriceListId || '';
+  }
+  updateSupplierPriceUploadButtonState();
+}
+
+function onSupplierPriceModeChange(value) {
+  _supPriceImportMode = value === 'update' ? 'update' : 'create';
+  _supPriceTargetPriceListId = '';
+  renderSupplierPriceModeControls();
+  loadSupplierPriceListsForUpdateSelection();
+}
+window.onSupplierPriceModeChange = onSupplierPriceModeChange;
+
+function renderSupplierPriceExistingLists(rows) {
+  var select = document.getElementById('supPriceExistingSelect');
+  var hint = document.getElementById('supPriceExistingHint');
+  rows = Array.isArray(rows) ? rows.slice() : [];
+  if (!select) return;
+  _supPriceExistingPriceLists = rows.slice();
+  if (!rows.length) {
+    select.innerHTML = '<option value="">Прайсы не найдены</option>';
+    select.disabled = true;
+    if (hint) hint.textContent = 'Сначала добавьте прайс-лист или выберите режим "Новый прайс".';
+    _supPriceTargetPriceListId = '';
+    updateSupplierPriceUploadButtonState();
+    return;
+  }
+  select.disabled = false;
+  select.innerHTML = ['<option value="">Выберите прайс-лист</option>'].concat(rows.map(function (pl) {
+    return '<option value="'+_esc(String(pl.id || ''))+'">'+_esc(String(pl.title || pl.name || 'Прайс-лист'))+' · '+_esc(String(pl.status || 'active'))+'</option>';
+  })).join('');
+  if (_supPriceTargetPriceListId) {
+    select.value = _supPriceTargetPriceListId;
+  }
+  if (hint) hint.textContent = 'Выберите прайс-лист этого поставщика для обновления.';
+  updateSupplierPriceUploadButtonState();
+}
+
+function loadSupplierPriceListsForUpdateSelection() {
+  var supplier = resolveSupplierPriceContext();
+  var orgId = String((supplier && (supplier.organization_id || supplier.organizationId)) || _supPriceOrganizationId || (window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
+  if (_supPriceImportMode !== 'update') {
+    renderSupplierPriceModeControls();
+    return Promise.resolve([]);
+  }
+  if (!supplier || !supplier._id || !orgId || typeof window.ownerListSupplierPriceLists !== 'function') {
+    renderSupplierPriceExistingLists([]);
+    return Promise.resolve([]);
+  }
+  renderSupplierPriceModeControls();
+  var select = document.getElementById('supPriceExistingSelect');
+  if (select) select.innerHTML = '<option value="">Загрузка прайсов...</option>';
+  updateSupplierPriceUploadButtonState();
+  return Promise.resolve(window.ownerListSupplierPriceLists(supplier._id, orgId)).then(function (rows) {
+    renderSupplierPriceExistingLists(rows);
+    return rows;
+  }).catch(function (error) {
+    console.warn('ownerListSupplierPriceLists for update mode failed', error, error && error.stack);
+    renderSupplierPriceExistingLists([]);
+    return [];
+  });
+}
+window.loadSupplierPriceListsForUpdateSelection = loadSupplierPriceListsForUpdateSelection;
+
+function onSupplierPriceExistingSelectChange(value) {
+  _supPriceTargetPriceListId = String(value || '').trim();
+  updateSupplierPriceUploadButtonState();
+}
+window.onSupplierPriceExistingSelectChange = onSupplierPriceExistingSelectChange;
 
 function resolveSupplierRuntimeById(supplierId){
   var supplier = window.findSupplierByIdFromRuntime ? window.findSupplierByIdFromRuntime(supplierId) : null;
@@ -8863,7 +8991,7 @@ function renderSupPriceLegalList(orgId, db){
       selectedName: _supPriceLegalEntityNames[0] || null
     });
   }
-  setSupplierPriceSaveEnabled(true);
+  updateSupplierPriceUploadButtonState();
 }
 
 
