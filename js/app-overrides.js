@@ -1143,13 +1143,28 @@
         : Array.isArray(payload.items)
           ? payload.items.slice()
           : [];
+    function normalizeUnit(value) {
+      if (value === null || value === undefined) return 'шт';
+      var original = String(value);
+      var normalized = original.trim().toLowerCase();
+      normalized = normalized.replace(/--+/g, ' ').replace(/\s+/g, ' ').trim();
+      if (normalized.indexOf('кг') >= 0) return 'кг';
+      if (normalized.indexOf('л') >= 0) return 'л';
+      if (normalized.indexOf('шт') >= 0) return 'шт';
+      return 'шт';
+    }
     function normalizeSupplierPriceImportItem(row, globalIndex) {
       row = row || {};
       var normalizedRowIndex = Number(row.src_row_index ?? row.row_index ?? row.rowIndex);
+      var originalUnit = row.src_unit || row.unit || row.uom || null;
+      var normalizedUnit = normalizeUnit(originalUnit);
+      if (String(originalUnit || '') !== String(normalizedUnit)) {
+        console.warn('unit normalized', { original: originalUnit, normalized: normalizedUnit });
+      }
       return {
         src_raw_name: row.src_raw_name || row.raw_name || row.name || row.product_name || '',
         src_normalized_name: row.src_normalized_name || row.normalized_name || row.normalizedName || null,
-        src_unit: row.src_unit || row.unit || row.uom || null,
+        src_unit: normalizedUnit,
         src_price_text: String(row.src_price_text || row.price || row.cost || ''),
         src_currency: row.src_currency || row.currency || 'RUB',
         src_row_index: Number.isFinite(normalizedRowIndex) ? normalizedRowIndex : globalIndex + 1,
