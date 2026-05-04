@@ -215,6 +215,7 @@ var _supPriceCatalogRows = [];
 var _supPriceCatalogLoading = false;
 var _supPriceCatalogLoaded = false;
 var _supPriceCatalogSearch = '';
+var _supPriceCatalogSearchTimer = null;
 var _mcmRows = [], _mcmSupName = '', _mcmAppend = false, _mcmPriceName = '';
 var _priceLayoutMemory={};
 var _mcmSupName='';
@@ -8840,6 +8841,8 @@ function openSupplierPriceManager(supplier, opts){
   opts = opts || {};
   _supPriceManagerTab = 'lists';
   _supPriceCatalogSearch = '';
+  window.__supplierPriceCatalogSearch = '';
+  window.__supplierPriceCatalogItems = [];
   _supPriceCatalogRows = [];
   _supPriceCatalogLoaded = false;
   _supPriceCatalogLoading = false;
@@ -8919,11 +8922,14 @@ function loadSupplierPriceCatalogRows(force){
   })).then(function(res){
     var rows = Array.isArray(res && res.data) ? res.data : Array.isArray(res) ? res : [];
     _supPriceCatalogRows = rows.slice();
+    window.__supplierPriceCatalogItems = _supPriceCatalogRows.slice();
+    window.__supplierPriceCatalogSearch = String(_supPriceCatalogSearch || '');
     _supPriceCatalogLoaded = true;
     return rows;
   }).catch(function(error){
     console.error('ownerListSupplierPriceCatalog failed', error, error && error.stack);
     _supPriceCatalogRows = [];
+    window.__supplierPriceCatalogItems = [];
     _supPriceCatalogLoaded = false;
     throw error;
   }).finally(function(){
@@ -8965,53 +8971,98 @@ function renderSupplierPriceManagerLists(rows){
   }).join('');
 }
 
-function renderSupplierPriceManagerCatalog(rows){
-  rows = Array.isArray(rows) ? rows : [];
-  var search = String(_supPriceCatalogSearch || '').trim().toLowerCase();
-  var filtered = search ? rows.filter(function(row){
+function getSupplierPriceCatalogFilteredRows(){
+  var rows = Array.isArray(window.__supplierPriceCatalogItems) ? window.__supplierPriceCatalogItems : (_supPriceCatalogRows || []);
+  var search = String(window.__supplierPriceCatalogSearch != null ? window.__supplierPriceCatalogSearch : _supPriceCatalogSearch || '').trim().toLowerCase();
+  if (!search) return rows.slice();
+  return rows.filter(function(row){
     var text = [
-      row.raw_name,
-      row.normalized_name,
-      row.price_list_title,
-      row.unit,
-      row.currency
+      row && row.raw_name,
+      row && row.normalized_name,
+      row && row.price_list_title,
+      row && row.unit,
+      row && row.price_type
     ].filter(Boolean).join(' ').toLowerCase();
     return text.indexOf(search) >= 0;
-  }) : rows;
+  });
+}
+
+function renderSupplierPriceCatalogTbody(rows){
+  rows = Array.isArray(rows) ? rows : [];
   if (!rows.length) {
-    return '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);text-align:center;color:var(--t2);">'
-      +'<div style="font-size:18px;font-weight:700;margin-bottom:8px;">Прайс-каталог пока пуст</div>'
-      +'<div style="font-size:13px;">Все позиции из main и extra прайсов появятся здесь после импорта.</div>'
-    +'</div>';
+    return '<tr><td colspan="6" style="padding:20px 12px;text-align:center;color:var(--t2);">Ничего не найдено</td></tr>';
   }
-  if (!filtered.length) {
-    return '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);text-align:center;color:var(--t2);">'
-      +'<div style="font-size:18px;font-weight:700;margin-bottom:8px;">Ничего не найдено</div>'
-      +'<div style="font-size:13px;">Попробуйте другой поисковый запрос.</div>'
+  return rows.map(function(item){
+    var typeLabel = String(item.price_type || 'main') === 'extra' ? 'Доп.' : 'Основной';
+    return '<tr>'
+      +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(item.raw_name || item.normalized_name || '—')+'</td>'
+      +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(item.unit || '—')+'</td>'
+      +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);text-align:right;font-weight:700;">'+_esc(item.price === null || item.price === undefined ? '—' : String(item.price))+'</td>'
+      +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);"><span class="badge '+(String(item.price_type || 'main') === 'extra' ? 'bg' : 'by')+'">'+_esc(typeLabel)+'</span></td>'
+      +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(item.price_list_title || '—')+'</td>'
+      +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(item.currency || 'RUB')+'</td>'
+    +'</tr>';
+  }).join('');
+}
+
+function updateSupplierPriceCatalogView(){
+  var modal = document.getElementById('ov-supPriceManager');
+  var shell = document.getElementById('supPriceCatalogShell');
+  var countEl = document.getElementById('supPriceCatalogCount');
+  var tbody = document.getElementById('supPriceCatalogBody');
+  var rows = Array.isArray(window.__supplierPriceCatalogItems) ? window.__supplierPriceCatalogItems : (_supPriceCatalogRows || []);
+  var filtered = getSupplierPriceCatalogFilteredRows();
+  if (!modal || !shell || !countEl || !tbody || String(_supPriceManagerTab) !== 'catalog') return;
+  countEl.innerHTML = '<span>Всего позиций: <b>'+_esc(String(rows.length))+'</b></span><span>Найдено: <b>'+_esc(String(filtered.length))+'</b></span>';
+  tbody.innerHTML = renderSupplierPriceCatalogTbody(filtered);
+}
+
+function renderSupplierPriceCatalogShell(){
+  var rows = Array.isArray(window.__supplierPriceCatalogItems) ? window.__supplierPriceCatalogItems : (_supPriceCatalogRows || []);
+  var filtered = getSupplierPriceCatalogFilteredRows();
+  return ''
+    +'<div style="display:grid;gap:12px;">'
+      +'<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;">'
+        +'<div id="supPriceCatalogCount" style="font-size:12px;color:var(--t3);display:flex;gap:12px;flex-wrap:wrap;">'
+          +'<span>Всего позиций: <b>'+_esc(String(rows.length))+'</b></span>'
+          +'<span>Найдено: <b>'+_esc(String(filtered.length))+'</b></span>'
+        +'</div>'
+        +'<input id="supPriceCatalogSearchInput" type="search" value="'+_esc(String(window.__supplierPriceCatalogSearch != null ? window.__supplierPriceCatalogSearch : _supPriceCatalogSearch || ''))+'" placeholder="Поиск по товару..." style="min-width:240px;flex:1;max-width:420px;padding:10px 12px;border:1px solid var(--br);border-radius:12px;background:#fff;color:var(--tx);">'
+      +'</div>'
+      +'<div style="overflow:auto;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);">'
+        +'<table style="width:100%;border-collapse:collapse;min-width:920px;">'
+          +'<thead><tr style="background:var(--bg3);">'
+            +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Товар</th>'
+            +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Ед.</th>'
+            +'<th style="padding:10px 12px;text-align:right;border-bottom:1px solid var(--br);">Цена</th>'
+            +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Тип прайса</th>'
+            +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Прайс-лист</th>'
+            +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Валюта</th>'
+          +'</tr></thead><tbody id="supPriceCatalogBody">'
+            +renderSupplierPriceCatalogTbody(filtered)
+          +'</tbody></table>'
+      +'</div>'
+      +(rows.length ? '' : '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);text-align:center;color:var(--t2);"><div style="font-size:18px;font-weight:700;margin-bottom:8px;">Прайс-каталог пока пуст</div><div style="font-size:13px;">Все позиции из main и extra прайсов появятся здесь после импорта.</div></div>')
     +'</div>';
-  }
-  return '<div style="overflow:auto;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);">'
-    +'<table style="width:100%;border-collapse:collapse;min-width:920px;">'
-      +'<thead><tr style="background:var(--bg3);">'
-        +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Товар</th>'
-        +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Ед.</th>'
-        +'<th style="padding:10px 12px;text-align:right;border-bottom:1px solid var(--br);">Цена</th>'
-        +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Тип прайса</th>'
-        +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Прайс-лист</th>'
-        +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Валюта</th>'
-      +'</tr></thead><tbody>'
-      +filtered.map(function(item){
-        var typeLabel = String(item.price_type || 'main') === 'extra' ? 'Доп.' : 'Основной';
-        return '<tr>'
-          +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(item.raw_name || item.normalized_name || '—')+'</td>'
-          +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(item.unit || '—')+'</td>'
-          +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);text-align:right;font-weight:700;">'+_esc(item.price === null || item.price === undefined ? '—' : String(item.price))+'</td>'
-          +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);"><span class="badge '+(String(item.price_type || 'main') === 'extra' ? 'bg' : 'by')+'">'+_esc(typeLabel)+'</span></td>'
-          +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(item.price_list_title || '—')+'</td>'
-          +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(item.currency || 'RUB')+'</td>'
-        +'</tr>';
-      }).join('')
-    +'</tbody></table></div>';
+}
+
+function bindSupplierPriceCatalogSearch(){
+  var input = document.getElementById('supPriceCatalogSearchInput');
+  if (!input || input.dataset.bound === '1') return;
+  input.dataset.bound = '1';
+  input.oninput = function(){
+    var value = String(this.value || '');
+    window.__supplierPriceCatalogSearch = value;
+    _supPriceCatalogSearch = value;
+    if (_supPriceCatalogSearchTimer) clearTimeout(_supPriceCatalogSearchTimer);
+    _supPriceCatalogSearchTimer = setTimeout(function(){
+      updateSupplierPriceCatalogView();
+      try {
+        var focused = document.getElementById('supPriceCatalogSearchInput');
+        if (focused && typeof focused.focus === 'function') focused.focus();
+      } catch (e) {}
+    }, 150);
+  };
 }
 
 function renderSupplierPriceManager(){
@@ -9029,17 +9080,19 @@ function renderSupplierPriceManager(){
     supplier.inn ? 'ИНН: ' + supplier.inn : '',
     supplier.status ? 'Статус: ' + supplier.status : ''
   ].filter(Boolean).join(' · ');
-  body.innerHTML = ''
+  if (_supPriceManagerTab !== 'catalog') {
+    body.innerHTML = ''
     +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;">'
       +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
         +'<button class="tbBtn '+(_supPriceManagerTab === 'lists' ? 'bg' : '')+'" data-sup-price-tab="lists" onclick="setSupplierPriceManagerTab(\'lists\')" style="cursor:pointer;">Список прайсов</button>'
         +'<button class="tbBtn '+(_supPriceManagerTab === 'catalog' ? 'bg' : '')+'" data-sup-price-tab="catalog" onclick="setSupplierPriceManagerTab(\'catalog\')" style="cursor:pointer;">Все позиции</button>'
       +'</div>'
-      +(_supPriceManagerTab === 'catalog'
-        ? '<input type="search" value="'+_esc(_supPriceCatalogSearch || '')+'" placeholder="Поиск по товару..." oninput="_supPriceCatalogSearch=this.value||\'\';renderSupplierPriceManager()" style="min-width:240px;flex:1;max-width:420px;padding:10px 12px;border:1px solid var(--br);border-radius:12px;background:#fff;color:var(--tx);">'
-        : '<div style="font-size:12px;color:var(--t3);">Выберите режим просмотра прайсов</div>')
+      +'<div style="font-size:12px;color:var(--t3);">Выберите режим просмотра прайсов</div>'
     +'</div>'
-    +'<div id="supPriceManagerView" style="display:grid;gap:12px;"></div>';
+    +'<div id="supPriceManagerView" style="display:grid;gap:12px;">'
+      +renderSupplierPriceManagerLists(Array.isArray(_supPriceCatalogRows) ? _supPriceCatalogRows : [])
+    +'</div>';
+  }
   var view = document.getElementById('supPriceManagerView');
   var orgId = String((supplier && (supplier.organization_id || supplier.organizationId)) || (window.__userSession && window.__userSession.activeOrganizationId) || '').trim();
   if (!view) return;
@@ -9048,15 +9101,14 @@ function renderSupplierPriceManager(){
       view.innerHTML = '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);color:var(--t2);">Каталог позиций недоступен.</div>';
       return;
     }
-    view.innerHTML = _supPriceCatalogLoading
-      ? '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);color:var(--t2);">Загрузка всех позиций...</div>'
-      : renderSupplierPriceManagerCatalog(_supPriceCatalogRows);
-    if (!_supPriceCatalogLoading && !_supPriceCatalogLoaded) {
+    if (!_supPriceCatalogLoaded && !_supPriceCatalogLoading) {
       _supPriceCatalogLoading = true;
       view.innerHTML = '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);color:var(--t2);">Загрузка всех позиций...</div>';
       loadSupplierPriceCatalogRows(true).then(function(rows){
         if (String(_supPriceManagerTab) !== 'catalog') return;
-        view.innerHTML = renderSupplierPriceManagerCatalog(rows);
+        view.innerHTML = renderSupplierPriceCatalogShell();
+        bindSupplierPriceCatalogSearch();
+        updateSupplierPriceCatalogView();
       }).catch(function(error){
         if (String(_supPriceManagerTab) !== 'catalog') return;
         view.innerHTML = '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);text-align:center;color:var(--t2);">'
@@ -9069,6 +9121,9 @@ function renderSupplierPriceManager(){
       });
       return;
     }
+    view.innerHTML = renderSupplierPriceCatalogShell();
+    bindSupplierPriceCatalogSearch();
+    updateSupplierPriceCatalogView();
     return;
   }
   if (typeof window.ownerListSupplierPriceLists !== 'function') {
