@@ -1153,6 +1153,15 @@
       if (normalized.indexOf('шт') >= 0) return 'шт';
       return 'шт';
     }
+    function normalizeCurrency(value) {
+      var v = String(value || '').toLowerCase().trim();
+      if (!v) return 'RUB';
+      if (v.includes('rub')) return 'RUB';
+      if (v.includes('rur')) return 'RUB';
+      if (v.includes('руб')) return 'RUB';
+      if (v.includes('₽')) return 'RUB';
+      return 'RUB';
+    }
     function normalizeSupplierPriceImportItem(row, globalIndex) {
       row = row || {};
       var normalizedRowIndex = Number(row.src_row_index ?? row.row_index ?? row.rowIndex);
@@ -1161,12 +1170,20 @@
       if (String(originalUnit || '') !== String(normalizedUnit)) {
         console.warn('unit normalized', { original: originalUnit, normalized: normalizedUnit });
       }
+      var originalCurrency = row.src_currency || row.currency || null;
+      var normalizedCurrency = normalizeCurrency(originalCurrency);
+      if (String(originalCurrency || '').trim() && String(normalizedCurrency || '').toUpperCase() === 'RUB' && String(originalCurrency || '').trim().toUpperCase() !== 'RUB') {
+        console.warn('currency normalized', {
+          original: originalCurrency,
+          normalized: 'RUB'
+        });
+      }
       return {
         src_raw_name: row.src_raw_name || row.raw_name || row.name || row.product_name || '',
         src_normalized_name: row.src_normalized_name || row.normalized_name || row.normalizedName || null,
         src_unit: normalizedUnit,
         src_price_text: String(row.src_price_text || row.price || row.cost || ''),
-        src_currency: row.src_currency || row.currency || 'RUB',
+        src_currency: normalizedCurrency,
         src_row_index: Number.isFinite(normalizedRowIndex) ? normalizedRowIndex : globalIndex + 1,
         src_raw_row: row.src_raw_row || row.raw_row || row
       };
