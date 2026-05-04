@@ -9037,33 +9037,41 @@ function renderSupplierPriceCatalogTbody(rows){
   }).join('');
 }
 
-function updateSupplierPriceCatalogView(){
+function renderSupplierPriceCatalogRows(){
   var modal = document.getElementById('ov-supPriceManager');
-  var shell = document.getElementById('supPriceCatalogShell');
   var countEl = document.getElementById('supPriceCatalogCount');
   var tbody = document.getElementById('supPriceCatalogBody');
-  var rows = Array.isArray(window.__supplierPriceCatalogItems) ? window.__supplierPriceCatalogItems : (_supPriceCatalogRows || []);
-  var filtered = window.filterSupplierPriceCatalogItems(rows, window.__supplierPriceCatalogSearch != null ? window.__supplierPriceCatalogSearch : _supPriceCatalogSearch || '');
-  if (!modal || !shell || !countEl || !tbody || String(_supPriceManagerTab) !== 'catalog') return;
+  var items = Array.isArray(window.__supplierPriceCatalogItems)
+    ? window.__supplierPriceCatalogItems
+    : [];
+  var query = String(window.__supplierPriceCatalogSearch || '').trim().toLowerCase();
+  var filteredItems = window.filterSupplierPriceCatalogItems(items, query);
+  if (!modal || !countEl || !tbody || String(_supPriceManagerTab) !== 'catalog') return;
   console.info('supplier catalog filter applied', {
-    total: rows.length,
-    found: filtered.length,
-    query: window.__supplierPriceCatalogSearch != null ? window.__supplierPriceCatalogSearch : _supPriceCatalogSearch || '',
-    sample: filtered.slice(0, 3)
+    total: items.length,
+    found: filteredItems.length,
+    query: window.__supplierPriceCatalogSearch || '',
+    sample: filteredItems.slice(0, 3)
   });
-  countEl.innerHTML = '<span>Всего позиций: <b>'+_esc(String(rows.length))+'</b></span><span>Найдено: <b>'+_esc(String(filtered.length))+'</b></span>';
-  tbody.innerHTML = renderSupplierPriceCatalogTbody(filtered);
+  console.info('catalog rows render', {
+    query: window.__supplierPriceCatalogSearch || '',
+    total: items.length,
+    filtered: filteredItems.length,
+    sample: filteredItems.slice(0, 5).map(function(x){ return x && (x.raw_name || x.normalized_name); })
+  });
+  countEl.innerHTML = '<span>Всего позиций: <b>'+_esc(String(items.length))+'</b></span><span>Найдено: <b>'+_esc(String(filteredItems.length))+'</b></span>';
+  tbody.innerHTML = renderSupplierPriceCatalogTbody(filteredItems);
 }
+window.renderSupplierPriceCatalogRows = renderSupplierPriceCatalogRows;
 
 function renderSupplierPriceCatalogShell(){
   var rows = Array.isArray(window.__supplierPriceCatalogItems) ? window.__supplierPriceCatalogItems : (_supPriceCatalogRows || []);
-  var filtered = getSupplierPriceCatalogFilteredRows();
   return ''
     +'<div style="display:grid;gap:12px;">'
       +'<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;">'
         +'<div id="supPriceCatalogCount" style="font-size:12px;color:var(--t3);display:flex;gap:12px;flex-wrap:wrap;">'
           +'<span>Всего позиций: <b>'+_esc(String(rows.length))+'</b></span>'
-          +'<span>Найдено: <b>'+_esc(String(filtered.length))+'</b></span>'
+          +'<span>Найдено: <b>0</b></span>'
         +'</div>'
         +'<input id="supPriceCatalogSearchInput" type="search" value="'+_esc(String(window.__supplierPriceCatalogSearch != null ? window.__supplierPriceCatalogSearch : _supPriceCatalogSearch || ''))+'" placeholder="Поиск по товару..." style="min-width:240px;flex:1;max-width:420px;padding:10px 12px;border:1px solid var(--br);border-radius:12px;background:#fff;color:var(--tx);">'
       +'</div>'
@@ -9088,13 +9096,18 @@ function bindSupplierPriceCatalogSearch(){
   var input = document.getElementById('supPriceCatalogSearchInput');
   if (!input || input.dataset.bound === '1') return;
   input.dataset.bound = '1';
-  input.oninput = function(){
-    var value = String(this.value || '');
+  input.oninput = function(event){
+    var value = String((event && event.target && event.target.value) || this.value || '');
+    var query = String(value || '');
     window.__supplierPriceCatalogSearch = value;
     _supPriceCatalogSearch = value;
+    console.info('catalog search input', {
+      query: query,
+      totalItems: Array.isArray(window.__supplierPriceCatalogItems) ? window.__supplierPriceCatalogItems.length : 0
+    });
     if (_supPriceCatalogSearchTimer) clearTimeout(_supPriceCatalogSearchTimer);
     _supPriceCatalogSearchTimer = setTimeout(function(){
-      updateSupplierPriceCatalogView();
+      renderSupplierPriceCatalogRows();
       try {
         var focused = document.getElementById('supPriceCatalogSearchInput');
         if (focused && typeof focused.focus === 'function') focused.focus();
@@ -9146,7 +9159,7 @@ function renderSupplierPriceManager(){
         if (String(_supPriceManagerTab) !== 'catalog') return;
         view.innerHTML = renderSupplierPriceCatalogShell();
         bindSupplierPriceCatalogSearch();
-        updateSupplierPriceCatalogView();
+        renderSupplierPriceCatalogRows();
       }).catch(function(error){
         if (String(_supPriceManagerTab) !== 'catalog') return;
         view.innerHTML = '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);text-align:center;color:var(--t2);">'
@@ -9161,7 +9174,7 @@ function renderSupplierPriceManager(){
     }
     view.innerHTML = renderSupplierPriceCatalogShell();
     bindSupplierPriceCatalogSearch();
-    updateSupplierPriceCatalogView();
+    renderSupplierPriceCatalogRows();
     return;
   }
   if (typeof window.ownerListSupplierPriceLists !== 'function') {
