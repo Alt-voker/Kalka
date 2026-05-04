@@ -1161,9 +1161,31 @@
       return normalizeSupplierPriceImportItem(row, index);
     });
     console.info('supplier price normalized item sample', items[0]);
+    var validItems = items.filter(function (item) {
+      return String(item.src_raw_name || '').trim() &&
+        String(item.src_price_text || '').trim();
+    });
+    var invalidItems = items.filter(function (item) {
+      return !String(item.src_raw_name || '').trim() ||
+        !String(item.src_price_text || '').trim();
+    });
+    console.warn('supplier price invalid rows skipped before rpc', {
+      total: items.length,
+      valid: validItems.length,
+      invalid: invalidItems.length,
+      sample: invalidItems.slice(0, 5)
+    });
+    window.__supplierPriceImportStats = {
+      total: items.length,
+      valid: validItems.length,
+      invalid: invalidItems.length
+    };
+    if (!validItems.length) {
+      throw new Error('Нет валидных строк для импорта: проверьте колонку товара и цены');
+    }
     var params = cleanDefinedParams({
       p_target_price_list_id: String(payload.p_target_price_list_id || payload.target_price_list_id || payload.priceListId || payload.price_list_id || payload.id || '').trim() || null,
-      p_items: items,
+      p_items: validItems,
       p_target_organization_id: String(payload.p_target_organization_id || payload.target_organization_id || payload.organizationId || payload.organization_id || '').trim() || null
     });
     console.log('rpc correct payload', params);

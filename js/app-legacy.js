@@ -8064,8 +8064,12 @@ async function persistSupplierPriceImportToSupabase(importRows){
     }
     return {
       priceList: created,
-      imported: Array.isArray(importedRows) ? importedRows.length : rows.length,
-      skippedRows: Math.max(0, (importRows || []).length - rows.length)
+      imported: window.__supplierPriceImportStats && Number(window.__supplierPriceImportStats.valid || 0) > 0
+        ? Number(window.__supplierPriceImportStats.valid || importedRows.length || 0)
+        : (Array.isArray(importedRows) ? importedRows.length : rows.length),
+      skippedRows: window.__supplierPriceImportStats
+        ? Number(window.__supplierPriceImportStats.invalid || 0)
+        : Math.max(0, (importRows || []).length - rows.length)
     };
   } catch (error) {
     console.error('persistSupplierPriceImportToSupabase failed', error, error && error.stack);
