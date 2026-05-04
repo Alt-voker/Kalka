@@ -216,7 +216,9 @@ var _supPriceCatalogLoading = false;
 var _supPriceCatalogLoaded = false;
 var _supPriceCatalogSearch = '';
 var _supPriceCatalogSearchTimer = null;
+var _supPriceCatalogViewMode = 'list';
 window.__supplierPriceCatalogFilteredItems = [];
+window.__supplierPriceCatalogGroupedItems = [];
 var _mcmRows = [], _mcmSupName = '', _mcmAppend = false, _mcmPriceName = '';
 var _priceLayoutMemory={};
 var _mcmSupName='';
@@ -8842,8 +8844,11 @@ function openSupplierPriceManager(supplier, opts){
   opts = opts || {};
   _supPriceManagerTab = 'lists';
   _supPriceCatalogSearch = '';
+  _supPriceCatalogViewMode = 'list';
   window.__supplierPriceCatalogSearch = '';
   window.__supplierPriceCatalogItems = [];
+  window.__supplierPriceCatalogFilteredItems = [];
+  window.__supplierPriceCatalogGroupedItems = [];
   _supPriceCatalogRows = [];
   _supPriceCatalogLoaded = false;
   _supPriceCatalogLoading = false;
@@ -8935,6 +8940,8 @@ function loadSupplierPriceCatalogRows(force){
       all = all.concat(rows);
       window.__supplierPriceCatalogItems = all.slice();
       window.__supplierPriceCatalogSearch = String(_supPriceCatalogSearch || '');
+      window.__supplierPriceCatalogFilteredItems = all.slice();
+      window.__supplierPriceCatalogGroupedItems = [];
       if (rows.length === pageSize) {
         offset += pageSize;
         return fetchNextPage();
@@ -8950,6 +8957,8 @@ function loadSupplierPriceCatalogRows(force){
     console.error('ownerListSupplierPriceCatalog failed', error, error && error.stack);
     _supPriceCatalogRows = [];
     window.__supplierPriceCatalogItems = [];
+    window.__supplierPriceCatalogFilteredItems = [];
+    window.__supplierPriceCatalogGroupedItems = [];
     _supPriceCatalogLoaded = false;
     throw error;
   }).finally(function(){
@@ -9006,7 +9015,17 @@ function getSupplierPriceCatalogFilteredRows(){
     return text.indexOf(search) >= 0;
   });
 }
-window.filterSupplierPriceCatalogItems = function(items, search){
+function normalizeCatalogGroupName(value){
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/["'«»]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[.,]+$/g, '')
+    .trim();
+}
+
+function filterSupplierPriceCatalogItems(items, search){
   items = Array.isArray(items) ? items : [];
   var q = String(search || '').trim().toLowerCase();
   if (!q) return items.slice();
@@ -9021,7 +9040,76 @@ window.filterSupplierPriceCatalogItems = function(items, search){
     ].map(function(v){ return String(v || '').toLowerCase(); }).join(' ');
     return haystack.indexOf(q) >= 0;
   });
-};
+}
+window.filterSupplierPriceCatalogItems = filterSupplierPriceCatalogItems;
+
+function getSupplierPriceCatalogGroupKey(item){
+  item = item || {};
+  var name = String(item.normalized_name || '').trim() || normalizeCatalogGroupName(item.raw_name || '');
+  var unit = String(item.unit || 'шт').trim().toLowerCase() || 'шт';
+  return name + '|' + unit;
+}
+
+function buildSupplierPriceCatalogGroups(items, search){
+  items = Array.isArray(items) ? items : [];
+  var filteredItems = filterSupplierPriceCatalogItems(items, search);
+  var map = {};
+  var groups = [];
+  filteredItems.forEach(function(item){
+    var key = getSupplierPriceCatalogGroupKey(item);
+    if (!map[key]) {
+      map[key] = { key: key, name: item.normalized_name || item.raw_name || '—', unit: item.unit || 'шт', items: [] };
+      groups.push(map[key]);
+    }
+    map[key].items.push(item);
+  });
+  groups.forEach(function(group){
+    var best = null;
+    group.items.forEach(function(item){
+      var price = Number(item && item.price);
+      if (!Number.isFinite(price) || price <= 0) return;
+      if (!best || price < best.priceNum) best = { item: item, priceNum: price };
+    });
+    group.bestItem = best ? best.item : null;
+    group.bestPrice = best ? best.priceNum : null;
+  });
+  return groups;
+}
+
+function renderSupplierPriceCatalogGroupedRows(groups){
+  groups = Array.isArray(groups) ? groups : [];
+  if (!groups.length) {
+    return '<tr><td colspan="6" style="padding:20px 12px;text-align:center;color:var(--t2);">Ничего не найдено</td></tr>';
+  }
+  return groups.map(function(group){
+    var best = group.bestItem || null;
+    var variants = Array.isArray(group.items) ? group.items.length : 0;
+    var bestType = best && String(best.price_type || 'main') === 'extra' ? 'Доп.' : 'Основной';
+    var bestPrice = best && best.price !== null && best.price !== undefined ? String(best.price) : '—';
+    var bestCurrency = best && (best.currency || 'RUB') || 'RUB';
+    var rows = ''
+      +'<tr style="background:rgba(91,163,245,.06);">'
+        +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);font-weight:700;">'+_esc(group.name || '—')+' <span class="badge" style="margin-left:6px;">Лучшая цена</span></td>'
+        +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(group.unit || 'шт')+'</td>'
+        +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);text-align:right;font-weight:800;">'+_esc(bestPrice)+'</td>'
+        +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(String(variants))+' вар.</td>'
+        +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(bestType)+' · '+_esc(best && (best.price_list_title || '—'))+'</td>'
+        +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(bestCurrency)+'</td>'
+      +'</tr>';
+    rows += (group.items || []).map(function(item){
+      var typeLabel = String(item.price_type || 'main') === 'extra' ? 'Доп.' : 'Основной';
+      return '<tr>'
+        +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">&nbsp;&nbsp;'+_esc(item.raw_name || item.normalized_name || '—')+'</td>'
+        +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(item.unit || '—')+'</td>'
+        +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);text-align:right;">'+_esc(item.price === null || item.price === undefined ? '—' : String(item.price))+'</td>'
+        +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);"><span class="badge '+(String(item.price_type || 'main') === 'extra' ? 'bg' : 'by')+'">'+_esc(typeLabel)+'</span></td>'
+        +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(item.price_list_title || '—')+'</td>'
+        +'<td style="padding:10px 12px;border-bottom:1px solid var(--br);">'+_esc(item.currency || 'RUB')+'</td>'
+      +'</tr>';
+    }).join('');
+    return rows;
+  }).join('');
+}
 
 function renderSupplierPriceCatalogTbody(rows){
   rows = Array.isArray(rows) ? rows : [];
@@ -9045,13 +9133,20 @@ function renderSupplierPriceCatalogRows(){
   var modal = document.getElementById('ov-supPriceManager');
   var countEl = document.getElementById('supPriceCatalogCount');
   var tbody = document.getElementById('supPriceCatalogBody');
-  var items = Array.isArray(window.__supplierPriceCatalogItems)
-    ? window.__supplierPriceCatalogItems
-    : [];
+  var items = Array.isArray(window.__supplierPriceCatalogItems) ? window.__supplierPriceCatalogItems : [];
   var query = String(window.__supplierPriceCatalogSearch || '').trim().toLowerCase();
+  var mode = String(_supPriceCatalogViewMode || 'list');
   var filteredItems = window.filterSupplierPriceCatalogItems(items, query);
+  var groups = buildSupplierPriceCatalogGroups(items, query);
   window.__supplierPriceCatalogFilteredItems = filteredItems || [];
+  window.__supplierPriceCatalogGroupedItems = groups || [];
   if (!modal || !countEl || !tbody || String(_supPriceManagerTab) !== 'catalog') return;
+  if (mode === 'group') {
+    console.info('supplier catalog grouped', { totalItems: items.length, groups: groups.length, query: query });
+    countEl.innerHTML = '<span>Всего групп: <b>'+_esc(String(groups.length))+'</b></span><span>Найдено групп: <b>'+_esc(String(groups.length))+'</b></span>';
+    tbody.innerHTML = renderSupplierPriceCatalogGroupedRows(groups);
+    return;
+  }
   console.info('supplier catalog filter applied', {
     total: items.length,
     found: filteredItems.length,
@@ -9070,19 +9165,24 @@ function renderSupplierPriceCatalogRows(){
 window.renderSupplierPriceCatalogRows = renderSupplierPriceCatalogRows;
 
 function renderSupplierPriceCatalogShell(){
-  var rows = Array.isArray(window.__supplierPriceCatalogItems) ? window.__supplierPriceCatalogItems : (_supPriceCatalogRows || []);
-  var totalItems = Array.isArray(window.__supplierPriceCatalogItems)
-    ? window.__supplierPriceCatalogItems.length
-    : 0;
-  var foundItems = Array.isArray(window.__supplierPriceCatalogFilteredItems)
-    ? window.__supplierPriceCatalogFilteredItems.length
-    : totalItems;
+  var totalItems = Array.isArray(window.__supplierPriceCatalogItems) ? window.__supplierPriceCatalogItems.length : 0;
+  var mode = String(_supPriceCatalogViewMode || 'list');
+  var query = String(window.__supplierPriceCatalogSearch || '').trim().toLowerCase();
+  var filteredItems = filterSupplierPriceCatalogItems(Array.isArray(window.__supplierPriceCatalogItems) ? window.__supplierPriceCatalogItems : [], query);
+  var groups = buildSupplierPriceCatalogGroups(Array.isArray(window.__supplierPriceCatalogItems) ? window.__supplierPriceCatalogItems : [], query);
+  window.__supplierPriceCatalogFilteredItems = filteredItems.slice();
+  window.__supplierPriceCatalogGroupedItems = groups.slice();
+  var foundItems = mode === 'group' ? groups.length : filteredItems.length;
   return ''
     +'<div style="display:grid;gap:12px;">'
       +'<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;">'
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
+          +'<button class="tbBtn '+(mode === 'list' ? 'bg' : '')+'" data-catalog-view="list" onclick="window.__supplierPriceCatalogViewMode=&quot;list&quot;;renderSupplierPriceCatalogShell();renderSupplierPriceCatalogRows();" style="cursor:pointer;">Список</button>'
+          +'<button class="tbBtn '+(mode === 'group' ? 'bg' : '')+'" data-catalog-view="group" onclick="window.__supplierPriceCatalogViewMode=&quot;group&quot;;renderSupplierPriceCatalogShell();renderSupplierPriceCatalogRows();" style="cursor:pointer;">Группировка</button>'
+        +'</div>'
         +'<div id="supPriceCatalogCount" style="font-size:12px;color:var(--t3);display:flex;gap:12px;flex-wrap:wrap;">'
-          +'<span>Всего позиций: <b>'+_esc(String(totalItems))+'</b></span>'
-          +'<span>Найдено: <b>'+_esc(String(foundItems))+'</b></span>'
+          +'<span>'+(mode === 'group' ? 'Всего групп' : 'Всего позиций')+': <b>'+_esc(String(totalItems))+'</b></span>'
+          +'<span>'+(mode === 'group' ? 'Найдено групп' : 'Найдено')+': <b>'+_esc(String(foundItems))+'</b></span>'
         +'</div>'
         +'<input id="supPriceCatalogSearchInput" type="search" value="'+_esc(String(window.__supplierPriceCatalogSearch != null ? window.__supplierPriceCatalogSearch : _supPriceCatalogSearch || ''))+'" placeholder="Поиск по товару..." style="min-width:240px;flex:1;max-width:420px;padding:10px 12px;border:1px solid var(--br);border-radius:12px;background:#fff;color:var(--tx);">'
       +'</div>'
@@ -9091,15 +9191,15 @@ function renderSupplierPriceCatalogShell(){
           +'<thead><tr style="background:var(--bg3);">'
             +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Товар</th>'
             +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Ед.</th>'
-            +'<th style="padding:10px 12px;text-align:right;border-bottom:1px solid var(--br);">Цена</th>'
-            +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Тип прайса</th>'
-            +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Прайс-лист</th>'
+            +'<th style="padding:10px 12px;text-align:right;border-bottom:1px solid var(--br);">'+(mode === 'group' ? 'Лучшая цена' : 'Цена')+'</th>'
+            +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">'+(mode === 'group' ? 'Варианты' : 'Тип прайса')+'</th>'
+            +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">'+(mode === 'group' ? 'Лучший прайс' : 'Прайс-лист')+'</th>'
             +'<th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--br);">Валюта</th>'
           +'</tr></thead><tbody id="supPriceCatalogBody">'
-            +renderSupplierPriceCatalogTbody(Array.isArray(window.__supplierPriceCatalogFilteredItems) ? window.__supplierPriceCatalogFilteredItems : [])
+            +((mode === 'group') ? renderSupplierPriceCatalogGroupedRows(groups) : renderSupplierPriceCatalogTbody(filteredItems))
           +'</tbody></table>'
       +'</div>'
-      +(rows.length ? '' : '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);text-align:center;color:var(--t2);"><div style="font-size:18px;font-weight:700;margin-bottom:8px;">Прайс-каталог пока пуст</div><div style="font-size:13px;">Все позиции из main и extra прайсов появятся здесь после импорта.</div></div>')
+      +(totalItems ? '' : '<div style="padding:24px;border:1px solid rgba(148,163,184,.16);border-radius:16px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.08);text-align:center;color:var(--t2);"><div style="font-size:18px;font-weight:700;margin-bottom:8px;">Прайс-каталог пока пуст</div><div style="font-size:13px;">Все позиции из main и extra прайсов появятся здесь после импорта.</div></div>')
     +'</div>';
 }
 
