@@ -741,6 +741,37 @@ tbody tr:last-child td{border-bottom:none;}tbody tr:hover td{background:rgba(255
   </div>
 </div>
 
+<!-- Умный тендер: каталог прайсов поставщиков -->
+<div id="tenderSmartCatalogSection" style="display:none;margin-top:18px;">
+  <div class="panel">
+    <div class="ph">
+      <div class="pt">Умный тендер</div>
+      <span style="font-size:11px;color:var(--t3);">Лучшая цена по уже загруженным прайсам поставщиков</span>
+    </div>
+    <div class="pb">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button id="tenderCatalogModeList" class="tbBtn" onclick="setTenderCatalogViewMode('list')">Список</button>
+          <button id="tenderCatalogModeGroup" class="tbBtn" onclick="setTenderCatalogViewMode('group')">Группировка</button>
+        </div>
+        <button id="tenderCatalogExportBtn" class="tbBtn" onclick="exportTenderCatalogExcel()">Экспорт Excel</button>
+      </div>
+      <div id="tenderCatalogMeta" style="font-size:12px;color:var(--t3);margin-bottom:12px;"></div>
+      <div style="margin-bottom:12px;">
+        <input id="tenderCatalogSearch" type="text" placeholder="Поиск по товару или поставщику..."
+          oninput="tenderCatalogSearchInput(this.value)"
+          style="width:100%;max-width:420px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px 12px;color:var(--tx);font-size:13px;outline:none;box-sizing:border-box;">
+      </div>
+      <div style="overflow-x:auto;border-radius:var(--r2);border:1px solid var(--br);">
+        <table id="tenderCatalogTable" style="width:100%;border-collapse:collapse;">
+          <thead id="tenderCatalogTableHead"></thead>
+          <tbody id="tenderCatalogTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Поиск в прайсе (панель) -->
 <div id="tenderSearchPanel" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;
   background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center;">

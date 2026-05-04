@@ -148,6 +148,15 @@
       if (typeof window.cart !== 'undefined') window.cart = [];
       if (typeof window.tenderChanges !== 'undefined') window.tenderChanges = [];
       if (typeof window.tenderLoaded !== 'undefined') window.tenderLoaded = false;
+      if (typeof window.__tenderCatalogItems !== 'undefined') window.__tenderCatalogItems = [];
+      if (typeof window.__tenderCatalogFilteredItems !== 'undefined') window.__tenderCatalogFilteredItems = [];
+      if (typeof window.__tenderCatalogGroupedItems !== 'undefined') window.__tenderCatalogGroupedItems = [];
+      if (typeof window.__tenderCatalogAllGroupedItems !== 'undefined') window.__tenderCatalogAllGroupedItems = [];
+      if (typeof window.__tenderCatalogSearch !== 'undefined') window.__tenderCatalogSearch = '';
+      if (typeof window.__tenderCatalogViewMode !== 'undefined') window.__tenderCatalogViewMode = 'list';
+      if (typeof window.__tenderCatalogLoading !== 'undefined') window.__tenderCatalogLoading = false;
+      if (typeof window.__tenderCatalogLoadedOrgId !== 'undefined') window.__tenderCatalogLoadedOrgId = '';
+      if (typeof window.__tenderCatalogError !== 'undefined') window.__tenderCatalogError = '';
       if (typeof window.ordersRestFilter !== 'undefined') window.ordersRestFilter = 'all';
       if (typeof window.catFilter !== 'undefined') window.catFilter = 'all';
       if (typeof window.ordFilter !== 'undefined') window.ordFilter = 'all';
@@ -1155,6 +1164,18 @@
       p_offset: Number.isFinite(Number(payload.p_offset || payload.offset)) ? Math.max(0, Number(payload.p_offset || payload.offset)) : 0
     });
     return rpcWithPortability('owner_list_supplier_price_catalog', clean, 'Не удалось загрузить каталог прайса');
+  };
+
+  window.ownerListTenderCatalog = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    payload = payload || {};
+    var clean = rpcCleanPayload('owner_list_tender_catalog', {
+      p_organization_id: String(payload.p_organization_id || payload.target_organization_id || payload.organization_id || payload.organizationId || '').trim() || null,
+      p_limit: Number.isFinite(Number(payload.p_limit || payload.limit)) ? Math.max(1, Math.min(5000, Number(payload.p_limit || payload.limit))) : 1000,
+      p_offset: Number.isFinite(Number(payload.p_offset || payload.offset)) ? Math.max(0, Number(payload.p_offset || payload.offset)) : 0
+    });
+    return rpcWithPortability('owner_list_tender_catalog', clean, 'Не удалось загрузить каталог тендера');
   };
 
   window.ownerImportSupplierPriceItems = function (payload) {

@@ -2575,6 +2575,8 @@ function submitTender(){
 }
 function renderTender(){
   renderCart();
+  renderTenderCatalogShellAndRows(false);
+  loadTenderCatalogRows(false);
   // Заполнить список поставщиков в быстром добавлении
   var supSel=document.getElementById('quickSup');
   if(supSel&&ALL_SUPS)supSel.innerHTML=ALL_SUPS.map(function(s){return'<option>'+s+'</option>';}).join('');
@@ -10677,6 +10679,423 @@ function exportTenderTable(){
   var fn = 'Тендер_'+_tenderRestName.replace(/[^а-яёА-ЯЁa-zA-Z0-9]/g,'_')+'_'+date.replace(/\./g,'-')+'.xlsx';
   XLSX.writeFile(wb,fn);
   toast('Excel скачан: '+fn,'ok');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// УМНЫЙ ТЕНДЕР — каталог прайсов поставщиков
+// ═══════════════════════════════════════════════════════════════
+if(typeof window.__tenderCatalogItems==='undefined') window.__tenderCatalogItems=[];
+if(typeof window.__tenderCatalogFilteredItems==='undefined') window.__tenderCatalogFilteredItems=[];
+if(typeof window.__tenderCatalogGroupedItems==='undefined') window.__tenderCatalogGroupedItems=[];
+if(typeof window.__tenderCatalogSearch==='undefined') window.__tenderCatalogSearch='';
+if(typeof window.__tenderCatalogViewMode==='undefined') window.__tenderCatalogViewMode='list';
+if(typeof window.__tenderCatalogLoading==='undefined') window.__tenderCatalogLoading=false;
+if(typeof window.__tenderCatalogLoadedOrgId==='undefined') window.__tenderCatalogLoadedOrgId='';
+if(typeof window.__tenderCatalogError==='undefined') window.__tenderCatalogError='';
+if(typeof window.__tenderCatalogShellKey==='undefined') window.__tenderCatalogShellKey='';
+var _tenderCatalogSearchTimer = null;
+
+function getTenderCatalogOrganizationId(){
+  return String(
+    (window.__userSession && (
+      window.__userSession.activeOrganizationId ||
+      (window.__userSession.activeOrganization && window.__userSession.activeOrganization.id)
+    )) ||
+    (window.activeRest && window.activeRest.id) ||
+    ''
+  ).trim();
+}
+
+function normalizeTenderCatalogName(name){
+  return String(name || '')
+    .toLowerCase()
+    .replace(/["'«»]/g, '')
+    .replace(/[.,]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function tenderCatalogPriceTypeLabel(priceType){
+  return String(priceType || 'main').toLowerCase() === 'extra' ? 'Доп.' : 'Основной';
+}
+
+function filterTenderCatalogItems(items, search){
+  var q = String(search || '').trim().toLowerCase();
+  if(!q) return items;
+  return (items || []).filter(function(item){
+    var haystack = [
+      item && item.raw_name,
+      item && item.normalized_name,
+      item && item.supplier_name,
+      item && item.price_list_title,
+      item && item.unit,
+      item && item.price_type,
+      item && item.currency
+    ].map(function(v){ return String(v || '').toLowerCase(); }).join(' ');
+    return haystack.indexOf(q) >= 0;
+  });
+}
+
+function getTenderCatalogGroupKey(item){
+  var normalized = normalizeTenderCatalogName(item && (item.normalized_name || item.raw_name || ''));
+  var unit = String(item && item.unit || '').trim().toLowerCase() || 'шт';
+  return normalized + '|' + unit;
+}
+
+function buildTenderCatalogGroups(items){
+  var map = {};
+  (items || []).forEach(function(item){
+    if(!item) return;
+    var key = getTenderCatalogGroupKey(item);
+    if(!map[key]){
+      map[key] = {
+        key: key,
+        name: item.normalized_name || item.raw_name || '—',
+        unit: item.unit || 'шт',
+        variants: [],
+        supplierNames: [],
+        supplierIds: [],
+        best: null
+      };
+    }
+    var group = map[key];
+    group.variants.push(item);
+    var supKey = String(item.supplier_id || item.supplier_name || '');
+    if(supKey && group.supplierIds.indexOf(supKey) < 0) group.supplierIds.push(supKey);
+    var supName = String(item.supplier_name || '').trim();
+    if(supName && group.supplierNames.indexOf(supName) < 0) group.supplierNames.push(supName);
+    var price = Number(item.price || 0);
+    var isValid = price > 0;
+    if(isValid){
+      if(!group.best) {
+        group.best = item;
+      } else {
+        var bestPrice = Number(group.best.price || 0);
+        var currentType = String(item.price_type || 'main').toLowerCase();
+        var bestType = String(group.best.price_type || 'main').toLowerCase();
+        if(price < bestPrice || (price === bestPrice && bestType !== 'main' && currentType === 'main')){
+          group.best = item;
+        }
+      }
+    }
+  });
+  return Object.keys(map).sort(function(a,b){
+    var aa = map[a];
+    var bb = map[b];
+    return String(aa.name).localeCompare(String(bb.name), 'ru') || String(aa.unit).localeCompare(String(bb.unit), 'ru');
+  }).map(function(key){
+    var group = map[key];
+    group.supplierCount = group.supplierIds.length;
+    group.variantCount = group.variants.length;
+    group.bestPrice = group.best ? Number(group.best.price || 0) : 0;
+    group.bestSupplier = group.best ? group.best.supplier_name : '—';
+    group.bestPriceType = group.best ? tenderCatalogPriceTypeLabel(group.best.price_type) : '—';
+    group.bestPriceListTitle = group.best ? (group.best.price_list_title || '—') : '—';
+    return group;
+  });
+}
+
+function renderTenderCatalogShell(force){
+  var root = document.getElementById('tenderSmartCatalogSection');
+  if(!root) return;
+  var orgId = getTenderCatalogOrganizationId();
+  var shellKey = [orgId, window.__tenderCatalogViewMode, window.__tenderCatalogLoading ? '1' : '0', window.__tenderCatalogError ? 'err' : 'ok'].join('|');
+  if(!force && window.__tenderCatalogShellKey === shellKey && root.innerHTML) return;
+  window.__tenderCatalogShellKey = shellKey;
+  root.style.display = '';
+  var mode = window.__tenderCatalogViewMode === 'group' ? 'group' : 'list';
+  var listOn = mode === 'list';
+  var total = Array.isArray(window.__tenderCatalogItems) ? window.__tenderCatalogItems.length : 0;
+  var found = Array.isArray(window.__tenderCatalogFilteredItems) ? window.__tenderCatalogFilteredItems.length : total;
+  var totalLabel = mode === 'group' ? 'Всего групп' : 'Всего позиций';
+  var foundLabel = mode === 'group' ? 'Найдено групп' : 'Найдено';
+  root.innerHTML =
+    '<div class="panel">'
+      +'<div class="ph">'
+        +'<div class="pt">Умный тендер</div>'
+        +'<span style="font-size:11px;color:var(--t3);">Лучшая цена по уже загруженным прайсам поставщиков</span>'
+      +'</div>'
+      +'<div class="pb">'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;">'
+          +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+            +'<button id="tenderCatalogModeList" class="tbBtn" onclick="setTenderCatalogViewMode(\'list\')"'+(listOn?' style="background:var(--aD);color:var(--ac);border-color:var(--ac);font-weight:700;"':'')+'>Список</button>'
+            +'<button id="tenderCatalogModeGroup" class="tbBtn" onclick="setTenderCatalogViewMode(\'group\')"'+(!listOn?' style="background:var(--aD);color:var(--ac);border-color:var(--ac);font-weight:700;"':'')+'>Группировка</button>'
+          +'</div>'
+          +'<button id="tenderCatalogExportBtn" class="tbBtn" onclick="exportTenderCatalogExcel()">Экспорт Excel</button>'
+        +'</div>'
+        +'<div id="tenderCatalogMeta" style="font-size:12px;color:var(--t3);margin-bottom:12px;">'
+          +(window.__tenderCatalogLoading ? 'Загрузка каталога...' : (window.__tenderCatalogError ? '<span style="color:var(--rd);">'+window.__tenderCatalogError+'</span>' : (orgId ? '' : 'Выберите организацию для просмотра прайсов поставщиков')))
+        +'</div>'
+        +'<div style="margin-bottom:12px;">'
+          +'<input id="tenderCatalogSearch" type="text" placeholder="Поиск по товару или поставщику..."'
+            +' oninput="tenderCatalogSearchInput(this.value)"'
+            +' style="width:100%;max-width:420px;background:var(--bg3);border:1px solid var(--br);border-radius:var(--r);padding:8px 12px;color:var(--tx);font-size:13px;outline:none;box-sizing:border-box;">'
+        +'</div>'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:12px;color:var(--t3);">'
+          +'<div id="tenderCatalogCounts">'+totalLabel+': <b style="color:var(--tx);">'+total+'</b> · '+foundLabel+': <b style="color:var(--tx);">'+found+'</b></div>'
+          +'<div id="tenderCatalogDebug"></div>'
+        +'</div>'
+        +'<div style="overflow-x:auto;border-radius:var(--r2);border:1px solid var(--br);">'
+          +'<table id="tenderCatalogTable" style="width:100%;border-collapse:collapse;">'
+            +'<thead id="tenderCatalogTableHead"></thead>'
+            +'<tbody id="tenderCatalogTableBody"></tbody>'
+          +'</table>'
+        +'</div>'
+      +'</div>'
+    +'</div>';
+  var inp = document.getElementById('tenderCatalogSearch');
+  if(inp){
+    inp.value = window.__tenderCatalogSearch || '';
+  }
+  renderTenderCatalogRows();
+}
+
+function renderTenderCatalogRows(){
+  var body = document.getElementById('tenderCatalogTableBody');
+  var head = document.getElementById('tenderCatalogTableHead');
+  var counts = document.getElementById('tenderCatalogCounts');
+  var meta = document.getElementById('tenderCatalogMeta');
+  if(!body || !head || !counts || !meta) return;
+
+  var items = Array.isArray(window.__tenderCatalogItems) ? window.__tenderCatalogItems : [];
+  var query = String(window.__tenderCatalogSearch || '').trim().toLowerCase();
+  var filteredItems = filterTenderCatalogItems(items, query);
+  window.__tenderCatalogFilteredItems = filteredItems || [];
+  var groups = buildTenderCatalogGroups(filteredItems);
+  window.__tenderCatalogGroupedItems = groups || [];
+
+  var mode = window.__tenderCatalogViewMode === 'group' ? 'group' : 'list';
+  var totalLabel = mode === 'group' ? 'Всего групп' : 'Всего позиций';
+  var foundLabel = mode === 'group' ? 'Найдено групп' : 'Найдено';
+  counts.innerHTML = totalLabel+': <b style="color:var(--tx);">'+(mode === 'group' ? groups.length : items.length)+'</b> · '+foundLabel+': <b style="color:var(--tx);">'+(mode === 'group' ? groups.length : filteredItems.length)+'</b>';
+  meta.textContent = window.__tenderCatalogLoading
+    ? 'Загрузка каталога...'
+    : (window.__tenderCatalogError ? window.__tenderCatalogError : (items.length ? 'Показаны загруженные прайсы поставщиков' : 'Нет данных для тендера'));
+
+  if(mode === 'group'){
+    console.info('tender catalog grouped', {
+      totalItems: items.length,
+      groups: groups.length,
+      query: query
+    });
+    head.innerHTML = '<tr style="background:var(--bg3);">'
+      +'<th style="padding:10px 14px;text-align:left;font-size:12px;font-weight:700;border:1px solid var(--br);min-width:240px;">Товар</th>'
+      +'<th style="padding:10px 12px;text-align:center;font-size:12px;font-weight:700;border:1px solid var(--br);min-width:90px;">Ед.</th>'
+      +'<th style="padding:10px 12px;text-align:center;font-size:12px;font-weight:700;border:1px solid var(--br);min-width:90px;">Поставщиков</th>'
+      +'<th style="padding:10px 12px;text-align:center;font-size:12px;font-weight:700;border:1px solid var(--br);min-width:90px;">Вариантов</th>'
+      +'<th style="padding:10px 12px;text-align:right;font-size:12px;font-weight:700;border:1px solid var(--br);min-width:120px;">Лучшая цена</th>'
+      +'<th style="padding:10px 12px;text-align:left;font-size:12px;font-weight:700;border:1px solid var(--br);min-width:180px;">Лучший поставщик</th>'
+      +'<th style="padding:10px 12px;text-align:center;font-size:12px;font-weight:700;border:1px solid var(--br);min-width:100px;">Тип прайса</th>'
+      +'<th style="padding:10px 12px;text-align:left;font-size:12px;font-weight:700;border:1px solid var(--br);min-width:180px;">Прайс-лист</th>'
+      +'</tr>';
+    if(!groups.length){
+      body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--t3);padding:40px;">Ничего не найдено</td></tr>';
+      return;
+    }
+    body.innerHTML = groups.map(function(group){
+      var variants = group.variants || [];
+      var bestId = group.best && group.best.item_id ? String(group.best.item_id) : '';
+      var variantsHtml = variants.map(function(item){
+        var isBest = bestId && String(item.item_id || '') === bestId;
+        return '<tr style="'+(isBest?'background:rgba(99, 214, 132, .08);':'')+'">'
+          +'<td style="padding:7px 10px;border-top:1px solid var(--br);">'
+            +'<div style="font-weight:600;font-size:12px;">'+_esc(item.supplier_name || '—')+' '+(isBest ? '<span class="badge" style="margin-left:6px;background:var(--gr);color:#fff;">Лучшая цена</span>' : '')+'</div>'
+          +'</td>'
+          +'<td style="padding:7px 10px;border-top:1px solid var(--br);text-align:right;font-weight:700;color:'+(isBest?'var(--gr)':'var(--tx)')+';">₽'+Number(item.price || 0).toLocaleString()+'</td>'
+          +'<td style="padding:7px 10px;border-top:1px solid var(--br);text-align:center;">'+tenderCatalogPriceTypeLabel(item.price_type)+'</td>'
+          +'<td style="padding:7px 10px;border-top:1px solid var(--br);">'+_esc(item.price_list_title || '—')+'</td>'
+        +'</tr>';
+      }).join('');
+      return '<tr>'
+        +'<td style="padding:10px 14px;border:1px solid var(--br);vertical-align:top;">'
+          +'<div style="font-weight:700;">'+_esc(group.name || '—')+' '+(group.best ? '<span class="badge" style="margin-left:6px;background:var(--gr);color:#fff;">Лучшая цена</span>' : '')+'</div>'
+          +(query ? '' : '<div style="font-size:11px;color:var(--t3);margin-top:3px;">'+group.variantCount+' вариантов</div>')
+        +'</td>'
+        +'<td style="padding:10px 12px;border:1px solid var(--br);text-align:center;">'+_esc(group.unit || 'шт')+'</td>'
+        +'<td style="padding:10px 12px;border:1px solid var(--br);text-align:center;font-weight:700;">'+group.supplierCount+'</td>'
+        +'<td style="padding:10px 12px;border:1px solid var(--br);text-align:center;font-weight:700;">'+group.variantCount+'</td>'
+        +'<td style="padding:10px 12px;border:1px solid var(--br);text-align:right;font-weight:800;color:var(--gr);">₽'+Number(group.bestPrice || 0).toLocaleString()+'</td>'
+        +'<td style="padding:10px 12px;border:1px solid var(--br);">'+_esc(group.bestSupplier || '—')+'</td>'
+        +'<td style="padding:10px 12px;border:1px solid var(--br);text-align:center;">'+_esc(group.bestPriceType || '—')+'</td>'
+        +'<td style="padding:10px 12px;border:1px solid var(--br);">'+_esc(group.bestPriceListTitle || '—')+'</td>'
+      +'</tr>'
+      +'<tr><td colspan="8" style="padding:0;border:1px solid var(--br);border-top:none;">'
+        +'<table style="width:100%;border-collapse:collapse;background:var(--bg2);">'
+          +'<thead><tr style="background:var(--bg4);font-size:11px;color:var(--t3);text-transform:uppercase;">'
+            +'<th style="padding:7px 10px;text-align:left;border-bottom:1px solid var(--br);">Поставщик</th>'
+            +'<th style="padding:7px 10px;text-align:right;border-bottom:1px solid var(--br);">Цена</th>'
+            +'<th style="padding:7px 10px;text-align:center;border-bottom:1px solid var(--br);">Тип прайса</th>'
+            +'<th style="padding:7px 10px;text-align:left;border-bottom:1px solid var(--br);">Прайс-лист</th>'
+          +'</tr></thead>'
+          +'<tbody>'+variantsHtml+'</tbody>'
+        +'</table>'
+      +'</td></tr>';
+    }).join('');
+    return;
+  }
+
+  console.info('tender catalog list', {
+    totalItems: items.length,
+    filteredItems: filteredItems.length,
+    query: query
+  });
+  head.innerHTML = '<tr style="background:var(--bg3);">'
+    +'<th style="padding:10px 14px;text-align:left;font-size:12px;font-weight:700;border:1px solid var(--br);min-width:240px;">Товар</th>'
+    +'<th style="padding:10px 12px;text-align:left;font-size:12px;font-weight:700;border:1px solid var(--br);min-width:180px;">Поставщик</th>'
+    +'<th style="padding:10px 12px;text-align:center;font-size:12px;font-weight:700;border:1px solid var(--br);min-width:90px;">Ед.</th>'
+    +'<th style="padding:10px 12px;text-align:right;font-size:12px;font-weight:700;border:1px solid var(--br);min-width:120px;">Цена</th>'
+    +'<th style="padding:10px 12px;text-align:center;font-size:12px;font-weight:700;border:1px solid var(--br);min-width:100px;">Тип прайса</th>'
+    +'<th style="padding:10px 12px;text-align:left;font-size:12px;font-weight:700;border:1px solid var(--br);min-width:180px;">Прайс-лист</th>'
+    +'</tr>';
+  if(!filteredItems.length){
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--t3);padding:40px;">Ничего не найдено</td></tr>';
+    return;
+  }
+  body.innerHTML = filteredItems.map(function(item){
+    return '<tr>'
+      +'<td style="padding:10px 14px;border:1px solid var(--br);font-weight:600;">'+_esc(item.raw_name || item.normalized_name || '—')+'</td>'
+      +'<td style="padding:10px 12px;border:1px solid var(--br);">'+_esc(item.supplier_name || '—')+'</td>'
+      +'<td style="padding:10px 12px;border:1px solid var(--br);text-align:center;">'+_esc(item.unit || 'шт')+'</td>'
+      +'<td style="padding:10px 12px;border:1px solid var(--br);text-align:right;font-weight:700;">₽'+Number(item.price || 0).toLocaleString()+'</td>'
+      +'<td style="padding:10px 12px;border:1px solid var(--br);text-align:center;">'+tenderCatalogPriceTypeLabel(item.price_type)+'</td>'
+      +'<td style="padding:10px 12px;border:1px solid var(--br);">'+_esc(item.price_list_title || '—')+'</td>'
+    +'</tr>';
+  }).join('');
+}
+
+function renderTenderCatalogShellAndRows(force){
+  renderTenderCatalogShell(force);
+  renderTenderCatalogRows();
+}
+
+function setTenderCatalogViewMode(mode){
+  window.__tenderCatalogViewMode = String(mode || 'list') === 'group' ? 'group' : 'list';
+  renderTenderCatalogShell(true);
+  renderTenderCatalogRows();
+}
+
+function tenderCatalogSearchInput(value){
+  window.__tenderCatalogSearch = String(value || '');
+  if(_tenderCatalogSearchTimer) clearTimeout(_tenderCatalogSearchTimer);
+  _tenderCatalogSearchTimer = setTimeout(function(){
+    renderTenderCatalogRows();
+  }, 150);
+}
+
+async function loadTenderCatalogRows(force){
+  var orgId = getTenderCatalogOrganizationId();
+  if(!orgId){
+    window.__tenderCatalogItems = [];
+    window.__tenderCatalogFilteredItems = [];
+    window.__tenderCatalogGroupedItems = [];
+    window.__tenderCatalogError = '';
+    window.__tenderCatalogLoadedOrgId = '';
+    window.__tenderCatalogLoading = false;
+    renderTenderCatalogShell(true);
+    renderTenderCatalogRows();
+    return [];
+  }
+  if(!force && window.__tenderCatalogLoadedOrgId === orgId && Array.isArray(window.__tenderCatalogItems) && window.__tenderCatalogItems.length){
+    renderTenderCatalogRows();
+    return window.__tenderCatalogItems.slice();
+  }
+  if(window.__tenderCatalogLoading) return window.__tenderCatalogItems || [];
+  window.__tenderCatalogLoading = true;
+  window.__tenderCatalogError = '';
+  window.__tenderCatalogLoadedOrgId = orgId;
+  renderTenderCatalogShell(true);
+
+  var pageSize = 1000;
+  var offset = 0;
+  var all = [];
+  try{
+    while(true){
+      var batch = await window.ownerListTenderCatalog({
+        p_organization_id: orgId,
+        p_limit: pageSize,
+        p_offset: offset
+      });
+      var rows = Array.isArray(batch) ? batch : [];
+      all = all.concat(rows);
+      if(rows.length < pageSize) break;
+      offset += pageSize;
+    }
+    window.__tenderCatalogItems = all;
+    window.__tenderCatalogFilteredItems = all.slice();
+    window.__tenderCatalogGroupedItems = buildTenderCatalogGroups(all);
+    console.info('tender catalog loaded', {
+      orgId: orgId,
+      count: all.length
+    });
+    return all;
+  } catch (error) {
+    window.__tenderCatalogError = (error && error.message) ? error.message : 'Не удалось загрузить каталог тендера';
+    window.__tenderCatalogItems = [];
+    window.__tenderCatalogFilteredItems = [];
+    window.__tenderCatalogGroupedItems = [];
+    console.error('tender catalog load failed', error, error && error.stack ? error.stack : '');
+    return [];
+  } finally {
+    window.__tenderCatalogLoading = false;
+    renderTenderCatalogShell(true);
+    renderTenderCatalogRows();
+  }
+}
+
+function exportTenderCatalogExcel(){
+  var items = Array.isArray(window.__tenderCatalogItems) ? window.__tenderCatalogItems : [];
+  var query = String(window.__tenderCatalogSearch || '').trim().toLowerCase();
+  var filteredItems = filterTenderCatalogItems(items, query);
+  var mode = window.__tenderCatalogViewMode === 'group' ? 'group' : 'list';
+  if(typeof XLSX==='undefined'){ toast('SheetJS не загружен','err'); return; }
+  if(mode === 'group'){
+    var groups = buildTenderCatalogGroups(filteredItems);
+    if(!groups.length){ alert('Нет данных для экспорта'); return; }
+    var wb = XLSX.utils.book_new();
+    var data = [
+      ['Товар','Ед.','Кол-во поставщиков','Кол-во вариантов','Лучшая цена','Лучший поставщик','Тип прайса','Прайс-лист лучшей цены']
+    ];
+    groups.forEach(function(group){
+      data.push([
+        group.name || '—',
+        group.unit || 'шт',
+        group.supplierCount || 0,
+        group.variantCount || 0,
+        group.bestPrice || '',
+        group.bestSupplier || '',
+        group.bestPriceType || '',
+        group.bestPriceListTitle || ''
+      ]);
+    });
+    var ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = [{wch:30},{wch:10},{wch:14},{wch:14},{wch:14},{wch:24},{wch:14},{wch:24}];
+    XLSX.utils.book_append_sheet(wb, ws, 'Группировка');
+    var fn = 'tender-catalog-'+today().replace(/\./g,'-')+'.xlsx';
+    XLSX.writeFile(wb, fn);
+    toast('Excel скачан: '+fn,'ok');
+    return;
+  }
+  if(!filteredItems.length){ alert('Нет данных для экспорта'); return; }
+  var wb2 = XLSX.utils.book_new();
+  var data2 = [
+    ['Товар','Поставщик','Ед.','Цена','Тип прайса','Прайс-лист']
+  ];
+  filteredItems.forEach(function(item){
+    data2.push([
+      item.raw_name || item.normalized_name || '—',
+      item.supplier_name || '—',
+      item.unit || 'шт',
+      item.price || '',
+      tenderCatalogPriceTypeLabel(item.price_type),
+      item.price_list_title || ''
+    ]);
+  });
+  var ws2 = XLSX.utils.aoa_to_sheet(data2);
+  ws2['!cols'] = [{wch:30},{wch:24},{wch:10},{wch:12},{wch:14},{wch:24}];
+  XLSX.utils.book_append_sheet(wb2, ws2, 'Список');
+  var fn2 = 'tender-catalog-'+today().replace(/\./g,'-')+'.xlsx';
+  XLSX.writeFile(wb2, fn2);
+  toast('Excel скачан: '+fn2,'ok');
 }
 
 
