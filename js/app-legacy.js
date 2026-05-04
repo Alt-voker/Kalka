@@ -8024,9 +8024,15 @@ async function persistSupplierPriceImportToSupabase(importRows){
   var created = Array.isArray(createdRows) ? createdRows[0] : createdRows;
   if (!created || !created.id) throw new Error('Не удалось создать прайс-лист');
   var chunks = chunkArray(rows, 200);
+  var totalChunks = chunks.length;
   var importedRows = [];
   let totalImported = 0;
   let totalSkipped = 0;
+  window.__supplierPriceImportProgress = {
+    current: 0,
+    total: totalChunks,
+    percent: 0
+  };
   try {
     for (var i = 0; i < chunks.length; i++) {
       var chunk = chunks[i];
@@ -8055,6 +8061,15 @@ async function persistSupplierPriceImportToSupabase(importRows){
         totalSkipped += Number(window.__supplierPriceImportStats.invalid || 0);
       }
       importedRows = importedRows.concat(Array.isArray(chunkRows) ? chunkRows : []);
+      window.__supplierPriceImportProgress.current = i + 1;
+      window.__supplierPriceImportProgress.percent = totalChunks
+        ? Math.round(((i + 1) / totalChunks) * 100)
+        : 100;
+      console.info('supplier price import progress', {
+        current: i + 1,
+        total: totalChunks,
+        percent: window.__supplierPriceImportProgress.percent
+      });
       var progressEl = document.getElementById('supPriceErr');
       if (progressEl) {
         progressEl.textContent = 'Импортировано ' + Math.min(totalImported, rows.length) + ' из ' + rows.length + ' строк';
@@ -8073,6 +8088,7 @@ async function persistSupplierPriceImportToSupabase(importRows){
       totalSkipped: totalSkipped,
       totalChunks: chunks.length
     });
+    window.__supplierPriceImportProgress.percent = 100;
     return {
       priceList: created,
       imported: totalImported,
@@ -8080,6 +8096,7 @@ async function persistSupplierPriceImportToSupabase(importRows){
     };
   } catch (error) {
     console.error('persistSupplierPriceImportToSupabase failed', error, error && error.stack);
+    window.__supplierPriceImportProgress = null;
     if (created && created.id && typeof window.ownerDeleteSupplierPriceList === 'function') {
       await window.ownerDeleteSupplierPriceList({
         target_price_list_id: created.id,
@@ -8277,6 +8294,35 @@ function openSupPriceUpload(supName, append){
   var sec = document.getElementById('pricePreviewSection');
   if(sec) sec.style.display = 'none';
   openModal('supPriceUpload');
+  var progressWrap = document.getElementById('supplier-import-progress');
+  if (!progressWrap) {
+    var uploadBody = document.querySelector('#ov-supPriceUpload .modal');
+    if (uploadBody) {
+      progressWrap = document.createElement('div');
+      progressWrap.id = 'supplier-import-progress';
+      progressWrap.style.marginTop = '12px';
+      progressWrap.innerHTML = ''
+        +'<div class="progress-bar" style="height:10px;background:rgba(148,163,184,.18);border-radius:999px;overflow:hidden;">'
+          +'<div class="progress-fill" style="width:0%;height:100%;background:linear-gradient(90deg,#2f6fed,#6b8cff);transition:width .2s ease;"></div>'
+        +'</div>'
+        +'<div class="progress-text" style="margin-top:6px;font-size:12px;color:var(--t2);">Загрузка: 0 / '+(window.__supplierPriceImportProgress && window.__supplierPriceImportProgress.total || 0)+' (0%)</div>';
+      uploadBody.appendChild(progressWrap);
+    }
+  }
+  if (!window.__supplierPriceImportProgressTimer) {
+    window.__supplierPriceImportProgressTimer = setInterval(function () {
+      var p = window.__supplierPriceImportProgress;
+      var fill = document.querySelector('.progress-fill');
+      var text = document.querySelector('.progress-text');
+      if (!p) {
+        if (fill) fill.style.width = '0%';
+        if (text) text.innerText = 'Загрузка: 0 / 0 (0%)';
+        return;
+      }
+      if (fill) fill.style.width = (p.percent || 0) + '%';
+      if (text) text.innerText = 'Загрузка: ' + (p.current || 0) + ' / ' + (p.total || 0) + ' (' + (p.percent || 0) + '%)';
+    }, 250);
+  }
 }
 
 function selectAllSupPriceComps(val){
