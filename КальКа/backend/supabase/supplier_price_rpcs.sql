@@ -30,6 +30,7 @@ drop function if exists public.owner_archive_supplier_price_list(uuid, uuid);
 drop function if exists public.owner_delete_supplier_price_list(uuid, uuid);
 drop function if exists public.owner_clear_supplier_price_items(uuid, uuid);
 drop function if exists public.owner_list_supplier_price_items(uuid, uuid);
+drop function if exists public.owner_list_supplier_price_catalog(uuid, uuid);
 drop function if exists public.owner_import_supplier_price_items(uuid, jsonb, uuid);
 
 create or replace function public.owner_list_supplier_price_lists(
@@ -693,6 +694,78 @@ begin
 end;
 $$;
 
+create or replace function public.owner_list_supplier_price_catalog(
+  p_supplier_id uuid,
+  p_organization_id uuid default null
+)
+returns table (
+  item_id uuid,
+  price_list_id uuid,
+  price_list_title text,
+  price_type text,
+  supplier_id uuid,
+  organization_id uuid,
+  raw_name text,
+  normalized_name text,
+  unit text,
+  price numeric,
+  currency text,
+  row_index integer,
+  created_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+set row_security = off
+as $$
+declare
+  v_org_id uuid;
+begin
+  select s.organization_id
+    into v_org_id
+  from public.suppliers as s
+  where s.id = p_supplier_id
+  limit 1;
+
+  if v_org_id is null then
+    raise exception 'Поставщик не найден' using errcode = '22023';
+  end if;
+
+  if p_organization_id is not null and p_organization_id <> v_org_id then
+    raise exception 'Forbidden' using errcode = '42501';
+  end if;
+
+  if not public.has_permission(v_org_id, 'price_lists.view') then
+    raise exception 'Forbidden' using errcode = '42501';
+  end if;
+
+  return query
+  select
+    spi.id as item_id,
+    spl.id as price_list_id,
+    coalesce(nullif(spl.title, ''), nullif(spl.name, ''), 'Прайс-лист') as price_list_title,
+    coalesce(nullif(lower(trim(spl.price_type)), ''), 'main') as price_type,
+    spi.supplier_id,
+    spi.organization_id,
+    spi.raw_name,
+    spi.normalized_name,
+    spi.unit,
+    spi.price,
+    spi.currency,
+    spi.row_index,
+    spi.created_at
+  from public.supplier_price_items as spi
+  join public.supplier_price_lists as spl
+    on spl.id = spi.price_list_id
+   and spl.supplier_id = p_supplier_id
+   and spl.organization_id = v_org_id
+   and coalesce(spl.status, 'active') <> 'deleted'
+  where spi.organization_id = v_org_id
+    and coalesce(spi.status, 'active') <> 'deleted'
+  order by spl.created_at desc, spl.id desc, spi.row_index asc, spi.created_at asc;
+end;
+$$;
+
 create or replace function public.owner_import_supplier_price_items(
   p_target_price_list_id uuid,
   p_items jsonb,
@@ -859,6 +932,7 @@ grant execute on function public.owner_archive_supplier_price_list(uuid, uuid) t
 grant execute on function public.owner_delete_supplier_price_list(uuid, uuid) to authenticated;
 grant execute on function public.owner_clear_supplier_price_items(uuid, uuid) to authenticated;
 grant execute on function public.owner_list_supplier_price_items(uuid, uuid) to authenticated;
+grant execute on function public.owner_list_supplier_price_catalog(uuid, uuid) to authenticated;
 grant execute on function public.owner_import_supplier_price_items(uuid, jsonb, uuid) to authenticated;
 
 notify pgrst, 'reload schema';

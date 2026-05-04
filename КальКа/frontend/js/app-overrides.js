@@ -1144,6 +1144,17 @@
     return rpcWithPortability('owner_list_supplier_price_items', clean, 'Не удалось загрузить позиции прайс-листа');
   };
 
+  window.ownerListSupplierPriceCatalog = function (payload) {
+    var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
+    if (!client) return Promise.reject(new Error('Supabase не настроен'));
+    payload = payload || {};
+    var clean = rpcCleanPayload('owner_list_supplier_price_catalog', {
+      p_supplier_id: String(payload.p_supplier_id || payload.target_supplier_id || payload.supplier_id || payload.supplierId || '').trim() || null,
+      p_organization_id: String(payload.p_organization_id || payload.target_organization_id || payload.organization_id || payload.organizationId || '').trim() || null
+    });
+    return rpcWithPortability('owner_list_supplier_price_catalog', clean, 'Не удалось загрузить каталог прайса');
+  };
+
   window.ownerImportSupplierPriceItems = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
