@@ -9129,6 +9129,69 @@ function renderSupplierPriceCatalogTbody(rows){
   }).join('');
 }
 
+function exportSupplierPriceCatalogXLSX(){
+  var mode = String(_supPriceCatalogViewMode || 'list');
+  var items = Array.isArray(window.__supplierPriceCatalogItems) ? window.__supplierPriceCatalogItems : [];
+  var query = String(window.__supplierPriceCatalogSearch || '').trim().toLowerCase();
+  var fileDate = new Date();
+  var date = [
+    String(fileDate.getFullYear()),
+    String(fileDate.getMonth() + 1).padStart(2, '0'),
+    String(fileDate.getDate()).padStart(2, '0')
+  ].join('-');
+  if (typeof XLSX === 'undefined') {
+    toast('Excel-модуль не загружен', 'err');
+    return;
+  }
+  if (mode === 'group') {
+    var groups = buildSupplierPriceCatalogGroups(items, query);
+    if (!groups.length) {
+      alert('Нет данных для экспорта');
+      return;
+    }
+    var rows = [['Товар','Ед.','Лучшая цена','Валюта','Количество вариантов','Тип лучшего прайса','Прайс-лист лучшей цены']];
+    groups.forEach(function(group){
+      var best = group.bestItem || null;
+      var variants = Array.isArray(group.items) ? group.items.length : 0;
+      rows.push([
+        group.name || '—',
+        group.unit || 'шт',
+        best && best.price !== null && best.price !== undefined ? Number(best.price) : '',
+        best && (best.currency || 'RUB') || 'RUB',
+        variants,
+        best && String(best.price_type || 'main') === 'extra' ? 'Доп.' : 'Основной',
+        best && (best.price_list_title || '—') || '—'
+      ]);
+    });
+    var wbGroup = XLSX.utils.book_new();
+    var wsGroup = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wbGroup, wsGroup, 'Каталог');
+    XLSX.writeFile(wbGroup, 'supplier-price-catalog-' + date + '.xlsx');
+    return;
+  }
+  var filteredItems = filterSupplierPriceCatalogItems(items, query);
+  if (!filteredItems.length) {
+    alert('Нет данных для экспорта');
+    return;
+  }
+  var exportRows = [['Товар','Ед.','Цена','Валюта','Тип прайса','Прайс-лист']];
+  filteredItems.forEach(function(item){
+    exportRows.push([
+      item.raw_name || item.normalized_name || '—',
+      item.unit || 'шт',
+      item.price !== null && item.price !== undefined ? Number(item.price) : '',
+      item.currency || 'RUB',
+      String(item.price_type || 'main') === 'extra' ? 'Доп.' : 'Основной',
+      item.price_list_title || '—'
+    ]);
+  });
+  var wb = XLSX.utils.book_new();
+  var ws = XLSX.utils.aoa_to_sheet(exportRows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Каталог');
+  XLSX.writeFile(wb, 'supplier-price-catalog-' + date + '.xlsx');
+}
+window.exportSupplierPriceCatalogXLSX = exportSupplierPriceCatalogXLSX;
+
 function renderSupplierPriceCatalogRows(){
   var modal = document.getElementById('ov-supPriceManager');
   var countEl = document.getElementById('supPriceCatalogCount');
@@ -9179,6 +9242,7 @@ function renderSupplierPriceCatalogShell(){
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">'
           +'<button class="tbBtn '+(mode === 'list' ? 'bg' : '')+'" data-catalog-view="list" onclick="window.__supplierPriceCatalogViewMode=&quot;list&quot;;renderSupplierPriceCatalogShell();renderSupplierPriceCatalogRows();" style="cursor:pointer;">Список</button>'
           +'<button class="tbBtn '+(mode === 'group' ? 'bg' : '')+'" data-catalog-view="group" onclick="window.__supplierPriceCatalogViewMode=&quot;group&quot;;renderSupplierPriceCatalogShell();renderSupplierPriceCatalogRows();" style="cursor:pointer;">Группировка</button>'
+          +'<button class="tbBtn" onclick="exportSupplierPriceCatalogXLSX()" style="cursor:pointer;">Экспорт Excel</button>'
         +'</div>'
         +'<div id="supPriceCatalogCount" style="font-size:12px;color:var(--t3);display:flex;gap:12px;flex-wrap:wrap;">'
           +'<span>'+(mode === 'group' ? 'Всего групп' : 'Всего позиций')+': <b>'+_esc(String(totalItems))+'</b></span>'
