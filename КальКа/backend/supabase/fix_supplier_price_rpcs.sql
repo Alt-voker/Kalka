@@ -31,6 +31,7 @@ drop function if exists public.owner_delete_supplier_price_list(uuid, uuid);
 drop function if exists public.owner_clear_supplier_price_items(uuid, uuid);
 drop function if exists public.owner_list_supplier_price_items(uuid, uuid);
 drop function if exists public.owner_list_supplier_price_catalog(uuid, uuid);
+drop function if exists public.owner_list_supplier_price_catalog(uuid, uuid, integer, integer);
 drop function if exists public.owner_import_supplier_price_items(uuid, jsonb, uuid);
 
 create or replace function public.owner_list_supplier_price_lists(
@@ -696,7 +697,9 @@ $$;
 
 create or replace function public.owner_list_supplier_price_catalog(
   p_supplier_id uuid,
-  p_organization_id uuid default null
+  p_organization_id uuid default null,
+  p_limit integer default 1000,
+  p_offset integer default 0
 )
 returns table (
   item_id uuid,
@@ -762,7 +765,9 @@ begin
    and coalesce(spl.status, 'active') <> 'deleted'
   where spi.organization_id = v_org_id
     and coalesce(spi.status, 'active') <> 'deleted'
-  order by spl.created_at desc, spl.id desc, spi.row_index asc, spi.created_at asc;
+  order by spl.created_at desc, spl.id desc, spi.row_index asc, spi.created_at asc
+  limit greatest(1, least(coalesce(p_limit, 1000), 5000))
+  offset greatest(0, coalesce(p_offset, 0));
 end;
 $$;
 
@@ -932,7 +937,7 @@ grant execute on function public.owner_archive_supplier_price_list(uuid, uuid) t
 grant execute on function public.owner_delete_supplier_price_list(uuid, uuid) to authenticated;
 grant execute on function public.owner_clear_supplier_price_items(uuid, uuid) to authenticated;
 grant execute on function public.owner_list_supplier_price_items(uuid, uuid) to authenticated;
-grant execute on function public.owner_list_supplier_price_catalog(uuid, uuid) to authenticated;
+grant execute on function public.owner_list_supplier_price_catalog(uuid, uuid, integer, integer) to authenticated;
 grant execute on function public.owner_import_supplier_price_items(uuid, jsonb, uuid) to authenticated;
 
 notify pgrst, 'reload schema';

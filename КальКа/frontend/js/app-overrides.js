@@ -1150,7 +1150,9 @@
     payload = payload || {};
     var clean = rpcCleanPayload('owner_list_supplier_price_catalog', {
       p_supplier_id: String(payload.p_supplier_id || payload.target_supplier_id || payload.supplier_id || payload.supplierId || '').trim() || null,
-      p_organization_id: String(payload.p_organization_id || payload.target_organization_id || payload.organization_id || payload.organizationId || '').trim() || null
+      p_organization_id: String(payload.p_organization_id || payload.target_organization_id || payload.organization_id || payload.organizationId || '').trim() || null,
+      p_limit: Number.isFinite(Number(payload.p_limit || payload.limit)) ? Math.max(1, Math.min(5000, Number(payload.p_limit || payload.limit))) : 1000,
+      p_offset: Number.isFinite(Number(payload.p_offset || payload.offset)) ? Math.max(0, Number(payload.p_offset || payload.offset)) : 0
     });
     return rpcWithPortability('owner_list_supplier_price_catalog', clean, 'Не удалось загрузить каталог прайса');
   };

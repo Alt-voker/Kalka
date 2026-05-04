@@ -8916,14 +8916,30 @@ function loadSupplierPriceCatalogRows(force){
     return Promise.resolve(Array.isArray(_supPriceCatalogRows) ? _supPriceCatalogRows.slice() : []);
   }
   _supPriceCatalogLoading = true;
-  return Promise.resolve(window.ownerListSupplierPriceCatalog({
-    p_supplier_id: supplier._id || supplier.id || supplier.supplier_id || supplier.supplierId,
-    p_organization_id: orgId
-  })).then(function(res){
-    var rows = Array.isArray(res && res.data) ? res.data : Array.isArray(res) ? res : [];
+  var all = [];
+  var pageSize = 1000;
+  var offset = 0;
+  var supplierId = supplier._id || supplier.id || supplier.supplier_id || supplier.supplierId;
+  function fetchNextPage(){
+    return Promise.resolve(window.ownerListSupplierPriceCatalog({
+      p_supplier_id: supplierId,
+      p_organization_id: orgId,
+      p_limit: pageSize,
+      p_offset: offset
+    })).then(function(res){
+      var rows = Array.isArray(res && res.data) ? res.data : Array.isArray(res) ? res : [];
+      all = all.concat(rows);
+      window.__supplierPriceCatalogItems = all.slice();
+      window.__supplierPriceCatalogSearch = String(_supPriceCatalogSearch || '');
+      if (rows.length === pageSize) {
+        offset += pageSize;
+        return fetchNextPage();
+      }
+      return all;
+    });
+  }
+  return fetchNextPage().then(function(rows){
     _supPriceCatalogRows = rows.slice();
-    window.__supplierPriceCatalogItems = _supPriceCatalogRows.slice();
-    window.__supplierPriceCatalogSearch = String(_supPriceCatalogSearch || '');
     _supPriceCatalogLoaded = true;
     return rows;
   }).catch(function(error){
@@ -8986,6 +9002,22 @@ function getSupplierPriceCatalogFilteredRows(){
     return text.indexOf(search) >= 0;
   });
 }
+window.filterSupplierPriceCatalogItems = function(items, search){
+  items = Array.isArray(items) ? items : [];
+  var q = String(search || '').trim().toLowerCase();
+  if (!q) return items.slice();
+  return items.filter(function(item){
+    var haystack = [
+      item && item.raw_name,
+      item && item.normalized_name,
+      item && item.price_list_title,
+      item && item.unit,
+      item && item.price_type,
+      item && item.currency
+    ].map(function(v){ return String(v || '').toLowerCase(); }).join(' ');
+    return haystack.indexOf(q) >= 0;
+  });
+};
 
 function renderSupplierPriceCatalogTbody(rows){
   rows = Array.isArray(rows) ? rows : [];
@@ -9011,8 +9043,14 @@ function updateSupplierPriceCatalogView(){
   var countEl = document.getElementById('supPriceCatalogCount');
   var tbody = document.getElementById('supPriceCatalogBody');
   var rows = Array.isArray(window.__supplierPriceCatalogItems) ? window.__supplierPriceCatalogItems : (_supPriceCatalogRows || []);
-  var filtered = getSupplierPriceCatalogFilteredRows();
+  var filtered = window.filterSupplierPriceCatalogItems(rows, window.__supplierPriceCatalogSearch != null ? window.__supplierPriceCatalogSearch : _supPriceCatalogSearch || '');
   if (!modal || !shell || !countEl || !tbody || String(_supPriceManagerTab) !== 'catalog') return;
+  console.info('supplier catalog filter applied', {
+    total: rows.length,
+    found: filtered.length,
+    query: window.__supplierPriceCatalogSearch != null ? window.__supplierPriceCatalogSearch : _supPriceCatalogSearch || '',
+    sample: filtered.slice(0, 3)
+  });
   countEl.innerHTML = '<span>Всего позиций: <b>'+_esc(String(rows.length))+'</b></span><span>Найдено: <b>'+_esc(String(filtered.length))+'</b></span>';
   tbody.innerHTML = renderSupplierPriceCatalogTbody(filtered);
 }
