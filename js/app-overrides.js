@@ -1084,7 +1084,7 @@
   window.ownerCreateSupplier = function (payload) {
     var client = app.supabase && app.supabase.getClient ? app.supabase.getClient() : null;
     if (!client) return Promise.reject(new Error('Supabase не настроен'));
-    var clean = rpcCleanPayload('owner_create_supplier', {
+    var params = rpcCleanPayload('owner_create_supplier', {
       target_organization_id: String((payload && (payload.target_organization_id || payload.p_organization_id || payload.organization_id || payload.organizationId)) || '').trim() || null,
       target_name: String((payload && (payload.target_name || payload.name)) || '').trim(),
       target_inn: String((payload && (payload.target_inn || payload.inn)) || '').trim(),
@@ -1096,8 +1096,8 @@
         ? (payload.target_legal_entity_ids || payload.legal_entity_ids || payload.legalEntityIds).slice()
         : []
     });
-    console.info('owner_create_supplier payload final', clean);
-    return rpcWithPortability('owner_create_supplier', clean, 'Не удалось создать поставщика');
+    console.info('owner_create_supplier payload final', params);
+    return rpcWithPortability('owner_create_supplier', params, 'Не удалось создать поставщика');
   };
 
   window.ownerUpdateSupplier = function (payload) {
