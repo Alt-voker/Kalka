@@ -974,6 +974,15 @@
           hint: error && error.hint ? error.hint : '',
           raw: error
         });
+        if (name === 'owner_create_supplier') {
+          console.error('owner_create_supplier full error text', {
+            code: error && error.code ? error.code : '',
+            message: error && error.message ? error.message : '',
+            details: error && error.details ? error.details : '',
+            hint: error && error.hint ? error.hint : '',
+            raw: JSON.stringify(error, null, 2)
+          });
+        }
         console.error('rpc ' + name + ' failed', {
           request: name,
           code: error && error.code ? error.code : '',
@@ -982,6 +991,15 @@
           hint: error && error.hint ? error.hint : '',
           raw: error
         });
+        if (name === 'owner_create_supplier') {
+          console.error('owner_create_supplier full error text', {
+            code: error && error.code ? error.code : '',
+            message: error && error.message ? error.message : '',
+            details: error && error.details ? error.details : '',
+            hint: error && error.hint ? error.hint : '',
+            raw: JSON.stringify(error, null, 2)
+          });
+        }
         throw error;
       });
     }
@@ -1078,6 +1096,7 @@
         ? (payload.target_legal_entity_ids || payload.legal_entity_ids || payload.legalEntityIds).slice()
         : []
     });
+    console.info('owner_create_supplier payload final', clean);
     return rpcWithPortability('owner_create_supplier', clean, 'Не удалось создать поставщика');
   };
 
