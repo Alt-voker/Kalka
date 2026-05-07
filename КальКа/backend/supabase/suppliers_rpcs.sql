@@ -99,6 +99,8 @@ begin
 end;
 $$;
 
+drop function if exists public.owner_create_supplier(uuid, text, text, text, text, text, text, uuid[]);
+
 create or replace function public.owner_create_supplier(
   target_organization_id uuid,
   target_name text,
@@ -143,7 +145,7 @@ declare
   v_status text := coalesce(nullif(lower(trim(target_status)), ''), 'active');
 begin
   if target_organization_id is null then
-    raise exception 'Forbidden' using errcode = '42501';
+    raise exception 'Выберите активную организацию' using errcode = '42501';
   end if;
   if not public.has_permission(target_organization_id, 'suppliers.create')
      and not public.has_permission(target_organization_id, 'suppliers.edit') then
@@ -152,31 +154,47 @@ begin
   if coalesce(trim(target_name), '') = '' then
     raise exception 'Название поставщика обязательно' using errcode = '22023';
   end if;
-  insert into public.suppliers (
-    organization_id,
-    name,
-    inn,
-    phone,
-    email,
-    contact_name,
-    contact_person,
-    status,
-    updated_at
+  with inserted_supplier as (
+    insert into public.suppliers (
+      organization_id,
+      name,
+      inn,
+      phone,
+      email,
+      contact_name,
+      contact_person,
+      status,
+      updated_at
+    )
+    values (
+      target_organization_id,
+      trim(target_name),
+      nullif(trim(target_inn), ''),
+      nullif(trim(target_phone), ''),
+      nullif(trim(target_email), ''),
+      nullif(trim(target_contact_name), ''),
+      nullif(trim(target_contact_name), ''),
+      case when v_status in ('active', 'inactive', 'archived') then v_status else 'active' end,
+      now()
+    )
+    returning public.suppliers.id
   )
-  values (
-    target_organization_id,
-    trim(target_name),
-    coalesce(trim(target_inn), ''),
-    coalesce(trim(target_phone), ''),
-    coalesce(trim(target_email), ''),
-    coalesce(trim(target_contact_name), ''),
-    coalesce(trim(target_contact_name), ''),
-    case when v_status in ('active', 'inactive', 'archived') then v_status else 'active' end,
-    now()
-  )
-  returning id into v_supplier_id;
+  select inserted_supplier.id
+    into v_supplier_id
+  from inserted_supplier;
 
   if coalesce(array_length(target_legal_entity_ids, 1), 0) > 0 then
+    if exists (
+      select 1
+      from unnest(target_legal_entity_ids) as x(legal_entity_id)
+      left join public.legal_entities le
+        on le.id = x.legal_entity_id
+       and le.organization_id = target_organization_id
+       and coalesce(le.status, 'active') <> 'deleted'
+      where le.id is null
+    ) then
+      raise exception 'Forbidden' using errcode = '42501';
+    end if;
     insert into public.supplier_legal_entities (
       supplier_id,
       legal_entity_id,
@@ -202,8 +220,43 @@ begin
   end if;
 
   return query
-  select * from public.owner_list_suppliers(target_organization_id)
-  where id = v_supplier_id;
+  select
+    s.id,
+    s.organization_id,
+    s.name,
+    coalesce(s.inn, '') as inn,
+    coalesce(s.phone, '') as phone,
+    coalesce(s.email, '') as email,
+    coalesce(nullif(s.contact_name, ''), nullif(s.contact_person, ''), '') as contact_name,
+    coalesce(s.status, 'active') as status,
+    s.created_at,
+    s.updated_at,
+    ''::text as emoji,
+    'Поставщик'::text as kind,
+    0::numeric as rating,
+    0::integer as orders_count,
+    ''::text as delivery,
+    ''::text as min_order_text,
+    '{}'::text[] as tags,
+    false as hidden,
+    ''::text as legacy_key,
+    coalesce(array_agg(distinct le.id) filter (where le.id is not null), '{}'::uuid[]) as legal_entity_ids,
+    coalesce(array_agg(distinct le.name) filter (where le.id is not null), '{}'::text[]) as legal_entity_names,
+    coalesce(max(s.comment), '') as comment
+  from public.suppliers s
+  left join public.supplier_legal_entities sle
+    on sle.supplier_id = s.id
+   and sle.organization_id = target_organization_id
+   and coalesce(sle.status, 'active') = 'active'
+  left join public.legal_entities le
+    on le.id = sle.legal_entity_id
+   and le.organization_id = target_organization_id
+   and coalesce(le.status, 'active') <> 'deleted'
+  where s.id = v_supplier_id
+    and s.organization_id = target_organization_id
+  group by
+    s.id, s.organization_id, s.name, s.inn, s.phone, s.email,
+    s.contact_name, s.contact_person, s.status, s.created_at, s.updated_at, s.comment;
 end;
 $$;
 
@@ -263,8 +316,8 @@ begin
     update public.suppliers
        set organization_id = v_org_id,
            updated_at = now()
-     where id = target_supplier_id
-       and organization_id is null;
+     where s.id = target_supplier_id
+       and s.organization_id is null;
   end if;
   if v_org_id is null then
     raise exception 'Поставщик не найден' using errcode = '22023';
@@ -321,8 +374,43 @@ begin
   end if;
 
   return query
-  select * from public.owner_list_suppliers(v_org_id)
-  where id = target_supplier_id;
+  select
+    s.id,
+    s.organization_id,
+    s.name,
+    coalesce(s.inn, '') as inn,
+    coalesce(s.phone, '') as phone,
+    coalesce(s.email, '') as email,
+    coalesce(nullif(s.contact_name, ''), nullif(s.contact_person, ''), '') as contact_name,
+    coalesce(s.status, 'active') as status,
+    s.created_at,
+    s.updated_at,
+    ''::text as emoji,
+    'Поставщик'::text as kind,
+    0::numeric as rating,
+    0::integer as orders_count,
+    ''::text as delivery,
+    ''::text as min_order_text,
+    '{}'::text[] as tags,
+    false as hidden,
+    ''::text as legacy_key,
+    coalesce(array_agg(distinct le.id) filter (where le.id is not null), '{}'::uuid[]) as legal_entity_ids,
+    coalesce(array_agg(distinct le.name) filter (where le.id is not null), '{}'::text[]) as legal_entity_names,
+    coalesce(max(s.comment), '') as comment
+  from public.suppliers s
+  left join public.supplier_legal_entities sle
+    on sle.supplier_id = s.id
+   and sle.organization_id = v_org_id
+   and coalesce(sle.status, 'active') = 'active'
+  left join public.legal_entities le
+    on le.id = sle.legal_entity_id
+   and le.organization_id = v_org_id
+   and coalesce(le.status, 'active') <> 'deleted'
+  where s.id = target_supplier_id
+    and s.organization_id = v_org_id
+  group by
+    s.id, s.organization_id, s.name, s.inn, s.phone, s.email,
+    s.contact_name, s.contact_person, s.status, s.created_at, s.updated_at, s.comment;
 end;
 $$;
 
@@ -386,8 +474,43 @@ begin
    where s.id = target_supplier_id
      and organization_id = v_org_id;
   return query
-  select * from public.owner_list_suppliers(v_org_id) s
-  where s.id = target_supplier_id;
+  select
+    s.id,
+    s.organization_id,
+    s.name,
+    coalesce(s.inn, '') as inn,
+    coalesce(s.phone, '') as phone,
+    coalesce(s.email, '') as email,
+    coalesce(nullif(s.contact_name, ''), nullif(s.contact_person, ''), '') as contact_name,
+    coalesce(s.status, 'active') as status,
+    s.created_at,
+    s.updated_at,
+    ''::text as emoji,
+    'Поставщик'::text as kind,
+    0::numeric as rating,
+    0::integer as orders_count,
+    ''::text as delivery,
+    ''::text as min_order_text,
+    '{}'::text[] as tags,
+    false as hidden,
+    ''::text as legacy_key,
+    coalesce(array_agg(distinct le.id) filter (where le.id is not null), '{}'::uuid[]) as legal_entity_ids,
+    coalesce(array_agg(distinct le.name) filter (where le.id is not null), '{}'::text[]) as legal_entity_names,
+    coalesce(max(s.comment), '') as comment
+  from public.suppliers s
+  left join public.supplier_legal_entities sle
+    on sle.supplier_id = s.id
+   and sle.organization_id = v_org_id
+   and coalesce(sle.status, 'active') = 'active'
+  left join public.legal_entities le
+    on le.id = sle.legal_entity_id
+   and le.organization_id = v_org_id
+   and coalesce(le.status, 'active') <> 'deleted'
+  where s.id = target_supplier_id
+    and s.organization_id = v_org_id
+  group by
+    s.id, s.organization_id, s.name, s.inn, s.phone, s.email,
+    s.contact_name, s.contact_person, s.status, s.created_at, s.updated_at, s.comment;
 end;
 $$;
 
@@ -451,8 +574,43 @@ begin
    where s.id = target_supplier_id
      and organization_id = v_org_id;
   return query
-  select * from public.owner_list_suppliers(v_org_id) s
-  where s.id = target_supplier_id;
+  select
+    s.id,
+    s.organization_id,
+    s.name,
+    coalesce(s.inn, '') as inn,
+    coalesce(s.phone, '') as phone,
+    coalesce(s.email, '') as email,
+    coalesce(nullif(s.contact_name, ''), nullif(s.contact_person, ''), '') as contact_name,
+    coalesce(s.status, 'active') as status,
+    s.created_at,
+    s.updated_at,
+    ''::text as emoji,
+    'Поставщик'::text as kind,
+    0::numeric as rating,
+    0::integer as orders_count,
+    ''::text as delivery,
+    ''::text as min_order_text,
+    '{}'::text[] as tags,
+    false as hidden,
+    ''::text as legacy_key,
+    coalesce(array_agg(distinct le.id) filter (where le.id is not null), '{}'::uuid[]) as legal_entity_ids,
+    coalesce(array_agg(distinct le.name) filter (where le.id is not null), '{}'::text[]) as legal_entity_names,
+    coalesce(max(s.comment), '') as comment
+  from public.suppliers s
+  left join public.supplier_legal_entities sle
+    on sle.supplier_id = s.id
+   and sle.organization_id = v_org_id
+   and coalesce(sle.status, 'active') = 'active'
+  left join public.legal_entities le
+    on le.id = sle.legal_entity_id
+   and le.organization_id = v_org_id
+   and coalesce(le.status, 'active') <> 'deleted'
+  where s.id = target_supplier_id
+    and s.organization_id = v_org_id
+  group by
+    s.id, s.organization_id, s.name, s.inn, s.phone, s.email,
+    s.contact_name, s.contact_person, s.status, s.created_at, s.updated_at, s.comment;
 end;
 $$;
 
@@ -502,8 +660,8 @@ begin
     update public.suppliers
        set organization_id = v_org_id,
            updated_at = now()
-     where id = target_supplier_id
-       and organization_id is null;
+     where s.id = target_supplier_id
+       and s.organization_id is null;
   end if;
   if v_org_id is null then
     raise exception 'Поставщик не найден' using errcode = '22023';
@@ -542,8 +700,43 @@ begin
   end if;
 
   return query
-  select * from public.owner_list_suppliers(v_org_id)
-  where id = target_supplier_id;
+  select
+    s.id,
+    s.organization_id,
+    s.name,
+    coalesce(s.inn, '') as inn,
+    coalesce(s.phone, '') as phone,
+    coalesce(s.email, '') as email,
+    coalesce(nullif(s.contact_name, ''), nullif(s.contact_person, ''), '') as contact_name,
+    coalesce(s.status, 'active') as status,
+    s.created_at,
+    s.updated_at,
+    ''::text as emoji,
+    'Поставщик'::text as kind,
+    0::numeric as rating,
+    0::integer as orders_count,
+    ''::text as delivery,
+    ''::text as min_order_text,
+    '{}'::text[] as tags,
+    false as hidden,
+    ''::text as legacy_key,
+    coalesce(array_agg(distinct le.id) filter (where le.id is not null), '{}'::uuid[]) as legal_entity_ids,
+    coalesce(array_agg(distinct le.name) filter (where le.id is not null), '{}'::text[]) as legal_entity_names,
+    coalesce(max(s.comment), '') as comment
+  from public.suppliers s
+  left join public.supplier_legal_entities sle
+    on sle.supplier_id = s.id
+   and sle.organization_id = v_org_id
+   and coalesce(sle.status, 'active') = 'active'
+  left join public.legal_entities le
+    on le.id = sle.legal_entity_id
+   and le.organization_id = v_org_id
+   and coalesce(le.status, 'active') <> 'deleted'
+  where s.id = target_supplier_id
+    and s.organization_id = v_org_id
+  group by
+    s.id, s.organization_id, s.name, s.inn, s.phone, s.email,
+    s.contact_name, s.contact_person, s.status, s.created_at, s.updated_at, s.comment;
 end;
 $$;
 
@@ -604,8 +797,43 @@ begin
    where s.id = target_supplier_id
      and s.organization_id = v_org_id;
   return query
-  select * from public.owner_list_suppliers(v_org_id) s
-  where s.id = target_supplier_id;
+  select
+    s.id,
+    s.organization_id,
+    s.name,
+    coalesce(s.inn, '') as inn,
+    coalesce(s.phone, '') as phone,
+    coalesce(s.email, '') as email,
+    coalesce(nullif(s.contact_name, ''), nullif(s.contact_person, ''), '') as contact_name,
+    coalesce(s.status, 'active') as status,
+    s.created_at,
+    s.updated_at,
+    ''::text as emoji,
+    'Поставщик'::text as kind,
+    0::numeric as rating,
+    0::integer as orders_count,
+    ''::text as delivery,
+    ''::text as min_order_text,
+    '{}'::text[] as tags,
+    false as hidden,
+    ''::text as legacy_key,
+    coalesce(array_agg(distinct le.id) filter (where le.id is not null), '{}'::uuid[]) as legal_entity_ids,
+    coalesce(array_agg(distinct le.name) filter (where le.id is not null), '{}'::text[]) as legal_entity_names,
+    coalesce(max(s.comment), '') as comment
+  from public.suppliers s
+  left join public.supplier_legal_entities sle
+    on sle.supplier_id = s.id
+   and sle.organization_id = v_org_id
+   and coalesce(sle.status, 'active') = 'active'
+  left join public.legal_entities le
+    on le.id = sle.legal_entity_id
+   and le.organization_id = v_org_id
+   and coalesce(le.status, 'active') <> 'deleted'
+  where s.id = target_supplier_id
+    and s.organization_id = v_org_id
+  group by
+    s.id, s.organization_id, s.name, s.inn, s.phone, s.email,
+    s.contact_name, s.contact_person, s.status, s.created_at, s.updated_at, s.comment;
 end;
 $$;
 
