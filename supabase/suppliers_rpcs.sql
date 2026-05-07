@@ -170,9 +170,9 @@ begin
       target_organization_id,
       trim(target_name),
       nullif(trim(target_inn), ''),
-      nullif(trim(target_phone), ''),
-      nullif(trim(target_email), ''),
-      nullif(trim(target_contact_name), ''),
+      coalesce(nullif(trim(target_phone), ''), 'Не указан'),
+      coalesce(nullif(trim(target_email), ''), ''),
+      coalesce(nullif(trim(target_contact_name), ''), ''),
       nullif(trim(target_contact_name), ''),
       case when v_status in ('active', 'inactive', 'archived') then v_status else 'active' end,
       now()
@@ -313,7 +313,7 @@ begin
   limit 1;
   if v_org_id is null and target_organization_id is not null then
     v_org_id := target_organization_id;
-    update public.suppliers
+    update public.suppliers s
        set organization_id = v_org_id,
            updated_at = now()
      where s.id = target_supplier_id
@@ -335,9 +335,9 @@ begin
   update public.suppliers s
      set name = trim(target_name),
          inn = coalesce(trim(target_inn), ''),
-         phone = coalesce(trim(target_phone), ''),
-         email = coalesce(trim(target_email), ''),
-         contact_name = coalesce(trim(target_contact_name), ''),
+         phone = coalesce(nullif(trim(target_phone), ''), 'Не указан'),
+         email = coalesce(nullif(trim(target_email), ''), ''),
+         contact_name = coalesce(nullif(trim(target_contact_name), ''), ''),
          contact_person = coalesce(trim(target_contact_name), ''),
          status = case when v_status in ('active', 'inactive', 'archived') then v_status else s.status end,
          updated_at = now()
@@ -472,7 +472,7 @@ begin
      set status = 'archived',
          updated_at = now()
    where s.id = target_supplier_id
-     and organization_id = v_org_id;
+     and s.organization_id = v_org_id;
   return query
   select
     s.id,
@@ -572,7 +572,7 @@ begin
      set status = 'deleted',
          updated_at = now()
    where s.id = target_supplier_id
-     and organization_id = v_org_id;
+     and s.organization_id = v_org_id;
   return query
   select
     s.id,
@@ -657,7 +657,7 @@ begin
   limit 1;
   if v_org_id is null and target_organization_id is not null then
     v_org_id := target_organization_id;
-    update public.suppliers
+    update public.suppliers s
        set organization_id = v_org_id,
            updated_at = now()
      where s.id = target_supplier_id
